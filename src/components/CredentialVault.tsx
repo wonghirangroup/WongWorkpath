@@ -466,6 +466,7 @@ export default function CredentialVault({
 
       onAddCredential(newItem);
       onLogAudit('ADD_SECURE_CREDENTIAL', `เพิ่มข้อมูลความปลอดภัยใหม่: "${newLabel}" (ประเภท ${newType})`);
+      setCurrentPage(1);
       setCreateSuccessNotice(true);
       setTimeout(() => setCreateSuccessNotice(false), 3000);
     }
@@ -587,6 +588,13 @@ export default function CredentialVault({
   const totalPages = Math.max(1, Math.ceil(filteredCredentials.length / PAGE_SIZE));
   const paginatedCredentials = filteredCredentials.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
+  // Snap back to the last page that still has items once deletions (or a filter change) empty out the current page
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
   return (
     <div className="space-y-6 h-full" id="credential-vault-tab">
 
@@ -597,7 +605,7 @@ export default function CredentialVault({
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 -mt-5">
             <div>
               <h1 className="text-[40px] font-medium text-[#FF6537]">คลังรหัสผ่าน</h1>
-              <p className="text-xl font-light text-slate-500 -mt-2">จัดการและจัดเก็บรหัสผ่านสำหรับใช้งานในองค์กร</p>
+              <p className="text-xl font-light text-[#6F6F6F] -mt-2">จัดการและจัดเก็บรหัสผ่านสำหรับใช้งานในองค์กร</p>
             </div>
 
             <button
@@ -652,7 +660,7 @@ export default function CredentialVault({
           </div>
 
           {/* Result count */}
-          <p className="text-base text-slate-500">ทั้งหมด {filteredCredentials.length} รายการ</p>
+          <p className="text-base text-[#6F6F6F]">ทั้งหมด {filteredCredentials.length} รายการ</p>
 
           {/* Create / edit credential modal */}
           {showAddForm && createPortal(
@@ -809,15 +817,17 @@ export default function CredentialVault({
                     />
                   </div>
 
-                  <button
-                    type="submit"
-                    disabled={!isCredentialFormValid}
-                    className={`w-full text-white font-semibold py-3.5 rounded-xl transition-colors ${
-                      isCredentialFormValid ? 'bg-[#FF6537] hover:bg-[#e6572c] cursor-pointer' : 'bg-[#F68C6C] cursor-not-allowed'
-                    }`}
-                  >
-                    {editingId ? 'บันทึกการแก้ไข' : 'สร้าง'}
-                  </button>
+                  <div className="pt-3">
+                    <button
+                      type="submit"
+                      disabled={!isCredentialFormValid}
+                      className={`w-full text-white font-semibold py-3.5 rounded-xl transition-colors ${
+                        isCredentialFormValid ? 'bg-[#FF6537] hover:bg-[#e6572c] cursor-pointer' : 'bg-[#F68C6C] cursor-not-allowed'
+                      }`}
+                    >
+                      {editingId ? 'บันทึกการแก้ไข' : 'สร้าง'}
+                    </button>
+                  </div>
                 </form>
               </div>
             </div>,
@@ -912,7 +922,7 @@ export default function CredentialVault({
                     </div>
 
                     {/* Data contents */}
-                    <div className="bg-[#F9F9F9] p-3.5 rounded-xl border border-[#EDEEEF] space-y-2.5 text-xs">
+                    <div className="bg-[#F9F9F9] p-3.5 rounded-xl border border-[#EDEEEF] space-y-1.5 text-xs">
                       <div className="flex justify-between items-center text-[#272220]">
                         <span className="text-[14px] font-semibold">ชื่อผู้ใช้/Username:</span>
                         <div className="flex items-center gap-2">

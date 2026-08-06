@@ -2,6 +2,7 @@ import { Bell, LogOut, ChevronDown, Menu, X } from 'lucide-react';
 import { useState } from 'react';
 import { useAppData } from '../../context/AppDataContext';
 import logo from '../../../images/pp.png';
+import profileImage from '../../../images/profile.png';
 
 function getThaiDateString() {
   return new Intl.DateTimeFormat('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date());
@@ -48,7 +49,7 @@ export default function Header({ isMobileMenuOpen, onToggleMobileMenu }: HeaderP
         {/* Current Date in Thai */}
         <div className="hidden sm:block text-right text-sm">
           <p className="font-semibold text-white text-lg">{getThaiDateString()}</p>
-          <p className="text-sm text-white">เวลาทำงาน 08:00 - 17:00 น.</p>
+          <p className="text-sm text-[#A0A0A0]">เวลาทำงาน 08:00 - 17:00 น.</p>
         </div>
 
         {/* Unread count badge */}
@@ -72,13 +73,13 @@ export default function Header({ isMobileMenuOpen, onToggleMobileMenu }: HeaderP
           id="btn-user-menu"
         >
           <img
-            src={currentUser.avatar}
+            src={profileImage}
             alt={currentUser.name}
             className="w-14 h-14 rounded-full object-cover ring-2 ring-[#FF6537]"
           />
           <div className="hidden sm:block text-sm text-left">
-            <p className="font-bold text-[#FF6537] text-base">{currentUser.name}</p>
-            <p className="text-sm text-white">{currentUser.role}</p>
+            <p className="font-bold text-[#FFFFFF] text-base">{currentUser.name}</p>
+            <p className="text-sm text-[#A0A0A0]">{currentUser.role}</p>
           </div>
           <ChevronDown size={22} className="text-white/80 hidden sm:block" />
         </button>
