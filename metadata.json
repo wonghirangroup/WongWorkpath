@@ -1,0 +1,6 @@
+{
+  "name": "UnitySpace - ระบบจัดการโครงการและข้อมูลความปลอดภัย",
+  "description": "แพลตฟอร์มบริหารจัดการงาน แผนภูมิแกนต์ ปฏิทินทีม ตรวจสอบภาระงานพนักงาน และคลังรหัสผ่านความปลอดภัย AES-256",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

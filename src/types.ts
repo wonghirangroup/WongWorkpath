@@ -1,0 +1,112 @@
+export type Department = 'IT' | 'HR' | 'Marketing' | 'Sales' | 'Design' | 'Finance';
+
+export interface Employee {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  department: Department;
+  avatar: string;
+  maxWorkload: number; // Max allowed concurrent tasks
+}
+
+export type Priority = 'Low' | 'Medium' | 'High';
+export type TaskStatus = 'Not Started' | 'In Progress' | 'Completed' | 'On Hold';
+
+export interface Task {
+  id: string;
+  title: string;
+  description: string;
+  project: string;
+  priority: Priority;
+  status: TaskStatus;
+  progress: number; // 0 to 100
+  startDate: string;
+  dueDate: string;
+  actualEndDate?: string;
+  department: Department;
+  primaryOwnerId: string; // Primary responsible person
+  secondaryAssigneeIds: string[]; // Secondary assignees
+  contributorIds: string[]; // Contributors
+  dependencies: string[]; // Task IDs that must be completed first
+  approvalStatus: 'None' | 'Pending Approval' | 'Approved' | 'Rejected';
+  approvalNote?: string;
+  recurringPattern: 'None' | 'Weekly' | 'Monthly';
+  linkedDocIds: string[]; // Document IDs linked to this task
+  handovers: HandoverRecord[];
+}
+
+export interface HandoverRecord {
+  id: string;
+  fromUserId: string;
+  toUserId: string;
+  stageName: string;
+  notes: string;
+  timestamp: string;
+  status: 'Pending' | 'Approved' | 'Rejected';
+  approvedBy?: string;
+  approvalNotes?: string;
+}
+
+export interface LinkedDoc {
+  id: string;
+  name: string;
+  type: 'document' | 'spreadsheet' | 'presentation' | 'pdf' | 'link';
+  url: string;
+  version: number;
+  lastUpdated: string;
+  updatedBy: string;
+  history: DocHistory[];
+}
+
+export interface DocHistory {
+  version: number;
+  updatedBy: string;
+  date: string;
+  note: string;
+}
+
+export interface CredentialItem {
+  id: string;
+  label: string;
+  type: 'Username & Password' | 'API Key' | 'Bank Account' | 'Access Token';
+  scope: 'ส่วนตัว' | 'ทีม';
+  team?: Department;
+  username: string;
+  password?: string;
+  keyValue?: string;
+  notes?: string;
+  url?: string;
+  logoUrl?: string;
+  lastViewedAt?: string;
+  createdAt: string;
+  createdBy: string;
+}
+
+export interface AuditLog {
+  id: string;
+  timestamp: string;
+  user: string;
+  action: string; // e.g. "VIEW_CREDENTIAL", "CREATE_TASK"
+  details: string;
+}
+
+export interface LeaveRequest {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  type: 'Vacation' | 'Sick Leave' | 'Personal Leave' | 'Business Leave';
+  startDate: string;
+  endDate: string;
+  status: 'Pending' | 'Approved' | 'Rejected';
+  notes: string;
+}
+
+export interface Notification {
+  id: string;
+  title: string;
+  message: string;
+  timestamp: string;
+  read: boolean;
+  type: 'info' | 'success' | 'warning';
+}

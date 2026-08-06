@@ -1,0 +1,531 @@
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import {
+  Employee,
+  Task,
+  LinkedDoc,
+  CredentialItem,
+  LeaveRequest,
+  Notification,
+  AuditLog,
+  HandoverRecord
+} from '../types';
+import {
+  INITIAL_EMPLOYEES,
+  INITIAL_DOCS,
+  INITIAL_TASKS,
+  INITIAL_CREDENTIALS,
+  INITIAL_LEAVE_REQUESTS,
+  INITIAL_NOTIFICATIONS
+} from '../data/mockData';
+
+interface AppDataContextValue {
+  // Auth
+  currentUser: Employee | null;
+  isRestoringSession: boolean;
+  handleLogin: (employee: Employee) => void;
+  handleLogout: () => void;
+
+  // Domain data
+  employees: Employee[];
+  tasks: Task[];
+  documents: LinkedDoc[];
+  credentials: CredentialItem[];
+  leaveRequests: LeaveRequest[];
+  notifications: Notification[];
+  auditLogs: AuditLog[];
+  unreadCount: number;
+
+  // Task Modal
+  isTaskModalOpen: boolean;
+  selectedTaskToEdit: Task | null;
+  openAddTaskModal: () => void;
+  openEditTaskModal: (task: Task) => void;
+  closeTaskModal: () => void;
+
+  // Mutations
+  handleSaveTask: (taskData: Partial<Task>) => void;
+  handleDeleteTask: (id: string) => void;
+  handleInitiateHandover: (taskId: string, fromUserId: string, toUserId: string, stageName: string, notes: string) => void;
+  handleApproveHandover: (taskId: string, handoverId: string, approved: boolean, notes: string) => void;
+  handleAddDocument: (newDoc: LinkedDoc) => void;
+  handleUpdateDocumentVersion: (docId: string, updatedBy: string, note: string) => void;
+  saveDocuments: (newDocs: LinkedDoc[]) => void;
+  handleAddLeaveRequest: (newLeave: Omit<LeaveRequest, 'id'>) => void;
+  handleApproveLeave: (leaveId: string, approved: boolean) => void;
+  handleAddCredential: (newItem: CredentialItem) => void;
+  handleUpdateCredential: (id: string, updates: Partial<CredentialItem>) => void;
+  handleDeleteCredential: (id: string) => void;
+  handleLogAudit: (action: string, details: string) => void;
+  handleMarkAllNotificationsRead: () => void;
+}
+
+const AppDataContext = createContext<AppDataContextValue | null>(null);
+
+export function useAppData() {
+  const ctx = useContext(AppDataContext);
+  if (!ctx) throw new Error('useAppData must be used within an AppDataProvider');
+  return ctx;
+}
+
+export function AppDataProvider({ children }: { children: ReactNode }) {
+  // Auth
+  const [currentUser, setCurrentUser] = useState<Employee | null>(null);
+  const [isRestoringSession, setIsRestoringSession] = useState(true);
+
+  // Persistence States
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [documents, setDocuments] = useState<LinkedDoc[]>([]);
+  const [credentials, setCredentials] = useState<CredentialItem[]>([]);
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+
+  // Task Modal state
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  const [selectedTaskToEdit, setSelectedTaskToEdit] = useState<Task | null>(null);
+
+  // Initialize Data on Mount (with fallback to localStorage)
+  useEffect(() => {
+    const localEmployees = localStorage.getItem('unityspace_employees');
+    const localTasks = localStorage.getItem('unityspace_tasks');
+    const localDocs = localStorage.getItem('unityspace_docs');
+    const localCredentials = localStorage.getItem('unityspace_credentials');
+    const localLeaves = localStorage.getItem('unityspace_leaves');
+    const localNotifications = localStorage.getItem('unityspace_notifications');
+    const localLogs = localStorage.getItem('unityspace_audit_logs');
+
+    if (localEmployees) setEmployees(JSON.parse(localEmployees));
+    else {
+      setEmployees(INITIAL_EMPLOYEES);
+      localStorage.setItem('unityspace_employees', JSON.stringify(INITIAL_EMPLOYEES));
+    }
+
+    if (localTasks) setTasks(JSON.parse(localTasks));
+    else {
+      setTasks(INITIAL_TASKS);
+      localStorage.setItem('unityspace_tasks', JSON.stringify(INITIAL_TASKS));
+    }
+
+    if (localDocs) setDocuments(JSON.parse(localDocs));
+    else {
+      setDocuments(INITIAL_DOCS);
+      localStorage.setItem('unityspace_docs', JSON.stringify(INITIAL_DOCS));
+    }
+
+    if (localCredentials) setCredentials(JSON.parse(localCredentials));
+    else {
+      setCredentials(INITIAL_CREDENTIALS);
+      localStorage.setItem('unityspace_credentials', JSON.stringify(INITIAL_CREDENTIALS));
+    }
+
+    if (localLeaves) setLeaveRequests(JSON.parse(localLeaves));
+    else {
+      setLeaveRequests(INITIAL_LEAVE_REQUESTS);
+      localStorage.setItem('unityspace_leaves', JSON.stringify(INITIAL_LEAVE_REQUESTS));
+    }
+
+    if (localNotifications) setNotifications(JSON.parse(localNotifications));
+    else {
+      setNotifications(INITIAL_NOTIFICATIONS);
+      localStorage.setItem('unityspace_notifications', JSON.stringify(INITIAL_NOTIFICATIONS));
+    }
+
+    if (localLogs) setAuditLogs(JSON.parse(localLogs));
+    else {
+      const initialLogs: AuditLog[] = [
+        {
+          id: 'LOG01',
+          timestamp: '2026-07-02 09:00',
+          user: 'ผู้จัดการระบบ',
+          action: 'SYSTEM_STARTUP',
+          details: 'เริ่มต้นระบบจัดการแผนงานและข้อมูลความปลอดภัย UnitySpace สมบูรณ์แบบ'
+        }
+      ];
+      setAuditLogs(initialLogs);
+      localStorage.setItem('unityspace_audit_logs', JSON.stringify(initialLogs));
+    }
+  }, []);
+
+  // Restore login session once the employee directory has loaded
+  useEffect(() => {
+    if (employees.length === 0) return;
+
+    const savedUserId = localStorage.getItem('unityspace_current_user_id');
+    if (savedUserId) {
+      const savedUser = employees.find(emp => emp.id === savedUserId);
+      if (savedUser) setCurrentUser(savedUser);
+    }
+    setIsRestoringSession(false);
+  }, [employees]);
+
+  const handleLogin = (employee: Employee) => {
+    setCurrentUser(employee);
+    localStorage.setItem('unityspace_current_user_id', employee.id);
+    handleLogAudit('LOGIN', `${employee.name} เข้าสู่ระบบ`);
+  };
+
+  const handleLogout = () => {
+    if (currentUser) handleLogAudit('LOGOUT', `${currentUser.name} ออกจากระบบ`);
+    setCurrentUser(null);
+    localStorage.removeItem('unityspace_current_user_id');
+  };
+
+  // Sync to localStorage helpers
+  const saveTasks = (newTasks: Task[]) => {
+    setTasks(newTasks);
+    localStorage.setItem('unityspace_tasks', JSON.stringify(newTasks));
+  };
+
+  const saveDocs = (newDocs: LinkedDoc[]) => {
+    setDocuments(newDocs);
+    localStorage.setItem('unityspace_docs', JSON.stringify(newDocs));
+  };
+
+  const saveCredentials = (newCreds: CredentialItem[]) => {
+    setCredentials(newCreds);
+    localStorage.setItem('unityspace_credentials', JSON.stringify(newCreds));
+  };
+
+  const saveLeaves = (newLeaves: LeaveRequest[]) => {
+    setLeaveRequests(newLeaves);
+    localStorage.setItem('unityspace_leaves', JSON.stringify(newLeaves));
+  };
+
+  const saveNotifications = (newNotifs: Notification[]) => {
+    setNotifications(newNotifs);
+    localStorage.setItem('unityspace_notifications', JSON.stringify(newNotifs));
+  };
+
+  const handleLogAudit = (action: string, details: string) => {
+    const newLog: AuditLog = {
+      id: 'LOG_' + Date.now(),
+      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16),
+      user: 'ผู้ใช้งานระบบ',
+      action,
+      details
+    };
+    setAuditLogs((prev) => {
+      const updated = [newLog, ...prev];
+      localStorage.setItem('unityspace_audit_logs', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  // 1. Task Operations
+  const handleSaveTask = (taskData: Partial<Task>) => {
+    if (selectedTaskToEdit) {
+      // Editing
+      const updated = tasks.map(t => {
+        if (t.id === selectedTaskToEdit.id) {
+          return {
+            ...t,
+            ...taskData,
+            progress: taskData.status === 'Completed' ? 100 : (taskData.progress ?? t.progress)
+          } as Task;
+        }
+        return t;
+      });
+      saveTasks(updated);
+      handleLogAudit('UPDATE_TASK', `แก้ไขงาน "${selectedTaskToEdit.title}" ของแผนงานโครงการเรียบร้อย`);
+      setSelectedTaskToEdit(null);
+    } else {
+      // Creating
+      const newTask: Task = {
+        id: 'TASK_' + Date.now(),
+        title: taskData.title || '',
+        description: taskData.description || '',
+        project: taskData.project || '',
+        priority: taskData.priority || 'Medium',
+        status: taskData.status || 'Not Started',
+        progress: taskData.progress || 0,
+        startDate: taskData.startDate || new Date().toISOString().split('T')[0],
+        dueDate: taskData.dueDate || new Date().toISOString().split('T')[0],
+        department: taskData.department || 'IT',
+        primaryOwnerId: taskData.primaryOwnerId || '',
+        secondaryAssigneeIds: taskData.secondaryAssigneeIds || [],
+        contributorIds: taskData.contributorIds || [],
+        dependencies: taskData.dependencies || [],
+        approvalStatus: 'None',
+        recurringPattern: taskData.recurringPattern || 'None',
+        linkedDocIds: taskData.linkedDocIds || [],
+        handovers: []
+      };
+
+      const updated = [newTask, ...tasks];
+      saveTasks(updated);
+
+      // Trigger automatic notification for assigned owner
+      const assignedEmp = employees.find(e => e.id === newTask.primaryOwnerId);
+      if (assignedEmp) {
+        const newNotif: Notification = {
+          id: 'NOTIF_' + Date.now(),
+          title: 'ได้รับมอบหมายงานใหม่ 📝',
+          message: `คุณได้รับมอบหมายงาน "${newTask.title}" ในโครงการ "${newTask.project}"`,
+          timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16),
+          read: false,
+          type: 'info'
+        };
+        saveNotifications([newNotif, ...notifications]);
+      }
+
+      handleLogAudit('CREATE_TASK', `สร้างหัวข้องานใหม่: "${newTask.title}" มอบหมายให้ ${assignedEmp?.name || 'ไม่ระบุ'}`);
+    }
+    setIsTaskModalOpen(false);
+  };
+
+  const handleDeleteTask = (id: string) => {
+    const taskToDelete = tasks.find(t => t.id === id);
+    if (window.confirm(`ยืนยันที่จะลบงาน "${taskToDelete?.title}" หรือไม่?`)) {
+      const updated = tasks.filter(t => t.id !== id);
+      saveTasks(updated);
+      handleLogAudit('DELETE_TASK', `ลบงาน "${taskToDelete?.title}" ออกจากระบบถาวร`);
+    }
+  };
+
+  // 2. Handover staged workflows
+  const handleInitiateHandover = (
+    taskId: string,
+    fromUserId: string,
+    toUserId: string,
+    stageName: string,
+    notes: string
+  ) => {
+    const handover: HandoverRecord = {
+      id: 'HO_' + Date.now(),
+      fromUserId,
+      toUserId,
+      stageName,
+      notes,
+      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16),
+      status: 'Pending'
+    };
+
+    const updated = tasks.map(t => {
+      if (t.id === taskId) {
+        return {
+          ...t,
+          handovers: [...t.handovers, handover]
+        };
+      }
+      return t;
+    });
+
+    saveTasks(updated);
+
+    // Create system notification for target receiver
+    const receiver = employees.find(e => e.id === toUserId);
+    const sender = employees.find(e => e.id === fromUserId);
+    const newNotif: Notification = {
+      id: 'NOTIF_HO_' + Date.now(),
+      title: 'ต้องการอนุมัติส่งมอบงาน 👉',
+      message: `${sender?.name} ได้ทำการส่งมอบสเตจงานเพื่อให้คุณดูแลต่อเพื่อยืนยันโปรโตคอล`,
+      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16),
+      read: false,
+      type: 'warning'
+    };
+    saveNotifications([newNotif, ...notifications]);
+
+    handleLogAudit('INITIATE_HANDOVER', `เริ่มขั้นตอนส่งมอบงานย่อยจาก ${sender?.name} ไปยัง ${receiver?.name}`);
+  };
+
+  const handleApproveHandover = (
+    taskId: string,
+    handoverId: string,
+    approved: boolean,
+    notes: string
+  ) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    const updatedHandovers = task.handovers.map(h => {
+      if (h.id === handoverId) {
+        return {
+          ...h,
+          status: approved ? 'Approved' : 'Rejected',
+          approvedBy: 'สมศักดิ์ รักดี', // Simulated manager or supervisor
+          approvalNotes: notes
+        } as HandoverRecord;
+      }
+      return h;
+    });
+
+    const activeH = task.handovers.find(h => h.id === handoverId);
+
+    // If approved, update the task's primary owner to the receiver
+    const updated = tasks.map(t => {
+      if (t.id === taskId) {
+        return {
+          ...t,
+          primaryOwnerId: approved && activeH ? activeH.toUserId : t.primaryOwnerId,
+          handovers: updatedHandovers,
+          // Set to Completed if final stage is approved, or boost progress
+          progress: approved ? Math.max(t.progress, 85) : t.progress
+        };
+      }
+      return t;
+    });
+
+    saveTasks(updated);
+
+    // Create response notification for sender
+    const sender = employees.find(e => e.id === activeH?.fromUserId);
+    const newNotif: Notification = {
+      id: 'NOTIF_HO_RESP_' + Date.now(),
+      title: approved ? 'ส่งต่อสเตจงานอนุมัติแล้ว! ✅' : 'คำขอส่งต่องานถูกปฏิเสธ ❌',
+      message: approved
+        ? `ยินดีด้วย! การส่งมอบสเตจของคุณให้กับฝ่ายรับมอบช่วงผ่านการตรวจทานแล้ว`
+        : `ข้อเสนอส่งมอบสเตจงานของคุณได้รับการตีกลับ: "${notes}"`,
+      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16),
+      read: false,
+      type: approved ? 'success' : 'warning'
+    };
+    saveNotifications([newNotif, ...notifications]);
+
+    handleLogAudit('RESOLVE_HANDOVER', `${approved ? 'อนุมัติ' : 'ปฏิเสธ'} สเตจส่งมอบงานของ ${sender?.name}: "${notes}"`);
+  };
+
+  // 3. Document Operations
+  const handleAddDocument = (newDoc: LinkedDoc) => {
+    const updated = [newDoc, ...documents];
+    saveDocs(updated);
+    handleLogAudit('ADD_DOCUMENT', `เพิ่มและเชื่อมต่อเอกสาร Google Drive: "${newDoc.name}"`);
+  };
+
+  const handleUpdateDocumentVersion = (docId: string, updatedBy: string, note: string) => {
+    const updated = documents.map(doc => {
+      if (doc.id === docId) {
+        const nextVersion = doc.version + 1;
+        const newHist = {
+          version: nextVersion,
+          updatedBy,
+          date: new Date().toISOString().replace('T', ' ').substring(0, 16),
+          note
+        };
+        return {
+          ...doc,
+          version: nextVersion,
+          lastUpdated: newHist.date,
+          updatedBy,
+          history: [newHist, ...doc.history]
+        };
+      }
+      return doc;
+    });
+    saveDocs(updated);
+    handleLogAudit('UPGRADE_DOC_VERSION', `อัปเดตไฟล์เป็นเวอร์ชันใหม่เรียบร้อยโดย ${updatedBy}`);
+  };
+
+  // 4. Leave Operations
+  const handleAddLeaveRequest = (newLeave: Omit<LeaveRequest, 'id'>) => {
+    const request: LeaveRequest = {
+      ...newLeave,
+      id: 'LEAVE_' + Date.now()
+    };
+    const updated = [request, ...leaveRequests];
+    saveLeaves(updated);
+    handleLogAudit('APPLY_LEAVE', `พนักงาน ${newLeave.employeeName} ยื่นคำขอลาพักผ่อนแบบ ${newLeave.type}`);
+  };
+
+  const handleApproveLeave = (leaveId: string, approved: boolean) => {
+    const leave = leaveRequests.find(l => l.id === leaveId);
+    if (!leave) return;
+
+    const updated = leaveRequests.map(l => {
+      if (l.id === leaveId) {
+        return {
+          ...l,
+          status: approved ? 'Approved' : 'Rejected'
+        } as LeaveRequest;
+      }
+      return l;
+    });
+
+    saveLeaves(updated);
+
+    // Notify employee of approval
+    const newNotif: Notification = {
+      id: 'NOTIF_LEAVE_' + Date.now(),
+      title: approved ? 'คำขออนุมัติลาผ่านแล้ว 🏖️' : 'คำขอลาถูกปฏิเสธ ❌',
+      message: `ใบเสนอขอลาประเภท ${leave.type} ได้รับการพิจารณาเป็นที่เรียบร้อย`,
+      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16),
+      read: false,
+      type: approved ? 'success' : 'warning'
+    };
+    saveNotifications([newNotif, ...notifications]);
+
+    handleLogAudit('RESOLVE_LEAVE', `${approved ? 'อนุมัติ' : 'ปฏิเสธ'} ใบลาของพนักงาน: ${leave.employeeName}`);
+  };
+
+  // 5. Credential Safe Operations
+  const handleAddCredential = (newItem: CredentialItem) => {
+    saveCredentials([newItem, ...credentials]);
+  };
+
+  const handleUpdateCredential = (id: string, updates: Partial<CredentialItem>) => {
+    saveCredentials(credentials.map(c => (c.id === id ? { ...c, ...updates } : c)));
+  };
+
+  const handleDeleteCredential = (id: string) => {
+    saveCredentials(credentials.filter(c => c.id !== id));
+  };
+
+  // Unread Count
+  const unreadCount = notifications.filter(n => !n.read).length;
+
+  const handleMarkAllNotificationsRead = () => {
+    const updated = notifications.map(n => ({ ...n, read: true }));
+    saveNotifications(updated);
+  };
+
+  const openAddTaskModal = () => {
+    setSelectedTaskToEdit(null);
+    setIsTaskModalOpen(true);
+  };
+
+  const openEditTaskModal = (task: Task) => {
+    setSelectedTaskToEdit(task);
+    setIsTaskModalOpen(true);
+  };
+
+  const closeTaskModal = () => {
+    setIsTaskModalOpen(false);
+    setSelectedTaskToEdit(null);
+  };
+
+  const value: AppDataContextValue = {
+    currentUser,
+    isRestoringSession,
+    handleLogin,
+    handleLogout,
+    employees,
+    tasks,
+    documents,
+    credentials,
+    leaveRequests,
+    notifications,
+    auditLogs,
+    unreadCount,
+    isTaskModalOpen,
+    selectedTaskToEdit,
+    openAddTaskModal,
+    openEditTaskModal,
+    closeTaskModal,
+    handleSaveTask,
+    handleDeleteTask,
+    handleInitiateHandover,
+    handleApproveHandover,
+    handleAddDocument,
+    handleUpdateDocumentVersion,
+    saveDocuments: saveDocs,
+    handleAddLeaveRequest,
+    handleApproveLeave,
+    handleAddCredential,
+    handleUpdateCredential,
+    handleDeleteCredential,
+    handleLogAudit,
+    handleMarkAllNotificationsRead
+  };
+
+  return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;
+}
