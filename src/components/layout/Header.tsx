@@ -1,5 +1,5 @@
 import { Bell, LogOut, ChevronDown, Menu, X } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAppData } from '../../context/AppDataContext';
 import logo from '../../../images/pp.png';
 import profileImage from '../../../images/profile.png';
@@ -17,6 +17,17 @@ export default function Header({ isMobileMenuOpen, onToggleMobileMenu }: HeaderP
   const { currentUser, notifications, unreadCount, handleLogout, handleMarkAllNotificationsRead } = useAppData();
   const [showNotificationPane, setShowNotificationPane] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+
+  // Caps the role line's width to the name's rendered width, so a long role truncates
+  // instead of making the user block wider than the name above it.
+  const nameRef = useRef<HTMLParagraphElement>(null);
+  const [roleMaxWidth, setRoleMaxWidth] = useState<number>();
+
+  useEffect(() => {
+    if (nameRef.current) {
+      setRoleMaxWidth(nameRef.current.offsetWidth);
+    }
+  }, [currentUser?.name]);
 
   if (!currentUser) return null;
 
@@ -75,11 +86,16 @@ export default function Header({ isMobileMenuOpen, onToggleMobileMenu }: HeaderP
           <img
             src={profileImage}
             alt={currentUser.name}
-            className="w-14 h-14 rounded-full object-cover ring-2 ring-[#FF6537]"
+            className="w-14 h-14 rounded-full object-cover"
           />
           <div className="hidden sm:block text-sm text-left">
-            <p className="font-bold text-[#FFFFFF] text-base">{currentUser.name}</p>
-            <p className="text-sm text-[#A0A0A0]">{currentUser.role}</p>
+            <p ref={nameRef} className="font-bold text-[#FFFFFF] text-base whitespace-nowrap">{currentUser.name}</p>
+            <p
+              className="text-sm text-[#A0A0A0] truncate"
+              style={roleMaxWidth ? { maxWidth: roleMaxWidth } : undefined}
+            >
+              {currentUser.role}
+            </p>
           </div>
           <ChevronDown size={22} className="text-white/80 hidden sm:block" />
         </button>

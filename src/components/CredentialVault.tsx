@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useId, KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { AnimatePresence, motion } from 'motion/react';
 import { CredentialItem, AuditLog, Department } from '../types';
 import {
   Eye,
@@ -662,14 +663,38 @@ export default function CredentialVault({
           {/* Result count */}
           <p className="text-base text-[#6F6F6F]">ทั้งหมด {filteredCredentials.length} รายการ</p>
 
-          {/* Create / edit credential modal */}
-          {showAddForm && createPortal(
-            <div className="fixed inset-0 z-50 flex items-center justify-center">
-              <div
-                className="absolute inset-0 bg-black/15 backdrop-blur-sm"
-                onClick={resetCredentialForm}
-              />
-              <div className="relative bg-white rounded-3xl shadow-xl w-full max-w-lg mx-4 p-10 max-h-[90vh] overflow-y-auto">
+          {/* Create / edit credential modal — morphs out of the "+ สร้างรหัสผ่านใหม่" button via a shared layoutId.
+              createPortal is always called so AnimatePresence's direct child stays a real element (a Portal
+              object isn't a valid element and gets silently dropped by AnimatePresence otherwise); the
+              showAddForm condition lives inside it instead. */}
+          {createPortal(
+            <AnimatePresence>
+              {showAddForm && (
+              <motion.div
+                key="create-credential-modal"
+                className="fixed inset-0 z-50 flex items-center justify-center"
+              >
+                <motion.div
+                  className="absolute inset-0 bg-black/15 backdrop-blur-sm"
+                  onClick={resetCredentialForm}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                />
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 24, mass: 0.9 }}
+                  className="relative bg-white rounded-3xl shadow-xl w-full max-w-lg mx-4 p-10 max-h-[90vh] overflow-y-auto"
+                >
+                  {/* Content fades in slightly after the box, so text doesn't smear mid-scale */}
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1, transition: { delay: 0.12, duration: 0.2 } }}
+                    exit={{ opacity: 0, transition: { duration: 0.1 } }}
+                  >
                 <button
                   onClick={resetCredentialForm}
                   className="absolute right-6 top-6 text-slate-400 hover:text-slate-600 cursor-pointer"
@@ -829,8 +854,11 @@ export default function CredentialVault({
                     </button>
                   </div>
                 </form>
-              </div>
-            </div>,
+                  </motion.div>
+                </motion.div>
+              </motion.div>
+              )}
+            </AnimatePresence>,
             document.body
           )}
 

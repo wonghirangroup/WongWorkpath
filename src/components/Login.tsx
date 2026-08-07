@@ -402,7 +402,7 @@ export default function Login({ employees, onLogin }: LoginProps) {
             }`}
             id="btn-login-submit"
           >
-            ล็อกอิน
+            เข้าสู่ระบบ
           </button>
         </form>
         )}
