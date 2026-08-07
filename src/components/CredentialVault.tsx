@@ -10,7 +10,9 @@ import {
   Check,
   StickyNote,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
+  MoreHorizontal,
   X
 } from 'lucide-react';
 import searchIcon from '../../images/icon/Search pass.png';
@@ -216,36 +218,103 @@ function Dropdown<T extends string>({ value, options, onChange, placeholder }: D
         }`}
       >
         <span className={selectedLabel ? '' : 'text-slate-400'}>{selectedLabel || placeholder}</span>
-        <ChevronDown size={16} className={`text-[#FF6537] transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown
+          size={16}
+          className={`text-[#FF6537] transition-transform duration-150 ease-out ${isOpen ? 'rotate-180' : ''}`}
+        />
       </button>
 
-      {isOpen && (
-        <div id={listboxId} role="listbox" className="absolute z-10 mt-0.5 w-full bg-white rounded-t-none rounded-b-2xl shadow-xl overflow-hidden">
-          {options.map((option, index) => (
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            id={listboxId}
+            role="listbox"
+            initial={{ opacity: 0, scaleY: 0.9, y: -4 }}
+            animate={{ opacity: 1, scaleY: 1, y: 0 }}
+            exit={{ opacity: 0, scaleY: 0.9, y: -4 }}
+            transition={{ duration: 0.18, ease: 'easeOut' }}
+            className="absolute z-10 mt-0.5 w-full origin-top bg-white rounded-t-none rounded-b-2xl shadow-xl overflow-hidden"
+          >
+            {options.map((option, index) => (
+              <button
+                key={option.value}
+                type="button"
+                role="option"
+                aria-selected={option.value === value}
+                tabIndex={-1}
+                onClick={() => {
+                  onChange(option.value);
+                  setIsOpen(false);
+                }}
+                onMouseEnter={() => setHighlightedIndex(index)}
+                className={`w-full text-left px-4 py-2.5 text-base cursor-pointer ${
+                  index === highlightedIndex
+                    ? 'bg-[#FF6537] text-white font-semibold'
+                    : option.value === value
+                      ? 'bg-[#FFF1EC] text-slate-900'
+                      : 'text-slate-800 hover:bg-[#FEFAF9]'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// Per-card "..." menu that drops down to reveal the edit/delete actions, replacing the old
+// hover-to-reveal icon pair so the actions are reachable with a single click on touch devices too.
+function CredentialCardMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setIsOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setIsOpen((prev) => !prev)}
+        className="p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer"
+        title="ตัวเลือกเพิ่มเติม"
+      >
+        <MoreHorizontal size={20} className="text-slate-500" />
+      </button>
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.15 }}
+            className="absolute right-0 top-full mt-1 w-36 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-20"
+          >
             <button
-              key={option.value}
-              type="button"
-              role="option"
-              aria-selected={option.value === value}
-              tabIndex={-1}
-              onClick={() => {
-                onChange(option.value);
-                setIsOpen(false);
-              }}
-              onMouseEnter={() => setHighlightedIndex(index)}
-              className={`w-full text-left px-4 py-2.5 text-base cursor-pointer ${
-                index === highlightedIndex
-                  ? 'bg-[#FF6537] text-white font-semibold'
-                  : option.value === value
-                    ? 'bg-[#FFF1EC] text-slate-900'
-                    : 'text-slate-800 hover:bg-[#FEFAF9]'
-              }`}
+              onClick={() => { setIsOpen(false); onEdit(); }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer"
             >
-              {option.label}
+              <img src={editIcon} alt="" className="w-[18px] h-[18px]" />
+              แก้ไข
             </button>
-          ))}
-        </div>
-      )}
+            <button
+              onClick={() => { setIsOpen(false); onDelete(); }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer"
+            >
+              <img src={deleteIcon} alt="" className="w-[18px] h-[18px]" />
+              ลบ
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -661,7 +730,7 @@ export default function CredentialVault({
           </div>
 
           {/* Result count */}
-          <p className="text-base text-[#6F6F6F]">ทั้งหมด {filteredCredentials.length} รายการ</p>
+          <p className="text-lg text-[#6F6F6F]">ทั้งหมด {filteredCredentials.length} รายการ</p>
 
           {/* Create / edit credential modal — morphs out of the "+ สร้างรหัสผ่านใหม่" button via a shared layoutId.
               createPortal is always called so AnimatePresence's direct child stays a real element (a Portal
@@ -878,7 +947,7 @@ export default function CredentialVault({
                 const currentAvatarSrc = avatarCandidates[currentCandidateIndex];
 
                 return (
-                  <div key={item.id} className="group bg-white shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] p-5 rounded-2xl space-y-4 transition-all duration-200 hover:-translate-y-1 hover:shadow-lg">
+                  <div key={item.id} className="bg-white shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] p-5 rounded-2xl space-y-4 transition-all duration-200 hover:-translate-y-1 hover:shadow-lg">
                     <div className="flex justify-between items-start">
                       <div className="flex items-center gap-3">
                         {currentAvatarSrc ? (
@@ -931,22 +1000,10 @@ export default function CredentialVault({
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          className="p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer"
-                          title={`แก้ไข ${item.label}`}
-                          onClick={() => handleStartEdit(item)}
-                        >
-                          <img src={editIcon} alt={`แก้ไข ${item.label}`} className="w-[20px] h-[20px]" />
-                        </button>
-                        <button
-                          className="p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer"
-                          title={`ลบ ${item.label}`}
-                          onClick={() => handleDeleteItem(item.id, item.label)}
-                        >
-                          <img src={deleteIcon} alt={`ลบ ${item.label}`} className="w-[20px] h-[20px]" />
-                        </button>
-                      </div>
+                      <CredentialCardMenu
+                        onEdit={() => handleStartEdit(item)}
+                        onDelete={() => handleDeleteItem(item.id, item.label)}
+                      />
                     </div>
 
                     {/* Data contents */}
@@ -1051,15 +1108,21 @@ export default function CredentialVault({
           {/* Pagination */}
           {filteredCredentials.length > 0 && (
             <div className="flex justify-center items-center gap-2 pt-5">
-              <span className="font-light text-[20px] text-slate-700 mr-1">หน้า</span>
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="w-10 h-10 rounded-xl bg-white shadow-md flex items-center justify-center text-[#FF6537] hover:bg-orange-50 disabled:text-slate-300 disabled:hover:bg-white disabled:cursor-not-allowed cursor-pointer transition-colors"
+              >
+                <ChevronLeft size={18} />
+              </button>
               {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
                 <button
                   key={pageNum}
                   onClick={() => setCurrentPage(pageNum)}
-                  className={`w-9 h-9 rounded-lg text-sm font-semibold cursor-pointer ${
+                  className={`w-10 h-10 rounded-xl text-sm font-bold cursor-pointer transition-colors ${
                     pageNum === currentPage
-                      ? 'bg-[#FF6537] text-white'
-                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                      ? 'bg-[#FF6537] text-white shadow-md'
+                      : 'bg-white text-slate-700 shadow-md hover:bg-slate-50'
                   }`}
                 >
                   {pageNum}
@@ -1068,23 +1131,34 @@ export default function CredentialVault({
               <button
                 onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                 disabled={currentPage === totalPages}
-                className="w-9 h-9 rounded-lg bg-white border border-slate-200 text-slate-600 flex items-center justify-center hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                className="w-10 h-10 rounded-xl bg-white shadow-md flex items-center justify-center text-[#FF6537] hover:bg-orange-50 disabled:text-slate-300 disabled:hover:bg-white disabled:cursor-not-allowed cursor-pointer transition-colors"
               >
-                <ChevronRight size={16} />
+                <ChevronRight size={18} />
               </button>
             </div>
           )}
 
         </div>
 
-      {/* Delete confirmation modal */}
-      {deleteTarget && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div
-            className="absolute inset-0 bg-black/15 backdrop-blur-sm"
-            onClick={() => { setDeleteTarget(null); setDeleteConfirmInput(''); }}
-          />
-          <div className="relative bg-white rounded-3xl shadow-xl w-full max-w-lg mx-4 p-8 text-center">
+      {/* Delete confirmation modal — same fade + scale-in as the create/edit modal */}
+      {createPortal(
+        <AnimatePresence>
+          {deleteTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <motion.div
+              className="absolute inset-0 bg-black/15 backdrop-blur-sm"
+              onClick={() => { setDeleteTarget(null); setDeleteConfirmInput(''); }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 24, mass: 0.9 }}
+              className="relative bg-white rounded-3xl shadow-xl w-full max-w-lg mx-4 p-8 text-center">
             <button
               onClick={() => { setDeleteTarget(null); setDeleteConfirmInput(''); }}
               className="absolute right-6 top-6 text-slate-400 hover:text-slate-600 cursor-pointer"
@@ -1130,8 +1204,10 @@ export default function CredentialVault({
                 ยกเลิก
               </button>
             </div>
+            </motion.div>
           </div>
-        </div>,
+          )}
+        </AnimatePresence>,
         document.body
       )}
 

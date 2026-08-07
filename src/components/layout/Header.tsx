@@ -1,5 +1,5 @@
 import { Bell, LogOut, ChevronDown, Menu, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useAppData } from '../../context/AppDataContext';
 import logo from '../../../images/pp.png';
 import profileImage from '../../../images/profile.png';
@@ -7,6 +7,8 @@ import profileImage from '../../../images/profile.png';
 function getThaiDateString() {
   return new Intl.DateTimeFormat('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date());
 }
+
+const ROLE_MAX_CHARS = 13;
 
 interface HeaderProps {
   isMobileMenuOpen: boolean;
@@ -18,18 +20,13 @@ export default function Header({ isMobileMenuOpen, onToggleMobileMenu }: HeaderP
   const [showNotificationPane, setShowNotificationPane] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
 
-  // Caps the role line's width to the name's rendered width, so a long role truncates
-  // instead of making the user block wider than the name above it.
-  const nameRef = useRef<HTMLParagraphElement>(null);
-  const [roleMaxWidth, setRoleMaxWidth] = useState<number>();
-
-  useEffect(() => {
-    if (nameRef.current) {
-      setRoleMaxWidth(nameRef.current.offsetWidth);
-    }
-  }, [currentUser?.name]);
-
   if (!currentUser) return null;
+
+  const firstName = currentUser.name.split(' ')[0];
+  const displayName = `คุณ${firstName}`;
+  const displayRole = currentUser.role.length > ROLE_MAX_CHARS
+    ? `${currentUser.role.slice(0, ROLE_MAX_CHARS)}...`
+    : currentUser.role;
 
   return (
     <header className="bg-[#272220] text-white h-[93px] px-8 flex items-center justify-between shrink-0 sticky top-0 z-40 shadow-sm">
@@ -89,13 +86,8 @@ export default function Header({ isMobileMenuOpen, onToggleMobileMenu }: HeaderP
             className="w-14 h-14 rounded-full object-cover"
           />
           <div className="hidden sm:block text-sm text-left">
-            <p ref={nameRef} className="font-bold text-[#FFFFFF] text-base whitespace-nowrap">{currentUser.name}</p>
-            <p
-              className="text-sm text-[#A0A0A0] truncate"
-              style={roleMaxWidth ? { maxWidth: roleMaxWidth } : undefined}
-            >
-              {currentUser.role}
-            </p>
+            <p className="font-bold text-[#FFFFFF] text-base whitespace-nowrap">{displayName}</p>
+            <p className="text-sm text-[#A0A0A0] whitespace-nowrap">{displayRole}</p>
           </div>
           <ChevronDown size={22} className="text-white/80 hidden sm:block" />
         </button>
