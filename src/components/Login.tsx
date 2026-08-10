@@ -17,6 +17,8 @@ const STAR_CLIP = 'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+const REMEMBER_USERNAME_KEY = 'unityspace_remembered_username';
+
 const PHONE_FORMATS: Record<CountryId, { pattern: RegExp; placeholder: string; maxLength: number; groups: number[] }> = {
   TH: { pattern: /^0[0-9]{9}$/, placeholder: '08X-XXX-XXXX', maxLength: 10, groups: [3, 3, 4] },
   US: { pattern: /^[2-9][0-9]{9}$/, placeholder: '2XX-XXX-XXXX', maxLength: 10, groups: [3, 3, 4] },
@@ -135,8 +137,9 @@ interface LoginProps {
 export default function Login({ employees, onLogin }: LoginProps) {
   const [view, setView] = useState<'login' | 'forgot' | 'otp' | 'reset' | 'loading'>('login');
   const [pendingEmployee, setPendingEmployee] = useState<Employee | null>(null);
-  const [username, setUsername] = useState('somsak.r@company.com');
+  const [username, setUsername] = useState(() => localStorage.getItem(REMEMBER_USERNAME_KEY) || 'somsak.r@company.com');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(() => !!localStorage.getItem(REMEMBER_USERNAME_KEY));
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [shakeError, setShakeError] = useState(false);
@@ -191,6 +194,12 @@ export default function Login({ employees, onLogin }: LoginProps) {
     if (!matchedEmployee) {
       rejectLogin('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
       return;
+    }
+
+    if (rememberMe) {
+      localStorage.setItem(REMEMBER_USERNAME_KEY, username.trim());
+    } else {
+      localStorage.removeItem(REMEMBER_USERNAME_KEY);
     }
 
     setError('');
@@ -377,7 +386,17 @@ export default function Login({ employees, onLogin }: LoginProps) {
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
-            <div className="text-right">
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-1.5 text-[12px] text-slate-500 cursor-pointer select-none" htmlFor="remember-me">
+                <input
+                  id="remember-me"
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded border-slate-300 text-[#FF6537] focus:outline-none focus:ring-1 focus:ring-[#FF6537] cursor-pointer"
+                />
+                จดจำรหัสผ่าน
+              </label>
               <button
                 type="button"
                 onClick={() => setView('forgot')}

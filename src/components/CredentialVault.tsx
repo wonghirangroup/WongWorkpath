@@ -674,7 +674,7 @@ export default function CredentialVault({
           {/* Page header */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 -mt-5">
             <div>
-              <h1 className="text-[40px] font-medium text-[#FF6537]">คลังรหัสผ่าน</h1>
+              <h1 className="text-[40px] font-medium text-[#272220]">คลังรหัสผ่าน</h1>
               <p className="text-xl font-light text-[#6F6F6F] -mt-2">จัดการและจัดเก็บรหัสผ่านสำหรับใช้งานในองค์กร</p>
             </div>
 

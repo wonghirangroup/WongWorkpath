@@ -2,7 +2,7 @@ import { Bell, LogOut, ChevronDown, Menu, X } from 'lucide-react';
 import { useState } from 'react';
 import { useAppData } from '../../context/AppDataContext';
 import logo from '../../../images/pp.png';
-import profileImage from '../../../images/profile.png';
+import profileImage from '../../../images/profiles.png';
 
 function getThaiDateString() {
   return new Intl.DateTimeFormat('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date());
@@ -22,11 +22,11 @@ export default function Header({ isMobileMenuOpen, onToggleMobileMenu }: HeaderP
 
   if (!currentUser) return null;
 
-  const firstName = currentUser.name.split(' ')[0];
-  const displayName = `คุณ${firstName}`;
-  const displayRole = currentUser.role.length > ROLE_MAX_CHARS
-    ? `${currentUser.role.slice(0, ROLE_MAX_CHARS)}...`
-    : currentUser.role;
+  const displayName = 'คุณกิตตินันท์';
+  const displayRoleFull = 'UI/UX Designer';
+  const displayRole = displayRoleFull.length > ROLE_MAX_CHARS
+    ? `${displayRoleFull.slice(0, ROLE_MAX_CHARS)}...`
+    : displayRoleFull;
 
   return (
     <header className="bg-[#272220] text-white h-[93px] px-8 flex items-center justify-between shrink-0 sticky top-0 z-40 shadow-sm">
@@ -96,8 +96,8 @@ export default function Header({ isMobileMenuOpen, onToggleMobileMenu }: HeaderP
         {showUserMenu && (
           <div className="absolute right-0 top-16 bg-white border border-slate-200 w-56 rounded-2xl shadow-xl py-2 text-sm text-slate-800 z-50 animate-in fade-in slide-in-from-top-3 duration-200">
             <div className="px-4 py-2.5 border-b border-slate-100 mb-1">
-              <p className="font-semibold text-slate-800 truncate">{currentUser.name}</p>
-              <p className="text-xs text-slate-400 truncate">{currentUser.role}</p>
+              <p className="font-semibold text-slate-800 truncate">{displayName}</p>
+              <p className="text-xs text-slate-400 truncate">{displayRoleFull}</p>
             </div>
             <button
               onClick={() => { setShowUserMenu(false); handleLogout(); }}
