@@ -131,7 +131,7 @@ export default function Header({ isMobileMenuOpen, onToggleMobileMenu }: HeaderP
                   <div
                     key={notif.id}
                     className={`p-2.5 rounded-lg border transition-all ${
-                      notif.read ? 'bg-slate-50 border-slate-100 text-slate-500' : 'bg-indigo-50/40 border-indigo-100 font-medium'
+                      notif.read ? 'bg-slate-50 border-slate-100 text-slate-600' : 'bg-indigo-50/40 border-indigo-100 font-medium'
                     }`}
                   >
                     <div className="flex justify-between">

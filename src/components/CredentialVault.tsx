@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import searchIcon from '../../images/icon/Search pass.png';
 import linkIcon from '../../images/icon menu/linkki.png';
+import linkActiveIcon from '../../images/icon menu/linkki active.png';
 import editIcon from '../../images/icon menu/edit.png';
 import deleteIcon from '../../images/icon menu/delete.png';
 
@@ -67,7 +68,8 @@ const KNOWN_SERVICES: { name: string; url: string }[] = [
   { name: 'Grow Store', url: 'https://pos.smartjigsaw.net/'}
 ];
 
-const SCOPE_FILTER_OPTIONS: { value: CredentialItem['scope']; label: string }[] = [
+const SCOPE_FILTER_OPTIONS: { value: CredentialItem['scope'] | '__all__'; label: string }[] = [
+  { value: '__all__', label: 'ทั้งหมด' },
   { value: 'ส่วนตัว', label: 'ส่วนตัว' },
   { value: 'ทีม', label: 'ทีม' }
 ];
@@ -346,15 +348,8 @@ export default function CredentialVault({
   // Search & scope filter for the credential list
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const [scopeFilter, setScopeFilter] = useState<CredentialItem['scope']>(() => {
-    const saved = localStorage.getItem('vault_scope_filter');
-    return saved === 'ส่วนตัว' || saved === 'ทีม' ? saved : 'ส่วนตัว';
-  });
+  const [scopeFilter, setScopeFilter] = useState<CredentialItem['scope'] | '__all__'>('__all__');
   const [teamFilter, setTeamFilter] = useState<Department | '__all__'>('__all__');
-
-  useEffect(() => {
-    localStorage.setItem('vault_scope_filter', scopeFilter);
-  }, [scopeFilter]);
 
   // "/" focuses the search box for power users, unless already typing in a field
   useEffect(() => {
@@ -648,7 +643,7 @@ export default function CredentialVault({
 
   const filteredCredentials = credentials.filter((item) => {
     if (pendingDeleteIds.has(item.id)) return false;
-    const matchesScope = item.scope === scopeFilter;
+    const matchesScope = scopeFilter === '__all__' || item.scope === scopeFilter;
     const matchesTeam = scopeFilter !== 'ทีม' || teamFilter === '__all__' || item.team === teamFilter;
     const query = searchQuery.trim().toLowerCase();
     const matchesQuery = !query || item.label.toLowerCase().includes(query) || item.username.toLowerCase().includes(query);
@@ -701,7 +696,7 @@ export default function CredentialVault({
             </div>
 
             <div className="w-[135px] h-[44px]">
-              <Dropdown<CredentialItem['scope']>
+              <Dropdown<CredentialItem['scope'] | '__all__'>
                 value={scopeFilter}
                 onChange={(value) => {
                   setScopeFilter(value);
@@ -981,7 +976,7 @@ export default function CredentialVault({
                               href={item.url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-[14px] font-medium text-[#6F6F6F] leading-tight flex items-center gap-1 hover:text-[#FF6537] hover:underline"
+                              className="group text-[14px] font-medium text-[#6F6F6F] leading-tight flex items-center gap-1 hover:text-[#FF6537] hover:underline"
                             >
                               <span className="truncate max-w-[200px]">
                                 {(() => {
@@ -992,7 +987,8 @@ export default function CredentialVault({
                                   }
                                 })()}
                               </span>
-                              <img src={linkIcon} alt="" className="w-[13px] h-[13px] shrink-0" />
+                              <img src={linkIcon} alt="" className="w-[13px] h-[13px] shrink-0 group-hover:hidden group-active:hidden" />
+                              <img src={linkActiveIcon} alt="" className="w-[13px] h-[13px] shrink-0 hidden group-hover:block group-active:block" />
                             </a>
                           ) : (
                             <span className="text-[14px] font-medium text-[#6F6F6F] leading-tight block">ยังไม่ได้แนบลิงค์</span>
