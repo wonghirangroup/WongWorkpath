@@ -65,7 +65,8 @@ const KNOWN_SERVICES: { name: string; url: string }[] = [
   { name: 'Mailchimp', url: 'https://mailchimp.com' },
   { name: 'HubSpot', url: 'https://www.hubspot.com' },
   { name: 'Salesforce', url: 'https://www.salesforce.com' },
-  { name: 'Grow Store', url: 'https://pos.smartjigsaw.net/'}
+  { name: 'Grow Store', url: 'https://pos.smartjigsaw.net/'},
+  { name: 'Netflix', url: 'https://www.netflix.com/th/'}
 ];
 
 const SCOPE_FILTER_OPTIONS: { value: CredentialItem['scope'] | '__all__'; label: string }[] = [
@@ -121,22 +122,11 @@ function getUniqueLabel(desiredLabel: string, existingLabels: string[]): string 
   return `${trimmed}${suffix}`;
 }
 
-// Ordered fallback chain: manual logo override -> the site's own favicon.ico -> Google's favicon cache
+// Only a manually-set logo is used — no automatic favicon.ico / Google favicon-cache lookups.
+// Those used to fire on every render for every credential with a URL, silently telling Google
+// and the credential's own origin server which services this vault holds secrets for.
 function getAvatarCandidates(item: CredentialItem): string[] {
-  const candidates: string[] = [];
-  if (item.logoUrl) candidates.push(item.logoUrl);
-
-  if (item.url) {
-    try {
-      const { origin, hostname } = new URL(item.url);
-      candidates.push(`${origin}/favicon.ico`);
-      candidates.push(`https://www.google.com/s2/favicons?domain=${hostname}&sz=64`);
-    } catch {
-      // invalid URL, no site-derived candidates
-    }
-  }
-
-  return candidates;
+  return item.logoUrl ? [item.logoUrl] : [];
 }
 
 // Formats "2026-06-22 11:15" as the Thai short date "22/6/2569" (Buddhist Era year)
@@ -151,12 +141,21 @@ interface DropdownProps<T extends string> {
   options: { value: T; label: string }[];
   onChange: (value: T) => void;
   placeholder?: string;
+  // 'compact' matches the page-level search/filter row; 'cozy' matches the h-[44px] text inputs
+  // inside the create/edit modal — the two contexts sit next to differently-sized siblings.
+  size?: 'compact' | 'cozy';
 }
 
 // Reusable button + floating list dropdown (rounded card, subtle tinted highlight on the selected row)
 // Full keyboard support (Arrow Up/Down, Enter, Escape) + ARIA combobox/listbox roles, matching the
 // service-name autocomplete's interaction quality so every dropdown on the page behaves the same way.
-function Dropdown<T extends string>({ value, options, onChange, placeholder }: DropdownProps<T>) {
+function Dropdown<T extends string>({ value, options, onChange, placeholder, size = 'compact' }: DropdownProps<T>) {
+  const trigger = size === 'cozy'
+    ? { height: 'h-[44px]', text: 'text-base', padding: 'pl-4 pr-4' }
+    : { height: 'h-9', text: 'text-[13px]', padding: 'pl-3.5 pr-3.5' };
+  const optionStyle = size === 'cozy'
+    ? { padding: 'px-4 py-2.5', text: 'text-base' }
+    : { padding: 'px-3.5 py-2', text: 'text-sm' };
   const [isOpen, setIsOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const ref = useRef<HTMLDivElement>(null);
@@ -215,13 +214,13 @@ function Dropdown<T extends string>({ value, options, onChange, placeholder }: D
         aria-controls={listboxId}
         onClick={() => (isOpen ? setIsOpen(false) : openDropdown())}
         onKeyDown={handleTriggerKeyDown}
-        className={`w-full h-[44px] flex items-center justify-between pl-4 pr-4 bg-white border border-[#BAB7B7] text-base font-normal cursor-pointer focus:outline-none focus:border-[#FF6537] ${
+        className={`w-full ${trigger.height} flex items-center justify-between ${trigger.padding} bg-white border border-[#BAB7B7] ${trigger.text} font-normal cursor-pointer focus:outline-none focus:border-[#FF6537] ${
           isOpen ? 'rounded-t-xl rounded-b-none' : 'rounded-xl'
         }`}
       >
         <span className={selectedLabel ? '' : 'text-slate-400'}>{selectedLabel || placeholder}</span>
         <ChevronDown
-          size={16}
+          size={size === 'cozy' ? 16 : 14}
           className={`text-[#FF6537] transition-transform duration-150 ease-out ${isOpen ? 'rotate-180' : ''}`}
         />
       </button>
@@ -235,7 +234,7 @@ function Dropdown<T extends string>({ value, options, onChange, placeholder }: D
             animate={{ opacity: 1, scaleY: 1, y: 0 }}
             exit={{ opacity: 0, scaleY: 0.9, y: -4 }}
             transition={{ duration: 0.18, ease: 'easeOut' }}
-            className="absolute z-10 mt-0.5 w-full origin-top bg-white rounded-t-none rounded-b-2xl shadow-xl overflow-hidden"
+            className="absolute z-10 mt-0.5 w-full max-h-60 origin-top bg-white rounded-t-none rounded-b-2xl shadow-xl overflow-y-auto"
           >
             {options.map((option, index) => (
               <button
@@ -249,7 +248,7 @@ function Dropdown<T extends string>({ value, options, onChange, placeholder }: D
                   setIsOpen(false);
                 }}
                 onMouseEnter={() => setHighlightedIndex(index)}
-                className={`w-full text-left px-4 py-2.5 text-base cursor-pointer ${
+                className={`w-full text-left ${optionStyle.padding} ${optionStyle.text} cursor-pointer ${
                   index === highlightedIndex
                     ? 'bg-[#FF6537] text-white font-semibold'
                     : option.value === value
@@ -412,11 +411,28 @@ export default function CredentialVault({
       .map((entry) => entry.service);
   })();
 
+  // Renames to the next available "Name2" when candidateLabel already matches an existing
+  // credential, and surfaces the rename notice. Shared by the input's onBlur (manual typing)
+  // and selectServiceSuggestion — the latter needs its own call because clicking a suggestion
+  // blurs the input (with the old, pre-selection text) before the click handler updates newLabel,
+  // so onBlur alone would validate a stale value and silently miss the rename.
+  const applyUniqueLabel = (candidateLabel: string) => {
+    const existingLabels = credentials
+      .filter((c) => c.id !== editingId)
+      .map((c) => c.label);
+    const uniqueLabel = getUniqueLabel(candidateLabel, existingLabels);
+    setNewLabel(uniqueLabel);
+    if (uniqueLabel !== candidateLabel.trim()) {
+      setRenameNotice(`ชื่อนี้ถูกใช้แล้ว เปลี่ยนเป็น "${uniqueLabel}" ให้อัตโนมัติ`);
+      setTimeout(() => setRenameNotice(''), 4000);
+    }
+  };
+
   const selectServiceSuggestion = (service: { name: string; url: string }) => {
-    setNewLabel(service.name);
     setNewUrl(service.url);
     setIsServiceSuggestOpen(false);
     setActiveSuggestionIndex(-1);
+    applyUniqueLabel(service.name);
   };
 
   const handleServiceInputKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -627,6 +643,14 @@ export default function CredentialVault({
     return () => document.removeEventListener('keydown', handleEscape);
   }, [showAddForm, deleteTarget]);
 
+  // Lock the page's own scroll while a modal is open, so its scrollbar doesn't show/scroll behind the overlay
+  useEffect(() => {
+    if (!showAddForm && !deleteTarget) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [showAddForm, deleteTarget]);
+
   const isCredentialFormValid = !!(newLabel.trim() && newUsername.trim() && newKeyValue.trim());
 
   const copySecret = (text: string, id: string) => {
@@ -664,68 +688,70 @@ export default function CredentialVault({
     <div className="space-y-6 h-full" id="credential-vault-tab">
 
       <div className="flex flex-col min-h-full" id="vault-workspace">
-          <div className="space-y-5 flex-1">
+          <div className="space-y-4 flex-1">
 
           {/* Page header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 -mt-5">
-            <div>
-              <h1 className="text-[40px] font-medium text-[#272220]">คลังรหัสผ่าน</h1>
-              <p className="text-xl font-light text-[#6F6F6F] -mt-2">จัดการและจัดเก็บรหัสผ่านสำหรับใช้งานในองค์กร</p>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:flex-wrap justify-between gap-3 -mt-5">
+            <div className="min-w-0">
+              <h1 className="text-[24px] sm:text-[28px] font-medium text-[#272220]">คลังรหัสผ่าน</h1>
+              <p className="text-sm font-light text-[#6F6F6F] sm:-mt-1">จัดการและจัดเก็บรหัสผ่านสำหรับใช้งานในองค์กร</p>
             </div>
 
             <button
               onClick={() => (showAddForm ? resetCredentialForm() : setShowAddForm(true))}
-              className="bg-[#FF6537] hover:opacity-90 text-white text-[18px] font-bold w-[200px] h-[50px] rounded-[15px] flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+              className="bg-[#FF6537] hover:opacity-90 text-white text-sm font-bold w-full sm:w-40 h-10 rounded-[15px] flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
             >
-              <Plus size={20} /> สร้างรหัสผ่านใหม่
+              <Plus size={16} /> สร้างรหัสผ่านใหม่
             </button>
           </div>
 
           {/* Search & scope filter */}
-          <div className="flex flex-col sm:flex-row gap-3">
+          <div className="flex flex-col lg:flex-row gap-2">
             <div className="relative flex-1">
-              <img src={searchIcon} alt="" className="absolute left-4 top-1/2 -translate-y-1/2 mt-[1px] w-5 h-5 object-contain" />
+              <img src={searchIcon} alt="" className="absolute left-3 top-1/2 -translate-y-1/2 mt-[1px] w-3.5 h-3.5 object-contain" />
               <input
                 ref={searchInputRef}
                 type="text"
                 value={searchQuery}
                 onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
                 placeholder="ค้นหารหัสผ่าน (กด / เพื่อโฟกัส)"
-                className="w-full h-[44px] pl-12 pr-4 bg-white border border-[#BAB7B7] rounded-xl text-base font-normal focus:outline-none focus:border-[#FF6537]"
+                className="w-full h-9 pl-9 pr-4 bg-white border border-[#BAB7B7] rounded-xl text-[13px] font-normal focus:outline-none focus:border-[#FF6537]"
               />
             </div>
 
-            <div className="w-[135px] h-[44px]">
-              <Dropdown<CredentialItem['scope'] | '__all__'>
-                value={scopeFilter}
-                onChange={(value) => {
-                  setScopeFilter(value);
-                  setTeamFilter('__all__');
-                  setCurrentPage(1);
-                }}
-                options={SCOPE_FILTER_OPTIONS}
-              />
-            </div>
-
-            {scopeFilter === 'ทีม' && (
-              <div className="w-[160px] h-[44px]">
-                <Dropdown<Department | '__all__'>
-                  value={teamFilter}
+            <div className="flex flex-col sm:flex-row gap-2">
+              <div className="w-full sm:w-[110px] h-9">
+                <Dropdown<CredentialItem['scope'] | '__all__'>
+                  value={scopeFilter}
                   onChange={(value) => {
-                    setTeamFilter(value);
+                    setScopeFilter(value);
+                    setTeamFilter('__all__');
                     setCurrentPage(1);
                   }}
-                  options={[
-                    { value: '__all__', label: 'ทุกทีม' },
-                    ...TEAM_OPTIONS.map((team) => ({ value: team, label: team }))
-                  ]}
+                  options={SCOPE_FILTER_OPTIONS}
                 />
               </div>
-            )}
+
+              {scopeFilter === 'ทีม' && (
+                <div className="w-full sm:w-[135px] h-9">
+                  <Dropdown<Department | '__all__'>
+                    value={teamFilter}
+                    onChange={(value) => {
+                      setTeamFilter(value);
+                      setCurrentPage(1);
+                    }}
+                    options={[
+                      { value: '__all__', label: 'ทุกทีม' },
+                      ...TEAM_OPTIONS.map((team) => ({ value: team, label: team }))
+                    ]}
+                  />
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Result count */}
-          <p className="text-lg text-[#6F6F6F]">ทั้งหมด {filteredCredentials.length} รายการ</p>
+          <p className="text-[13px] text-[#6F6F6F]">ทั้งหมด {filteredCredentials.length} รายการ</p>
 
           {/* Create / edit credential modal — morphs out of the "+ สร้างรหัสผ่านใหม่" button via a shared layoutId.
               createPortal is always called so AnimatePresence's direct child stays a real element (a Portal
@@ -751,13 +777,14 @@ export default function CredentialVault({
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.95 }}
                   transition={{ type: 'spring', stiffness: 300, damping: 24, mass: 0.9 }}
-                  className="relative bg-white rounded-3xl shadow-xl w-full max-w-lg mx-4 p-10 max-h-[90vh] overflow-y-auto"
+                  className="relative bg-[#FCFAF8] rounded-3xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-125 mx-4 h-148.5 overflow-hidden flex flex-col"
                 >
                   {/* Content fades in slightly after the box, so text doesn't smear mid-scale */}
                   <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1, transition: { delay: 0.12, duration: 0.2 } }}
                     exit={{ opacity: 0, transition: { duration: 0.1 } }}
+                    className="flex flex-col h-full min-h-0"
                   >
                 <button
                   onClick={resetCredentialForm}
@@ -766,11 +793,15 @@ export default function CredentialVault({
                   <X size={24} />
                 </button>
 
-                <h3 className="text-2xl font-bold text-[#FF6537] text-center mb-6">
-                  {editingId ? 'แก้ไขรหัสผ่าน' : 'สร้างรหัสใหม่'}
-                </h3>
+                <div className="px-6 pt-6 shrink-0">
+                  <h3 className="text-2xl font-bold text-[#FF6537] text-center mb-6">
+                    {editingId ? 'แก้ไขรหัสผ่าน' : 'สร้างรหัสใหม่'}
+                  </h3>
+                </div>
 
-                <form onSubmit={handleCreateCredential} className="space-y-5">
+                {/* Fields scroll independently; the title above and the submit button below stay put */}
+                <form onSubmit={handleCreateCredential} className="flex flex-col flex-1 min-h-0">
+                <div className="flex-1 min-h-0 overflow-y-auto px-6 space-y-3.5">
                   <div className="relative" ref={serviceSuggestRef}>
                     <label className="block text-slate-700 font-semibold mb-1.5">
                       ชื่อบริการ <span className="text-red-500">*</span>
@@ -792,17 +823,7 @@ export default function CredentialVault({
                       }}
                       onFocus={() => setIsServiceSuggestOpen(true)}
                       onKeyDown={handleServiceInputKeyDown}
-                      onBlur={() => {
-                        const existingLabels = credentials
-                          .filter((c) => c.id !== editingId)
-                          .map((c) => c.label);
-                        const uniqueLabel = getUniqueLabel(newLabel, existingLabels);
-                        if (uniqueLabel !== newLabel.trim()) {
-                          setNewLabel(uniqueLabel);
-                          setRenameNotice(`ชื่อนี้ถูกใช้แล้ว เปลี่ยนเป็น "${uniqueLabel}" ให้อัตโนมัติ`);
-                          setTimeout(() => setRenameNotice(''), 4000);
-                        }
-                      }}
+                      onBlur={() => { setIsServiceSuggestOpen(false); applyUniqueLabel(newLabel); }}
                       className="w-full h-[44px] px-3 border border-slate-300 rounded-xl focus:outline-none focus:border-[#FF6537]"
                     />
                     {renameNotice && (
@@ -818,6 +839,7 @@ export default function CredentialVault({
                             role="option"
                             aria-selected={index === activeSuggestionIndex}
                             tabIndex={-1}
+                            onMouseDown={(e) => e.preventDefault()}
                             onClick={() => selectServiceSuggestion(service)}
                             onMouseEnter={() => setActiveSuggestionIndex(index)}
                             className={`w-full text-left px-4 py-2.5 text-sm cursor-pointer ${
@@ -860,6 +882,7 @@ export default function CredentialVault({
                       />
                       <button
                         type="button"
+                        tabIndex={-1}
                         onClick={() => setShowFormPassword((prev) => !prev)}
                         className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
                       >
@@ -873,6 +896,7 @@ export default function CredentialVault({
                     <Dropdown<CredentialItem['scope']>
                       value={newScope}
                       onChange={setNewScope}
+                      size="cozy"
                       options={[
                         { value: 'ส่วนตัว', label: 'ส่วนตัว' },
                         { value: 'ทีม', label: 'ทีม' }
@@ -887,6 +911,7 @@ export default function CredentialVault({
                         value={newTeam || '__unset__'}
                         onChange={(value) => setNewTeam(value === '__unset__' ? '' : value)}
                         placeholder="ไม่ระบุทีม"
+                        size="cozy"
                         options={[
                           { value: '__unset__', label: 'ไม่ระบุทีม' },
                           ...TEAM_OPTIONS.map((team) => ({ value: team, label: team }))
@@ -905,12 +930,13 @@ export default function CredentialVault({
                       className="w-full h-[44px] px-3 border border-slate-300 rounded-xl focus:outline-none focus:border-[#FF6537]"
                     />
                   </div>
+                </div>
 
-                  <div className="pt-3">
+                <div className="shrink-0 px-6 pt-4 pb-6 border-t border-[#EDEEEF]">
                     <button
                       type="submit"
                       disabled={!isCredentialFormValid}
-                      className={`w-full text-white font-semibold py-3.5 rounded-xl transition-colors ${
+                      className={`w-full text-white font-semibold py-2.5 rounded-xl transition-colors ${
                         isCredentialFormValid ? 'bg-[#FF6537] hover:bg-[#e6572c] cursor-pointer' : 'bg-[#F68C6C] cursor-not-allowed'
                       }`}
                     >
@@ -927,7 +953,7 @@ export default function CredentialVault({
           )}
 
           {/* List elements */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
             {filteredCredentials.length === 0 ? (
               <div className="lg:col-span-2 bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-400 text-sm">
                 {credentials.length === 0 ? 'ยังไม่ได้สร้างรหัสผ่าน' : 'ไม่พบรายการที่ตรงกับการค้นหา'}
@@ -942,31 +968,31 @@ export default function CredentialVault({
                 const currentAvatarSrc = avatarCandidates[currentCandidateIndex];
 
                 return (
-                  <div key={item.id} className="bg-white shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] p-5 rounded-2xl space-y-4 transition-all duration-200 hover:-translate-y-1 hover:shadow-lg">
+                  <div key={item.id} className="bg-white shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] p-3.5 rounded-2xl space-y-2.5 transition-all duration-200 hover:-translate-y-1 hover:shadow-lg">
                     <div className="flex justify-between items-start">
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
                         {currentAvatarSrc ? (
                           <img
                             src={currentAvatarSrc}
                             alt=""
-                            className="w-10 h-10 rounded-full object-cover shrink-0 bg-slate-50 border border-slate-100"
+                            className="w-8 h-8 rounded-full object-cover shrink-0 bg-slate-50 border border-slate-100"
                             onError={() =>
                               setAvatarCandidateIndex((prev) => ({ ...prev, [item.id]: (prev[item.id] || 0) + 1 }))
                             }
                           />
                         ) : (
                           <div
-                            className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0"
+                            className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-[11px] shrink-0"
                             style={{ backgroundColor: getAvatarColor(item.label) }}
                           >
                             {item.label.trim().charAt(0).toUpperCase()}
                           </div>
                         )}
                         <div className="space-y-0">
-                          <h4 className="text-[18px] font-bold text-slate-900 leading-tight flex items-center gap-2">
+                          <h4 className="text-[13px] font-bold text-slate-900 leading-tight flex items-center gap-1.5">
                             {item.label}
                             {item.scope === 'ทีม' && item.team && (
-                              <span className="text-[11px] font-semibold text-[#FF6537] bg-[#FFF1EC] px-2 py-0.5 rounded-full leading-none">
+                              <span className="text-[9px] font-semibold text-[#FF6537] bg-[#FFF1EC] px-1.5 py-0.5 rounded-full leading-none">
                                 {item.team}
                               </span>
                             )}
@@ -976,9 +1002,9 @@ export default function CredentialVault({
                               href={item.url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="group text-[14px] font-medium text-[#6F6F6F] leading-tight flex items-center gap-1 hover:text-[#FF6537] hover:underline"
+                              className="group text-[11px] font-medium text-[#6F6F6F] leading-tight flex items-center gap-1 hover:text-[#FF6537] hover:underline"
                             >
-                              <span className="truncate max-w-[200px]">
+                              <span className="truncate max-w-[160px]">
                                 {(() => {
                                   try {
                                     return new URL(item.url).hostname;
@@ -987,11 +1013,11 @@ export default function CredentialVault({
                                   }
                                 })()}
                               </span>
-                              <img src={linkIcon} alt="" className="w-[13px] h-[13px] shrink-0 group-hover:hidden group-active:hidden" />
-                              <img src={linkActiveIcon} alt="" className="w-[13px] h-[13px] shrink-0 hidden group-hover:block group-active:block" />
+                              <img src={linkIcon} alt="" className="w-2.5 h-2.5 shrink-0 group-hover:hidden group-active:hidden" />
+                              <img src={linkActiveIcon} alt="" className="w-2.5 h-2.5 shrink-0 hidden group-hover:block group-active:block" />
                             </a>
                           ) : (
-                            <span className="text-[14px] font-medium text-[#6F6F6F] leading-tight block">ยังไม่ได้แนบลิงค์</span>
+                            <span className="text-[11px] font-medium text-[#6F6F6F] leading-tight block">ยังไม่ได้แนบลิงค์</span>
                           )}
                         </div>
                       </div>
@@ -1003,26 +1029,26 @@ export default function CredentialVault({
                     </div>
 
                     {/* Data contents */}
-                    <div className="bg-[#F9F9F9] p-3.5 rounded-xl border border-[#EDEEEF] space-y-1.5 text-xs">
-                      <div className="flex justify-between items-center text-[#272220]">
-                        <span className="text-[14px] font-semibold">ชื่อผู้ใช้/Username:</span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[14px] font-medium text-[#272220] select-all">{item.username}</span>
-                          <span className="w-[28px] h-[28px] shrink-0" aria-hidden="true" />
+                    <div className="bg-[#F9F9F9] p-2.5 rounded-xl border border-[#EDEEEF] space-y-1.5 text-xs">
+                      <div className="flex justify-between items-center gap-2 text-[#272220]">
+                        <span className="text-[12px] font-semibold shrink-0">ชื่อผู้ใช้/Username:</span>
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1 justify-end">
+                          <span className="text-[12px] font-medium text-[#272220] select-all truncate">{item.username}</span>
+                          <span className="w-5 h-5 shrink-0" aria-hidden="true" />
                           <button
                             onClick={() => copySecret(item.username, usernameCopyId)}
                             className="p-1 rounded shrink-0 text-[#6F6F6F] hover:bg-slate-100 cursor-pointer"
                             title="คัดลอกชื่อผู้ใช้"
                           >
-                            {copiedId === usernameCopyId ? <Check size={20} /> : <Copy size={20} />}
+                            {copiedId === usernameCopyId ? <Check size={14} /> : <Copy size={14} />}
                           </button>
                         </div>
                       </div>
 
                       <div className="flex justify-between items-center gap-2 pt-1.5 border-t border-[#EDEEEF]">
-                        <span className="text-[14px] font-semibold text-[#272220] shrink-0">รหัสผ่าน/Password:</span>
-                        <div className="flex items-center gap-2 min-w-0 flex-1 justify-end">
-                          <span className={`text-[14px] font-medium truncate ${isSecretVisible ? 'text-[#272220] select-all' : 'text-[#272220]'}`}>
+                        <span className="text-[12px] font-semibold text-[#272220] shrink-0">รหัสผ่าน/Password:</span>
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1 justify-end">
+                          <span className={`text-[12px] font-medium truncate ${isSecretVisible ? 'text-[#272220] select-all' : 'text-[#272220]'}`}>
                             {isSecretVisible ? decryptedText : '**********'}
                           </span>
 
@@ -1030,7 +1056,7 @@ export default function CredentialVault({
                             className="p-1 rounded text-[#6F6F6F] hover:bg-slate-100 shrink-0 cursor-pointer"
                             title={isSecretVisible ? 'ปิดการแสดงผลรหัสผ่าน' : 'เปิดดูรหัสผ่านพนักงาน'}
                           >
-                            {isSecretVisible ? <Eye size={20} /> : <EyeOff size={20} />}
+                            {isSecretVisible ? <Eye size={14} /> : <EyeOff size={14} />}
                           </button>
 
                           <button
@@ -1038,20 +1064,20 @@ export default function CredentialVault({
                             className="p-1 rounded shrink-0 text-[#6F6F6F] hover:bg-slate-100 cursor-pointer"
                             title="คัดลอกรหัสผ่านลับ"
                           >
-                            {copiedId === item.id ? <Check size={20} /> : <Copy size={20} />}
+                            {copiedId === item.id ? <Check size={14} /> : <Copy size={14} />}
                           </button>
                         </div>
                       </div>
 
                       {item.notes && (
-                        <p className="text-[14px] font-medium text-slate-400 italic pt-1.5 border-t border-slate-100/70 flex items-start gap-1.5">
-                          <StickyNote size={13} className="shrink-0 mt-0.5" />
+                        <p className="text-[12px] font-medium text-slate-400 italic pt-1.5 border-t border-slate-100/70 flex items-start gap-1.5">
+                          <StickyNote size={11} className="shrink-0 mt-0.5" />
                           <span>{item.notes}</span>
                         </p>
                       )}
                     </div>
 
-                    <div className="flex justify-between items-center text-[14px] font-normal text-[#6F6F6F] pt-3 border-t border-[#EDEEEF]">
+                    <div className="flex justify-between items-center text-[11px] font-normal text-[#6F6F6F] pt-2 border-t border-[#EDEEEF]">
                       <span>สร้างโดย: {item.createdBy === currentUserName ? 'คุณ' : item.createdBy}</span>
                       <span>สร้างเมื่อ: {formatThaiShortDate(item.createdAt)}</span>
                     </div>
@@ -1107,7 +1133,7 @@ export default function CredentialVault({
               <button
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
-                className="w-10 h-10 rounded-xl bg-white shadow-md flex items-center justify-center text-[#FF6537] hover:bg-orange-50 disabled:text-slate-300 disabled:hover:bg-white disabled:cursor-not-allowed cursor-pointer transition-colors"
+                className="w-11 h-11 lg:w-9 lg:h-9 rounded-xl bg-white shadow-md flex items-center justify-center text-[#FF6537] hover:bg-orange-50 disabled:text-slate-300 disabled:hover:bg-white disabled:cursor-not-allowed cursor-pointer transition-colors"
               >
                 <ChevronLeft size={18} />
               </button>
@@ -1115,7 +1141,7 @@ export default function CredentialVault({
                 <button
                   key={pageNum}
                   onClick={() => setCurrentPage(pageNum)}
-                  className={`w-10 h-10 rounded-xl text-sm font-bold cursor-pointer transition-colors ${
+                  className={`w-11 h-11 lg:w-9 lg:h-9 rounded-xl text-sm font-bold cursor-pointer transition-colors ${
                     pageNum === currentPage
                       ? 'bg-[#FF6537] text-white shadow-md'
                       : 'bg-white text-slate-700 shadow-md hover:bg-slate-50'
@@ -1127,7 +1153,7 @@ export default function CredentialVault({
               <button
                 onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                 disabled={currentPage === totalPages}
-                className="w-10 h-10 rounded-xl bg-white shadow-md flex items-center justify-center text-[#FF6537] hover:bg-orange-50 disabled:text-slate-300 disabled:hover:bg-white disabled:cursor-not-allowed cursor-pointer transition-colors"
+                className="w-11 h-11 lg:w-9 lg:h-9 rounded-xl bg-white shadow-md flex items-center justify-center text-[#FF6537] hover:bg-orange-50 disabled:text-slate-300 disabled:hover:bg-white disabled:cursor-not-allowed cursor-pointer transition-colors"
               >
                 <ChevronRight size={18} />
               </button>

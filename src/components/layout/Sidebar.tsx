@@ -1,8 +1,11 @@
+import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Link, useLocation } from 'react-router-dom';
 import { LogOut, X } from 'lucide-react';
 import { useAppData } from '../../context/AppDataContext';
 
+import minimizeNotActive from '../../../images/icon menu/minimize not active 1-2.png';
+import minimizeHold from '../../../images/icon menu/minimize hold 2-2.png';
 import m1Active from '../../../images/icon menu/m1 active.png';
 import m1Inactive from '../../../images/icon menu/m1 not active.png';
 import m2Active from '../../../images/icon menu/m2 active.png';
@@ -33,18 +36,70 @@ interface SidebarProps {
   onCloseMobileMenu: () => void;
 }
 
+const SIDEBAR_COLLAPSED_KEY = 'unityspace_sidebar_collapsed';
+
 export default function Sidebar({ isMobileMenuOpen, onCloseMobileMenu }: SidebarProps) {
   const { handleLogout } = useAppData();
   const { pathname } = useLocation();
 
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    try {
+      const saved = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
+      if (saved !== null) return saved === 'true';
+    } catch {
+      // localStorage unavailable — fall through to the viewport-based default below
+    }
+    // No saved preference yet (first visit): default to collapsed on laptop-width
+    // viewports (1024–1279px) to leave more room for the page content.
+    if (typeof window !== 'undefined' && window.innerWidth >= 1024 && window.innerWidth < 1280) {
+      return true;
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(isCollapsed));
+    } catch {
+      // localStorage unavailable — collapse state just won't persist across reloads
+    }
+  }, [isCollapsed]);
+
   return (
     <>
       {/* Sidebar Nav (Desktop) */}
-      <aside className="hidden md:flex flex-col w-[270px] bg-[#272220] py-7 px-2.5 shrink-0 justify-between overflow-y-auto">
-        <div className="space-y-2.5">
-          <span className="text-sm font-medium text-[#FFFFFF] uppercase tracking-widest block px-3">
-            แผงควบคุมหลัก
-          </span>
+      <aside
+        className={`hidden lg:flex flex-col ${isCollapsed ? 'w-16' : 'w-58'} bg-[#272220] py-6 px-2 shrink-0 justify-between overflow-y-auto transition-[width] duration-300 ease-in-out`}
+      >
+        <div className="space-y-2">
+          <div className="flex items-center justify-between px-2.5">
+            <span
+              className={`text-[13px] font-medium text-[#FFFFFF] uppercase tracking-widest whitespace-nowrap overflow-hidden transition-all duration-300 ease-in-out ${
+                isCollapsed ? 'max-w-0 opacity-0' : 'max-w-45 opacity-100'
+              }`}
+            >
+              แผงควบคุมหลัก
+            </span>
+            <button
+              onClick={() => setIsCollapsed((prev) => !prev)}
+              className="group relative w-6 h-6 shrink-0 rounded-lg flex items-center justify-center cursor-pointer"
+              title={isCollapsed ? 'ขยายเมนู' : 'ย่อเมนู'}
+              id="btn-sidebar-collapse"
+            >
+              <span className={`relative w-4 h-4 shrink-0 transition-transform duration-300 ease-in-out ${isCollapsed ? 'rotate-180' : ''}`}>
+                <img
+                  src={minimizeNotActive}
+                  alt=""
+                  className="absolute inset-0 w-4 h-4 object-contain transition-opacity duration-150 ease-out opacity-100 group-hover:opacity-0"
+                />
+                <img
+                  src={minimizeHold}
+                  alt=""
+                  className="absolute inset-0 w-4 h-4 object-contain transition-opacity duration-150 ease-out opacity-0 group-hover:opacity-100"
+                />
+              </span>
+            </button>
+          </div>
 
           <nav className="space-y-0.5">
             {NAV_ITEMS.map(({ id, label, iconActive, iconInactive }) => {
@@ -53,35 +108,42 @@ export default function Sidebar({ isMobileMenuOpen, onCloseMobileMenu }: Sidebar
                 <Link
                   key={id}
                   to={`/${id}`}
-                  className={`group relative w-full flex items-center gap-3.5 px-4 py-3.5 rounded-[15px] text-base font-medium transition-colors duration-150 ease-out cursor-pointer ${
+                  className={`group relative w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm font-medium transition-colors duration-150 ease-out cursor-pointer ${
                     isActive ? 'text-white' : 'text-[#6F6F6F] hover:text-white'
                   }`}
                   id={`menu-${id}`}
+                  title={isCollapsed ? label : undefined}
                 >
                   {isActive && (
                     <motion.div
                       layoutId="sidebar-active-pill"
-                      className="absolute inset-0 rounded-[15px] bg-[#FF6537]"
+                      className="absolute inset-0 rounded-xl bg-[#FF6537]"
                       transition={{ type: 'spring', stiffness: 320, damping: 28, mass: 0.8 }}
                     />
                   )}
                   {!isActive && (
-                    <div className="absolute inset-0 rounded-[15px] bg-[rgba(255,91,38,0)] group-hover:bg-[rgba(255,91,38,0.1)] transition-colors duration-150 ease-out" />
+                    <div className="absolute inset-0 rounded-xl bg-[rgba(255,91,38,0)] group-hover:bg-[rgba(255,91,38,0.1)] transition-colors duration-150 ease-out" />
                   )}
 
-                  <span className="relative z-10 w-5 h-5 shrink-0">
+                  <span className="relative z-10 w-4.5 h-4.5 shrink-0">
                     <img
                       src={iconInactive}
                       alt=""
-                      className={`absolute inset-0 w-5 h-5 object-contain transition-opacity duration-150 ease-out ${isActive ? 'opacity-0' : 'opacity-100 group-hover:opacity-0'}`}
+                      className={`absolute inset-0 w-4.5 h-4.5 object-contain transition-opacity duration-150 ease-out ${isActive ? 'opacity-0' : 'opacity-100 group-hover:opacity-0'}`}
                     />
                     <img
                       src={iconActive}
                       alt=""
-                      className={`absolute inset-0 w-5 h-5 object-contain transition-opacity duration-150 ease-out ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                      className={`absolute inset-0 w-4.5 h-4.5 object-contain transition-opacity duration-150 ease-out ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
                     />
                   </span>
-                  <span className="relative z-10">{label}</span>
+                  <span
+                    className={`relative z-10 whitespace-nowrap overflow-hidden transition-all duration-300 ease-in-out ${
+                      isCollapsed ? 'max-w-0 opacity-0' : 'max-w-45 opacity-100'
+                    }`}
+                  >
+                    {label}
+                  </span>
                 </Link>
               );
             })}
@@ -90,17 +152,24 @@ export default function Sidebar({ isMobileMenuOpen, onCloseMobileMenu }: Sidebar
 
         <button
           onClick={handleLogout}
-          className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-[15px] text-base font-medium text-[#FF4E4E] hover:text-white hover:bg-white/5 transition-all cursor-pointer"
+          className="w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm font-medium text-[#FF4E4E] hover:text-white hover:bg-white/5 transition-all cursor-pointer"
           id="btn-logout"
+          title={isCollapsed ? 'ออกจากระบบ' : undefined}
         >
-          <LogOut size={20} />
-          <span>ออกจากระบบ</span>
+          <LogOut size={18} className="shrink-0" />
+          <span
+            className={`whitespace-nowrap overflow-hidden transition-all duration-300 ease-in-out ${
+              isCollapsed ? 'max-w-0 opacity-0' : 'max-w-45 opacity-100'
+            }`}
+          >
+            ออกจากระบบ
+          </span>
         </button>
       </aside>
 
       {/* Mobile Navigation Drawer Overlay */}
       {isMobileMenuOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-30 md:hidden flex" onClick={onCloseMobileMenu}>
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-30 lg:hidden flex" onClick={onCloseMobileMenu}>
           <div className="bg-[#1c1c1e] w-64 h-full p-5 space-y-6 flex flex-col justify-between overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div>
               <div className="flex justify-between items-center pb-3 border-b border-white/10">
@@ -143,7 +212,7 @@ export default function Sidebar({ isMobileMenuOpen, onCloseMobileMenu }: Sidebar
               onClick={() => { handleLogout(); onCloseMobileMenu(); }}
               className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-[#f4622f] hover:text-white hover:bg-white/5 transition-all cursor-pointer"
             >
-              <LogOut size={15} />
+              <LogOut size={15} className="shrink-0" />
               <span>ออกจากระบบ</span>
             </button>
           </div>

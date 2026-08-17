@@ -29,46 +29,46 @@ export default function Header({ isMobileMenuOpen, onToggleMobileMenu }: HeaderP
     : displayRoleFull;
 
   return (
-    <header className="bg-[#272220] text-white h-[93px] px-8 flex items-center justify-between shrink-0 sticky top-0 z-40 shadow-sm">
-      <div className="flex items-center gap-3">
+    <header className="bg-[#272220] text-white h-16 sm:h-20 px-3 sm:px-7 flex items-center justify-between shrink-0 sticky top-0 z-40 shadow-sm">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
         <button
           onClick={onToggleMobileMenu}
-          className="p-1 hover:bg-[#FF6537] rounded-lg md:hidden cursor-pointer"
+          className="p-1 hover:bg-[#FF6537] rounded-lg lg:hidden cursor-pointer shrink-0"
           id="mobile-menu-toggle"
         >
           {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
 
-        <div className="flex items-center gap-3.5">
-          <img src={logo} alt="Wong Workpath" className="w-16 h-16 rounded-xl shrink-0" />
-          <div className="w-px h-15 bg-white/50" />
-          <div>
-            <span className="font-semibold text-2xl tracking-wider block">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <img src={logo} alt="Wong Workpath" className="w-9 h-9 sm:w-14 sm:h-14 rounded-xl shrink-0" />
+          <div className="hidden sm:block w-px h-12 bg-white/50 shrink-0" />
+          <div className="min-w-0">
+            <span className="font-semibold text-base sm:text-xl tracking-wider block truncate">
               <span className="text-[#FF6537]">Wong</span> <span className="text-[#FFFFFF]">Workpath</span>
             </span>
-            <span className="text-sm text-[#FFFFFF] -mt-0 block"> ระบบบริหารจัดการและติดตามสถานะการทำงาน</span>
+            <span className="hidden sm:block text-[13px] text-[#FFFFFF] -mt-0"> ระบบบริหารจัดการและติดตามสถานะการทำงาน</span>
           </div>
         </div>
       </div>
 
       {/* Action icons & Notifications pane */}
-      <div className="flex items-center gap-6 relative">
+      <div className="flex items-center gap-2 sm:gap-5 relative shrink-0">
 
         {/* Current Date in Thai */}
-        <div className="hidden sm:block text-right text-sm">
-          <p className="font-semibold text-white text-lg">{getThaiDateString()}</p>
-          <p className="text-sm text-[#A0A0A0]">เวลาทำงาน 08:00 - 17:00 น.</p>
+        <div className="hidden lg:block text-right text-sm">
+          <p className="font-semibold text-white text-base">{getThaiDateString()}</p>
+          <p className="text-[13px] text-[#A0A0A0]">เวลาทำงาน 08:00 - 17:00 น.</p>
         </div>
 
         {/* Unread count badge */}
         <button
           onClick={() => { setShowNotificationPane(!showNotificationPane); setShowUserMenu(false); }}
-          className="p-2 hover:bg-[#FF6537] rounded-xl relative cursor-pointer"
+          className="p-1.5 hover:bg-[#FF6537] rounded-xl relative cursor-pointer"
           id="btn-bell-toggle"
         >
-          <Bell size={28} className="text-white" />
+          <Bell size={24} className="text-white" />
           {unreadCount > 0 && (
-            <span className="absolute -top-1 -right-1 bg-rose-600 text-xs font-bold text-white w-5 h-5 rounded-full flex items-center justify-center ring-2 ring-[#f4622f]">
+            <span className="absolute -top-1 -right-1 bg-rose-600 text-xs font-bold text-white w-[18px] h-[18px] rounded-full flex items-center justify-center ring-2 ring-[#f4622f]">
               {unreadCount}
             </span>
           )}
@@ -77,19 +77,19 @@ export default function Header({ isMobileMenuOpen, onToggleMobileMenu }: HeaderP
         {/* Current User & Logout */}
         <button
           onClick={() => { setShowUserMenu(!showUserMenu); setShowNotificationPane(false); }}
-          className="flex items-center gap-3 cursor-pointer"
+          className="flex items-center gap-2.5 cursor-pointer"
           id="btn-user-menu"
         >
           <img
             src={profileImage}
             alt={currentUser.name}
-            className="w-14 h-14 rounded-full object-cover"
+            className="w-11 h-11 sm:w-12 sm:h-12 rounded-full object-cover"
           />
           <div className="hidden sm:block text-sm text-left">
-            <p className="font-bold text-[#FFFFFF] text-base whitespace-nowrap">{displayName}</p>
-            <p className="text-sm text-[#A0A0A0] whitespace-nowrap">{displayRole}</p>
+            <p className="font-bold text-[#FFFFFF] text-sm whitespace-nowrap">{displayName}</p>
+            <p className="text-[13px] text-[#A0A0A0] whitespace-nowrap">{displayRole}</p>
           </div>
-          <ChevronDown size={22} className="text-white/80 hidden sm:block" />
+          <ChevronDown size={20} className="text-white/80 hidden sm:block" />
         </button>
 
         {/* User Dropdown Menu */}
