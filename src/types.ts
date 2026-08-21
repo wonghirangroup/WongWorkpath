@@ -51,8 +51,15 @@ export interface HandoverRecord {
 export interface LinkedDoc {
   id: string;
   name: string;
-  type: 'document' | 'spreadsheet' | 'presentation' | 'pdf' | 'link';
-  url: string;
+  kind: 'folder' | 'file' | 'link';
+  // Parent folder's id, or null for items sitting at the Drive root — forms the folder tree.
+  parentId: string | null;
+  url?: string; // kind === 'link'
+  fileDataUrl?: string; // kind === 'file' — base64 data: URL, read via FileReader on upload
+  fileMimeType?: string; // kind === 'file'
+  fileSize?: number; // kind === 'file' — bytes
+  scope: 'ส่วนตัว' | 'ทีม';
+  team?: Department; // scope === 'ทีม'
   version: number;
   lastUpdated: string;
   updatedBy: string;

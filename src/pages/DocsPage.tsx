@@ -3,7 +3,16 @@ import DocVault from '../components/DocVault';
 import { useAppData } from '../context/AppDataContext';
 
 export default function DocsPage() {
-  const { documents, currentUser, handleAddDocument, handleUpdateDocumentVersion } = useAppData();
+  const {
+    documents,
+    currentUser,
+    handleAddDocument,
+    handleEditDocument,
+    handleDeleteDocument,
+    handleMoveDocument,
+    docCurrentFolderId,
+    setDocCurrentFolderId
+  } = useAppData();
   const location = useLocation();
   const docId = (location.state as { docId?: string } | null)?.docId;
 
@@ -12,7 +21,11 @@ export default function DocsPage() {
       documents={documents}
       currentUserName={currentUser?.name || ''}
       onAddDocument={handleAddDocument}
-      onUpdateDocumentVersion={handleUpdateDocumentVersion}
+      onEditDocument={handleEditDocument}
+      onDeleteDocument={handleDeleteDocument}
+      onMoveDocument={handleMoveDocument}
+      currentFolderId={docCurrentFolderId}
+      setCurrentFolderId={setDocCurrentFolderId}
       initialSelectedDocId={docId}
     />
   );

@@ -1,21 +1,30 @@
 import { Bell, LogOut, ChevronDown, Menu, X } from 'lucide-react';
-import { useState } from 'react';
+import { ReactNode, useState } from 'react';
 import { useAppData } from '../../context/AppDataContext';
 import logo from '../../../images/pp.png';
 import profileImage from '../../../images/profiles.png';
 
+// Intl's 'short' weekday for th-TH falls back to the full name (e.g. "พุธ"), not the
+// period-abbreviated form ("พ.") used elsewhere in the app, so it's mapped by hand here.
+const THAI_WEEKDAY_SHORT = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
+
 function getThaiDateString() {
-  return new Intl.DateTimeFormat('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date());
+  const now = new Date();
+  const weekday = THAI_WEEKDAY_SHORT[now.getDay()];
+  const rest = new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }).format(now);
+  return `${weekday} ${rest}`;
 }
 
 const ROLE_MAX_CHARS = 13;
 
 interface HeaderProps {
+  title: ReactNode;
+  subtitle?: ReactNode;
   isMobileMenuOpen: boolean;
   onToggleMobileMenu: () => void;
 }
 
-export default function Header({ isMobileMenuOpen, onToggleMobileMenu }: HeaderProps) {
+export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobileMenu }: HeaderProps) {
   const { currentUser, notifications, unreadCount, handleLogout, handleMarkAllNotificationsRead } = useAppData();
   const [showNotificationPane, setShowNotificationPane] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -29,46 +38,52 @@ export default function Header({ isMobileMenuOpen, onToggleMobileMenu }: HeaderP
     : displayRoleFull;
 
   return (
-    <header className="bg-[#272220] text-white h-16 sm:h-20 px-3 sm:px-7 flex items-center justify-between shrink-0 sticky top-0 z-40 shadow-sm">
+    <header className="bg-white text-[#272220] h-16 sm:h-20 px-4 sm:px-6 lg:px-8 flex items-center lg:items-start lg:pt-7 justify-between shrink-0 sticky top-0 z-40">
       <div className="flex items-center gap-2 sm:gap-3 min-w-0">
         <button
           onClick={onToggleMobileMenu}
-          className="p-1 hover:bg-[#FF6537] rounded-lg lg:hidden cursor-pointer shrink-0"
+          className="p-1 hover:bg-orange-50 rounded-lg lg:hidden cursor-pointer shrink-0"
           id="mobile-menu-toggle"
         >
           {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
 
-        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-          <img src={logo} alt="Wong Workpath" className="w-9 h-9 sm:w-14 sm:h-14 rounded-xl shrink-0" />
-          <div className="hidden sm:block w-px h-12 bg-white/50 shrink-0" />
-          <div className="min-w-0">
-            <span className="font-semibold text-base sm:text-xl tracking-wider block truncate">
-              <span className="text-[#FF6537]">Wong</span> <span className="text-[#FFFFFF]">Workpath</span>
-            </span>
-            <span className="hidden sm:block text-[13px] text-[#FFFFFF] -mt-0"> ระบบบริหารจัดการและติดตามสถานะการทำงาน</span>
-          </div>
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 lg:hidden">
+          <img src={logo} alt="Wong Workpath" className="w-9 h-9 rounded-xl shrink-0" />
+          <span className="font-semibold text-base tracking-wider block truncate">
+            <span className="text-[#FF6537]">Wong</span> <span className="text-[#272220]">Workpath</span>
+          </span>
+        </div>
+
+        <div className="hidden lg:block min-w-0">
+          <h1 className="text-[32px] font-bold text-[#000000] leading-tight truncate">{title}</h1>
+          {subtitle && (
+            <p className={`text-[20px] font-normal text-[#515151] ${typeof subtitle === 'string' ? 'truncate' : ''}`}>
+              {subtitle}
+            </p>
+          )}
         </div>
       </div>
 
       {/* Action icons & Notifications pane */}
-      <div className="flex items-center gap-2 sm:gap-5 relative shrink-0">
+      <div className="flex items-center gap-2 sm:gap-5 relative shrink-0 ml-auto">
 
         {/* Current Date in Thai */}
         <div className="hidden lg:block text-right text-sm">
-          <p className="font-semibold text-white text-base">{getThaiDateString()}</p>
-          <p className="text-[13px] text-[#A0A0A0]">เวลาทำงาน 08:00 - 17:00 น.</p>
+          <p className="font-normal text-[#272220] text-[16px]">{getThaiDateString()}</p>
         </div>
+
+        <div className="hidden lg:block w-px h-10 bg-[#666666]" />
 
         {/* Unread count badge */}
         <button
           onClick={() => { setShowNotificationPane(!showNotificationPane); setShowUserMenu(false); }}
-          className="p-1.5 hover:bg-[#FF6537] rounded-xl relative cursor-pointer"
+          className="p-1.5 hover:bg-orange-50 rounded-xl relative cursor-pointer"
           id="btn-bell-toggle"
         >
-          <Bell size={24} className="text-white" />
+          <Bell size={24} className="text-[#272220]" />
           {unreadCount > 0 && (
-            <span className="absolute -top-1 -right-1 bg-rose-600 text-xs font-bold text-white w-[18px] h-[18px] rounded-full flex items-center justify-center ring-2 ring-[#f4622f]">
+            <span className="absolute -top-1 -right-1 bg-rose-600 text-xs font-bold text-white w-[18px] h-[18px] rounded-full flex items-center justify-center ring-2 ring-white">
               {unreadCount}
             </span>
           )}
@@ -86,10 +101,10 @@ export default function Header({ isMobileMenuOpen, onToggleMobileMenu }: HeaderP
             className="w-11 h-11 sm:w-12 sm:h-12 rounded-full object-cover"
           />
           <div className="hidden sm:block text-sm text-left">
-            <p className="font-bold text-[#FFFFFF] text-sm whitespace-nowrap">{displayName}</p>
+            <p className="font-bold text-[#272220] text-[18px] whitespace-nowrap">{displayName}</p>
             <p className="text-[13px] text-[#A0A0A0] whitespace-nowrap">{displayRole}</p>
           </div>
-          <ChevronDown size={20} className="text-white/80 hidden sm:block" />
+          <ChevronDown size={20} className="text-slate-500 hidden sm:block" />
         </button>
 
         {/* User Dropdown Menu */}

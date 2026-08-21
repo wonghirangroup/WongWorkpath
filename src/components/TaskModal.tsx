@@ -44,7 +44,6 @@ export default function TaskModal({
   const [showAddDocForm, setShowAddDocForm] = useState(false);
   const [newDocName, setNewDocName] = useState('');
   const [newDocUrl, setNewDocUrl] = useState('');
-  const [newDocType, setNewDocType] = useState<'document' | 'spreadsheet' | 'presentation' | 'pdf' | 'link'>('document');
 
   useEffect(() => {
     if (task) {
@@ -155,8 +154,10 @@ export default function TaskModal({
     const newDoc: LinkedDoc = {
       id: 'DOC_QUICK_' + Date.now(),
       name: newDocName,
-      type: newDocType,
+      kind: 'link',
+      parentId: null,
       url: newDocUrl,
+      scope: 'ส่วนตัว',
       version: 1,
       lastUpdated: new Date().toISOString().replace('T', ' ').substring(0, 16),
       updatedBy: 'ผู้ใช้งานปัจจุบัน',
@@ -452,25 +453,13 @@ export default function TaskModal({
                 {/* Show/Hide Add Quick Doc */}
                 {showAddDocForm && (
                   <div className="p-3 border border-indigo-100 bg-indigo-50/20 rounded-xl mb-2 space-y-2.5 text-xs animate-in slide-in-from-top-2 duration-150">
-                    <div className="grid grid-cols-2 gap-2">
-                      <input 
-                        type="text" 
-                        placeholder="ชื่อเอกสาร เช่น แผน Q3" 
-                        value={newDocName}
-                        onChange={(e) => setNewDocName(e.target.value)}
-                        className="p-1.5 border border-slate-200 rounded bg-white text-xs"
-                      />
-                      <select
-                        value={newDocType}
-                        onChange={(e) => setNewDocType(e.target.value as any)}
-                        className="p-1.5 border border-slate-200 rounded bg-white text-xs"
-                      >
-                        <option value="document">Google Docs</option>
-                        <option value="spreadsheet">Google Sheets</option>
-                        <option value="presentation">Figma / Slides</option>
-                        <option value="link">ลิงก์ภายนอก</option>
-                      </select>
-                    </div>
+                    <input
+                      type="text"
+                      placeholder="ชื่อเอกสาร เช่น แผน Q3"
+                      value={newDocName}
+                      onChange={(e) => setNewDocName(e.target.value)}
+                      className="w-full p-1.5 border border-slate-200 rounded bg-white text-xs"
+                    />
                     <div className="flex gap-2">
                       <input 
                         type="url" 
@@ -491,18 +480,18 @@ export default function TaskModal({
                 )}
 
                 <div className="border border-slate-200 rounded-xl p-3 max-h-[130px] overflow-y-auto space-y-1.5 bg-slate-50/30">
-                  {documents.length === 0 ? (
+                  {documents.filter(doc => doc.kind !== 'folder').length === 0 ? (
                     <p className="text-[11px] text-slate-400 italic">ไม่มีเอกสารในระบบขณะนี้</p>
                   ) : (
-                    documents.map(doc => (
+                    documents.filter(doc => doc.kind !== 'folder').map(doc => (
                       <label key={doc.id} className="flex items-center gap-2 text-xs text-slate-700 hover:text-slate-900 cursor-pointer">
-                        <input 
+                        <input
                           type="checkbox"
                           checked={linkedDocs.includes(doc.id)}
                           onChange={() => toggleLinkedDoc(doc.id)}
                           className="rounded text-indigo-600 focus:ring-indigo-500"
                         />
-                        <span className="font-semibold text-slate-500 uppercase text-[10px]">[{doc.type}]</span>
+                        <span className="font-semibold text-slate-500 uppercase text-[10px]">[{doc.kind === 'file' ? 'ไฟล์' : 'ลิงก์'}]</span>
                         <span className="truncate">{doc.name}</span>
                       </label>
                     ))

@@ -7,7 +7,8 @@ import {
   LeaveRequest,
   Notification,
   AuditLog,
-  HandoverRecord
+  HandoverRecord,
+  Department
 } from '../types';
 import {
   INITIAL_EMPLOYEES,
@@ -17,6 +18,21 @@ import {
   INITIAL_LEAVE_REQUESTS,
   INITIAL_NOTIFICATIONS
 } from '../data/mockData';
+
+// One-time shape migration for documents saved to localStorage before the Drive redesign added
+// `kind`/`parentId` (folders + file uploads) in place of the old `type` enum — without this,
+// anyone with pre-existing `unityspace_docs` data would have every saved doc silently vanish
+// (root-level filtering keys off `parentId === null`, which a missing field never satisfies).
+function normalizeStoredDoc(raw: any): LinkedDoc {
+  if (raw.kind) return { parentId: raw.parentId ?? null, scope: raw.scope ?? 'ส่วนตัว', ...raw };
+  return {
+    ...raw,
+    kind: 'link',
+    parentId: raw.parentId ?? null,
+    url: raw.url ?? '',
+    scope: raw.scope ?? 'ส่วนตัว'
+  };
+}
 
 interface AppDataContextValue {
   // Auth
@@ -48,8 +64,14 @@ interface AppDataContextValue {
   handleInitiateHandover: (taskId: string, fromUserId: string, toUserId: string, stageName: string, notes: string) => void;
   handleApproveHandover: (taskId: string, handoverId: string, approved: boolean, notes: string) => void;
   handleAddDocument: (newDoc: LinkedDoc) => void;
-  handleUpdateDocumentVersion: (docId: string, updatedBy: string, note: string) => void;
+  handleEditDocument: (docId: string, updates: { name: string; url?: string; scope: LinkedDoc['scope']; team?: Department }) => void;
+  handleDeleteDocument: (docId: string) => void;
+  handleMoveDocument: (docId: string, newParentId: string) => void;
   saveDocuments: (newDocs: LinkedDoc[]) => void;
+  // Which Drive folder is currently open — shared with AppLayout so the Header can render it as
+  // a breadcrumb title ("เอกสาร Drive > Grow Store") instead of the page's normal static title.
+  docCurrentFolderId: string | null;
+  setDocCurrentFolderId: (id: string | null) => void;
   handleAddLeaveRequest: (newLeave: Omit<LeaveRequest, 'id'>) => void;
   handleApproveLeave: (leaveId: string, approved: boolean) => void;
   handleAddCredential: (newItem: CredentialItem) => void;
@@ -76,6 +98,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [documents, setDocuments] = useState<LinkedDoc[]>([]);
+  const [docCurrentFolderId, setDocCurrentFolderId] = useState<string | null>(null);
   const [credentials, setCredentials] = useState<CredentialItem[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -107,7 +130,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('unityspace_tasks', JSON.stringify(INITIAL_TASKS));
     }
 
-    if (localDocs) setDocuments(JSON.parse(localDocs));
+    if (localDocs) setDocuments((JSON.parse(localDocs) as any[]).map(normalizeStoredDoc));
     else {
       setDocuments(INITIAL_DOCS);
       localStorage.setItem('unityspace_docs', JSON.stringify(INITIAL_DOCS));
@@ -389,31 +412,57 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const handleAddDocument = (newDoc: LinkedDoc) => {
     const updated = [newDoc, ...documents];
     saveDocs(updated);
-    handleLogAudit('ADD_DOCUMENT', `เพิ่มและเชื่อมต่อเอกสาร Google Drive: "${newDoc.name}"`);
+    const actionLabel = newDoc.kind === 'folder' ? 'สร้างโฟลเดอร์' : newDoc.kind === 'file' ? 'อัปโหลดไฟล์' : 'แนบลิงก์เอกสาร';
+    handleLogAudit('ADD_DOCUMENT', `${actionLabel}ใน Drive: "${newDoc.name}"`);
   };
 
-  const handleUpdateDocumentVersion = (docId: string, updatedBy: string, note: string) => {
-    const updated = documents.map(doc => {
-      if (doc.id === docId) {
-        const nextVersion = doc.version + 1;
-        const newHist = {
-          version: nextVersion,
-          updatedBy,
-          date: new Date().toISOString().replace('T', ' ').substring(0, 16),
-          note
-        };
-        return {
-          ...doc,
-          version: nextVersion,
-          lastUpdated: newHist.date,
-          updatedBy,
-          history: [newHist, ...doc.history]
-        };
+  const handleEditDocument = (docId: string, updates: { name: string; url?: string; scope: LinkedDoc['scope']; team?: Department }) => {
+    const doc = documents.find(d => d.id === docId);
+    saveDocs(documents.map(d => (d.id === docId ? { ...d, ...updates, team: updates.scope === 'ทีม' ? updates.team : undefined } : d)));
+    if (doc) handleLogAudit('EDIT_DOCUMENT', `แก้ไข${doc.kind === 'folder' ? 'โฟลเดอร์' : doc.kind === 'file' ? 'ไฟล์' : 'ลิงก์'}: "${doc.name}"${updates.name !== doc.name ? ` → "${updates.name}"` : ''}`);
+  };
+
+  // Drag-and-drop move: reparents a document into a different folder. Guards against dropping a
+  // folder into itself or into one of its own descendants, which would create a cycle.
+  const handleMoveDocument = (docId: string, newParentId: string) => {
+    const doc = documents.find(d => d.id === docId);
+    if (!doc || docId === newParentId || doc.parentId === newParentId) return;
+
+    if (doc.kind === 'folder') {
+      const descendantIds = new Set<string>();
+      let frontier = [docId];
+      while (frontier.length > 0) {
+        const children = documents.filter(d => d.parentId && frontier.includes(d.parentId)).map(d => d.id);
+        children.forEach(id => descendantIds.add(id));
+        frontier = children;
       }
-      return doc;
-    });
-    saveDocs(updated);
-    handleLogAudit('UPGRADE_DOC_VERSION', `อัปเดตไฟล์เป็นเวอร์ชันใหม่เรียบร้อยโดย ${updatedBy}`);
+      if (descendantIds.has(newParentId)) return;
+    }
+
+    const targetFolder = documents.find(d => d.id === newParentId);
+    saveDocs(documents.map(d => (d.id === docId ? { ...d, parentId: newParentId } : d)));
+    if (targetFolder) {
+      const label = doc.kind === 'folder' ? 'โฟลเดอร์' : doc.kind === 'file' ? 'ไฟล์' : 'ลิงก์';
+      handleLogAudit('MOVE_DOCUMENT', `ย้าย${label} "${doc.name}" ไปยังโฟลเดอร์ "${targetFolder.name}"`);
+    }
+  };
+
+  // Deleting a folder cascades to everything nested inside it (files, links, and sub-folders),
+  // walked breadth-first via parentId — otherwise those items would be silently orphaned.
+  const handleDeleteDocument = (docId: string) => {
+    const doc = documents.find(d => d.id === docId);
+    const idsToDelete = new Set<string>([docId]);
+    let frontier = [docId];
+    while (frontier.length > 0) {
+      const children = documents.filter(d => d.parentId && frontier.includes(d.parentId)).map(d => d.id);
+      children.forEach(id => idsToDelete.add(id));
+      frontier = children;
+    }
+    saveDocs(documents.filter(d => !idsToDelete.has(d.id)));
+    if (doc) {
+      const label = doc.kind === 'folder' ? `โฟลเดอร์ "${doc.name}" และเนื้อหาข้างในทั้งหมด` : `เอกสาร "${doc.name}"`;
+      handleLogAudit('DELETE_DOCUMENT', `ลบ${label}ออกจาก Drive ถาวร`);
+    }
   };
 
   // 4. Leave Operations
@@ -516,8 +565,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     handleInitiateHandover,
     handleApproveHandover,
     handleAddDocument,
-    handleUpdateDocumentVersion,
+    handleEditDocument,
+    handleDeleteDocument,
+    handleMoveDocument,
     saveDocuments: saveDocs,
+    docCurrentFolderId,
+    setDocCurrentFolderId,
     handleAddLeaveRequest,
     handleApproveLeave,
     handleAddCredential,
