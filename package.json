@@ -11,6 +11,7 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "server:dev": "tsx watch server/index.ts",
+    "server:start": "tsx server/index.ts",
     "server:migrate": "tsx server/migrate.ts",
     "server:seed": "tsx server/seed.ts",
     "server:seed-employees": "tsx server/seed-employees.ts",
@@ -30,6 +31,7 @@
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "react-router-dom": "^7.18.1",
+    "tsx": "^4.23.12",
     "vite": "^6.2.3"
   },
   "devDependencies": {
@@ -43,7 +45,6 @@
     "concurrently": "^10.0.5",
     "esbuild": "^0.25.0",
     "tailwindcss": "^4.1.14",
-    "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.3"
   }
