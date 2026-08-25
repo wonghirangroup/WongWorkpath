@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Link, useLocation } from 'react-router-dom';
-import { X } from 'lucide-react';
+import { X, Users } from 'lucide-react';
 import { useAppData } from '../../context/AppDataContext';
 
 import logo from '../../../images/new side bar/Logo.png';
@@ -29,13 +29,16 @@ import passwordInactive from '../../../images/new side bar/password icon not act
 import passwordHold from '../../../images/new side bar/password icon hold.png';
 
 export const NAV_ITEMS = [
-  { id: 'dashboard', label: 'แดชบอร์ด', iconActive: dashboardActive, iconInactive: dashboardInactive, iconHover: undefined as string | undefined },
-  { id: 'tasks', label: 'จัดการงานและโครงงาน', iconActive: projectActive, iconInactive: projectInactive, iconHover: projectHover as string | undefined },
-  { id: 'calendar', label: 'ปฏิทินและตารางเวลา', iconActive: calendarActive, iconInactive: calendarInactive, iconHover: calendarHover as string | undefined },
-  { id: 'gantt', label: 'ตารางภาระงาน', iconActive: employeeActive, iconInactive: employeeInactive, iconHover: employeeHover as string | undefined },
-  { id: 'docs', label: 'เอกสาร Drive', iconActive: fileActive, iconInactive: fileInactive, iconHover: fileHover as string | undefined },
-  { id: 'reports', label: 'การออกรายงาน', iconActive: exportActive, iconInactive: exportInactive, iconHover: exportActive as string | undefined },
-  { id: 'vault', label: 'คลังรหัสผ่าน', iconActive: passwordActive, iconInactive: passwordInactive, iconHover: passwordHold as string | undefined },
+  { id: 'dashboard', label: 'แดชบอร์ด', iconActive: dashboardActive, iconInactive: dashboardInactive, iconHover: undefined as string | undefined, iconComponent: undefined as typeof Users | undefined },
+  { id: 'tasks', label: 'จัดการงานและโครงงาน', iconActive: projectActive, iconInactive: projectInactive, iconHover: projectHover as string | undefined, iconComponent: undefined as typeof Users | undefined },
+  { id: 'calendar', label: 'ปฏิทินและตารางเวลา', iconActive: calendarActive, iconInactive: calendarInactive, iconHover: calendarHover as string | undefined, iconComponent: undefined as typeof Users | undefined },
+  { id: 'gantt', label: 'ตารางภาระงาน', iconActive: employeeActive, iconInactive: employeeInactive, iconHover: employeeHover as string | undefined, iconComponent: undefined as typeof Users | undefined },
+  { id: 'docs', label: 'เอกสาร Drive', iconActive: fileActive, iconInactive: fileInactive, iconHover: fileHover as string | undefined, iconComponent: undefined as typeof Users | undefined },
+  { id: 'reports', label: 'การออกรายงาน', iconActive: exportActive, iconInactive: exportInactive, iconHover: exportActive as string | undefined, iconComponent: undefined as typeof Users | undefined },
+  { id: 'vault', label: 'คลังรหัสผ่าน', iconActive: passwordActive, iconInactive: passwordInactive, iconHover: passwordHold as string | undefined, iconComponent: undefined as typeof Users | undefined },
+  // No dedicated PNG icon set exists for this page yet — falls back to a lucide icon (colored via
+  // the parent Link's text color, same as every other item) until a matching asset is added.
+  { id: 'employees', label: 'จัดการพนักงาน', iconActive: undefined as string | undefined, iconInactive: undefined as string | undefined, iconHover: undefined as string | undefined, iconComponent: Users as typeof Users | undefined },
 ] as const;
 
 interface SidebarProps {
@@ -101,7 +104,7 @@ export default function Sidebar({ isMobileMenuOpen, onCloseMobileMenu }: Sidebar
           <div className="border-t border-[#666666] mx-4" />
 
           <nav className="space-y-0.5 px-2 pt-1.5">
-            {NAV_ITEMS.map(({ id, label, iconActive, iconInactive, iconHover }) => {
+            {NAV_ITEMS.map(({ id, label, iconActive, iconInactive, iconHover, iconComponent: IconComponent }) => {
               const isActive = pathname === `/${id}`;
               const hasHoverIcon = Boolean(iconHover);
               return (
@@ -125,26 +128,32 @@ export default function Sidebar({ isMobileMenuOpen, onCloseMobileMenu }: Sidebar
                     <div className={`absolute rounded-xl bg-[rgba(255,91,38,0)] group-hover:bg-[rgba(255,91,38,0.1)] transition-colors duration-150 ease-out ${isCollapsed ? 'inset-y-0 left-3 right-3' : 'inset-0'}`} />
                   )}
 
-                  <span className="relative z-10 w-5 h-5 shrink-0">
-                    <img
-                      src={iconInactive}
-                      alt=""
-                      className={`absolute inset-0 w-5 h-5 object-contain transition-opacity duration-150 ease-out ${isActive ? 'opacity-0' : 'opacity-100 group-hover:opacity-0'}`}
-                    />
-                    {hasHoverIcon && !isActive && (
-                      <img
-                        src={iconHover}
-                        alt=""
-                        className="absolute inset-0 w-5 h-5 object-contain opacity-0 group-hover:opacity-100 transition-opacity duration-150 ease-out"
-                      />
+                  <span className="relative z-10 w-5 h-5 shrink-0 flex items-center justify-center">
+                    {IconComponent ? (
+                      <IconComponent size={19} strokeWidth={1.75} />
+                    ) : (
+                      <>
+                        <img
+                          src={iconInactive}
+                          alt=""
+                          className={`absolute inset-0 w-5 h-5 object-contain transition-opacity duration-150 ease-out ${isActive ? 'opacity-0' : 'opacity-100 group-hover:opacity-0'}`}
+                        />
+                        {hasHoverIcon && !isActive && (
+                          <img
+                            src={iconHover}
+                            alt=""
+                            className="absolute inset-0 w-5 h-5 object-contain opacity-0 group-hover:opacity-100 transition-opacity duration-150 ease-out"
+                          />
+                        )}
+                        <img
+                          src={iconActive}
+                          alt=""
+                          className={`absolute inset-0 w-5 h-5 object-contain transition-opacity duration-150 ease-out ${
+                            isActive ? 'opacity-100' : hasHoverIcon ? 'opacity-0' : 'opacity-0 group-hover:opacity-100'
+                          }`}
+                        />
+                      </>
                     )}
-                    <img
-                      src={iconActive}
-                      alt=""
-                      className={`absolute inset-0 w-5 h-5 object-contain transition-opacity duration-150 ease-out ${
-                        isActive ? 'opacity-100' : hasHoverIcon ? 'opacity-0' : 'opacity-0 group-hover:opacity-100'
-                      }`}
-                    />
                   </span>
                   <span
                     className={`relative z-10 whitespace-nowrap overflow-hidden transition-all duration-300 ease-in-out ${
@@ -192,7 +201,7 @@ export default function Sidebar({ isMobileMenuOpen, onCloseMobileMenu }: Sidebar
               </div>
 
               <nav className="space-y-1 mt-4">
-                {NAV_ITEMS.map(({ id, label, iconActive, iconInactive }) => {
+                {NAV_ITEMS.map(({ id, label, iconActive, iconInactive, iconComponent: IconComponent }) => {
                   const isActive = pathname === `/${id}`;
                   return (
                     <Link
@@ -203,17 +212,23 @@ export default function Sidebar({ isMobileMenuOpen, onCloseMobileMenu }: Sidebar
                         isActive ? 'bg-[#f4622f] text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'
                       }`}
                     >
-                      <span className="relative w-[15px] h-[15px] shrink-0">
-                        <img
-                          src={iconInactive}
-                          alt=""
-                          className={`absolute inset-0 w-[15px] h-[15px] object-contain transition-opacity ${isActive ? 'opacity-0' : 'opacity-100 group-hover:opacity-0'}`}
-                        />
-                        <img
-                          src={iconActive}
-                          alt=""
-                          className={`absolute inset-0 w-[15px] h-[15px] object-contain transition-opacity ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
-                        />
+                      <span className="relative w-[15px] h-[15px] shrink-0 flex items-center justify-center">
+                        {IconComponent ? (
+                          <IconComponent size={15} strokeWidth={1.75} />
+                        ) : (
+                          <>
+                            <img
+                              src={iconInactive}
+                              alt=""
+                              className={`absolute inset-0 w-[15px] h-[15px] object-contain transition-opacity ${isActive ? 'opacity-0' : 'opacity-100 group-hover:opacity-0'}`}
+                            />
+                            <img
+                              src={iconActive}
+                              alt=""
+                              className={`absolute inset-0 w-[15px] h-[15px] object-contain transition-opacity ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                            />
+                          </>
+                        )}
                       </span>
                       <span>{label}</span>
                     </Link>

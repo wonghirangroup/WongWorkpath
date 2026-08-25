@@ -18,7 +18,7 @@ import {
   INITIAL_LEAVE_REQUESTS,
   INITIAL_NOTIFICATIONS
 } from '../data/mockData';
-import { fetchEmployees, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote } from '../lib/api';
+import { fetchEmployees, createEmployee, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote } from '../lib/api';
 
 // One-time shape migration for documents saved to localStorage before the Drive redesign added
 // `kind`/`parentId` (folders + file uploads) in place of the old `type` enum — without this,
@@ -60,6 +60,7 @@ interface AppDataContextValue {
   closeTaskModal: () => void;
 
   // Mutations
+  handleAddEmployee: (employee: Employee & { password: string }) => Promise<void>;
   handleSaveTask: (taskData: Partial<Task>) => void;
   handleDeleteTask: (id: string) => void;
   handleInitiateHandover: (taskId: string, fromUserId: string, toUserId: string, stageName: string, notes: string) => void;
@@ -276,6 +277,18 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('unityspace_audit_logs', JSON.stringify(updated));
       return updated;
     });
+  };
+
+  // 0. Employee Operations
+  // Creates the employee directory row and its login credentials together via the API — there's
+  // no localStorage-only fallback here (unlike documents/credentials) since a new account is
+  // meaningless without a real, working login. Throws on failure so the caller can show why.
+  const handleAddEmployee = async (employee: Employee & { password: string }) => {
+    const created = await createEmployee(employee);
+    const updated = [...employees, created];
+    setEmployees(updated);
+    localStorage.setItem('unityspace_employees', JSON.stringify(updated));
+    handleLogAudit('ADD_EMPLOYEE', `สร้างบัญชีพนักงานใหม่: "${created.name}" (${created.department})`);
   };
 
   // 1. Task Operations
@@ -613,6 +626,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     openAddTaskModal,
     openEditTaskModal,
     closeTaskModal,
+    handleAddEmployee,
     handleSaveTask,
     handleDeleteTask,
     handleInitiateHandover,

@@ -9,6 +9,7 @@ import CalendarPage from './pages/CalendarPage';
 import DocsPage from './pages/DocsPage';
 import VaultPage from './pages/VaultPage';
 import ReportsPage from './pages/ReportsPage';
+import EmployeesPage from './pages/EmployeesPage';
 
 function ProtectedLayoutRoute() {
   const { currentUser } = useAppData();
@@ -35,6 +36,7 @@ function AppRoutes() {
         <Route path="/docs" element={<DocsPage />} />
         <Route path="/vault" element={<VaultPage />} />
         <Route path="/reports" element={<ReportsPage />} />
+        <Route path="/employees" element={<EmployeesPage />} />
       </Route>
 
       <Route path="/" element={<Navigate to="/dashboard" replace />} />

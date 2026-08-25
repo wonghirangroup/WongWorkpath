@@ -44,6 +44,25 @@ export async function fetchEmployees(): Promise<Employee[]> {
   return res.json();
 }
 
+export async function createEmployee(employee: Employee & { password: string }): Promise<Employee> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/employees`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(employee),
+    });
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(data.message ?? 'สร้างบัญชีพนักงานไม่สำเร็จ', res.status);
+  }
+  return data as Employee;
+}
+
 export async function fetchCredentials(): Promise<CredentialItem[]> {
   const res = await fetch(`${API_BASE_URL}/api/credentials`);
   if (!res.ok) throw new Error(`Failed to fetch credentials: ${res.status}`);
