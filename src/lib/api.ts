@@ -1,0 +1,45 @@
+import { Employee } from '../types';
+
+// Vite only exposes env vars prefixed VITE_ to client code — set in .env,
+// separate from the server-only DB_* vars that server/db.ts reads.
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://localhost:4000';
+
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
+export interface LoginResult {
+  id: number;
+  email: string;
+  employeeId: string | null;
+}
+
+export async function loginRequest(email: string, password: string): Promise<LoginResult> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(data.message ?? 'เข้าสู่ระบบไม่สำเร็จ', res.status);
+  }
+  return data as LoginResult;
+}
+
+export async function fetchEmployees(): Promise<Employee[]> {
+  const res = await fetch(`${API_BASE_URL}/api/employees`);
+  if (!res.ok) throw new Error(`Failed to fetch employees: ${res.status}`);
+  return res.json();
+}

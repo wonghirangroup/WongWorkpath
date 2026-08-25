@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, SyntheticEvent, KeyboardEvent } from 'react';
 import { Eye, EyeOff, AlertCircle, CheckCircle, ChevronLeft, ChevronDown } from 'lucide-react';
 import { Employee } from '../types';
+import { loginRequest, ApiError } from '../lib/api';
 import logo from '../assets/logo.png';
 
 type CountryId = 'TH' | 'US' | 'SG' | 'VN' | 'MY';
@@ -179,7 +180,7 @@ export default function Login({ employees, onLogin }: LoginProps) {
     setTimeout(() => setShakeError(false), 300);
   };
 
-  const handleSubmit = (e: SyntheticEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     if (!isLoginFilled) return;
@@ -189,22 +190,26 @@ export default function Login({ employees, onLogin }: LoginProps) {
       return;
     }
 
-    // Demo-only check: no backend auth exists, this just matches against the mock employee directory by email
-    const matchedEmployee = employees.find(emp => emp.email.toLowerCase() === username.trim().toLowerCase());
-    if (!matchedEmployee) {
-      rejectLogin('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
-      return;
-    }
+    try {
+      const result = await loginRequest(username.trim(), password);
+      const matchedEmployee = employees.find(emp => emp.id === result.employeeId);
+      if (!matchedEmployee) {
+        rejectLogin('บัญชีนี้ยังไม่ได้ผูกกับข้อมูลพนักงานในระบบ');
+        return;
+      }
 
-    if (rememberMe) {
-      localStorage.setItem(REMEMBER_USERNAME_KEY, username.trim());
-    } else {
-      localStorage.removeItem(REMEMBER_USERNAME_KEY);
-    }
+      if (rememberMe) {
+        localStorage.setItem(REMEMBER_USERNAME_KEY, username.trim());
+      } else {
+        localStorage.removeItem(REMEMBER_USERNAME_KEY);
+      }
 
-    setError('');
-    setPendingEmployee(matchedEmployee);
-    setView('loading');
+      setError('');
+      setPendingEmployee(matchedEmployee);
+      setView('loading');
+    } catch (err) {
+      rejectLogin(err instanceof ApiError ? err.message : 'ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง');
+    }
   };
 
   const isPhoneValid = PHONE_FORMATS[countryCode.country].pattern.test(phone.trim());

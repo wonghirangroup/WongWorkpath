@@ -18,6 +18,7 @@ import {
   INITIAL_LEAVE_REQUESTS,
   INITIAL_NOTIFICATIONS
 } from '../data/mockData';
+import { fetchEmployees } from '../lib/api';
 
 // One-time shape migration for documents saved to localStorage before the Drive redesign added
 // `kind`/`parentId` (folders + file uploads) in place of the old `type` enum — without this,
@@ -108,21 +109,43 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [selectedTaskToEdit, setSelectedTaskToEdit] = useState<Task | null>(null);
 
-  // Initialize Data on Mount (with fallback to localStorage)
+  // Employees now live in the real `employee` table (see server/routes/employees.ts) instead of
+  // localStorage-only mock data. Show the cached/mock list immediately so the UI isn't blocked on
+  // the network, then refresh from the API once it answers; if the API is unreachable, the
+  // cached/mock data silently stays as-is.
   useEffect(() => {
+    let cancelled = false;
+
     const localEmployees = localStorage.getItem('unityspace_employees');
+    if (localEmployees) setEmployees(JSON.parse(localEmployees));
+    else {
+      setEmployees(INITIAL_EMPLOYEES);
+      localStorage.setItem('unityspace_employees', JSON.stringify(INITIAL_EMPLOYEES));
+    }
+
+    fetchEmployees()
+      .then((apiEmployees) => {
+        if (cancelled) return;
+        setEmployees(apiEmployees);
+        localStorage.setItem('unityspace_employees', JSON.stringify(apiEmployees));
+      })
+      .catch((err) => {
+        console.warn('Could not load employees from the API, using cached/mock data instead:', err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Initialize remaining domain data on mount (still localStorage/mock-only — no backend yet)
+  useEffect(() => {
     const localTasks = localStorage.getItem('unityspace_tasks');
     const localDocs = localStorage.getItem('unityspace_docs');
     const localCredentials = localStorage.getItem('unityspace_credentials');
     const localLeaves = localStorage.getItem('unityspace_leaves');
     const localNotifications = localStorage.getItem('unityspace_notifications');
     const localLogs = localStorage.getItem('unityspace_audit_logs');
-
-    if (localEmployees) setEmployees(JSON.parse(localEmployees));
-    else {
-      setEmployees(INITIAL_EMPLOYEES);
-      localStorage.setItem('unityspace_employees', JSON.stringify(INITIAL_EMPLOYEES));
-    }
 
     if (localTasks) setTasks(JSON.parse(localTasks));
     else {
