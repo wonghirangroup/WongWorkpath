@@ -15,6 +15,7 @@
     "server:migrate": "tsx server/migrate.ts",
     "server:seed": "tsx server/seed.ts",
     "server:seed-employees": "tsx server/seed-employees.ts",
+    "server:seed-credentials": "tsx server/seed-credentials.ts",
     "server:seed-employee-logins": "tsx server/seed-employee-logins.ts"
   },
   "dependencies": {

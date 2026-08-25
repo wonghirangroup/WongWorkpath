@@ -63,6 +63,15 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     department: 'HR',
     avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150&auto=format&fit=crop&q=80',
     maxWorkload: 3
+  },
+  {
+    id: 'E08',
+    name: 'กิตตินันท์ ทิพย์รักษา',
+    email: 'kittinan7689@company.com',
+    role: 'UX / UI Designer',
+    department: 'Design',
+    avatar: '',
+    maxWorkload: 4
   }
 ];
 

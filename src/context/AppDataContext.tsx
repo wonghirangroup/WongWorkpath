@@ -18,7 +18,7 @@ import {
   INITIAL_LEAVE_REQUESTS,
   INITIAL_NOTIFICATIONS
 } from '../data/mockData';
-import { fetchEmployees } from '../lib/api';
+import { fetchEmployees, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote } from '../lib/api';
 
 // One-time shape migration for documents saved to localStorage before the Drive redesign added
 // `kind`/`parentId` (folders + file uploads) in place of the old `type` enum — without this,
@@ -131,6 +131,26 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       })
       .catch((err) => {
         console.warn('Could not load employees from the API, using cached/mock data instead:', err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Credential Vault items now live in the real `credential` table too (see
+  // server/routes/credentials.ts) — same show-cached-then-refresh pattern as employees above.
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchCredentials()
+      .then((apiCredentials) => {
+        if (cancelled) return;
+        setCredentials(apiCredentials);
+        localStorage.setItem('unityspace_credentials', JSON.stringify(apiCredentials));
+      })
+      .catch((err) => {
+        console.warn('Could not load credentials from the API, using cached/mock data instead:', err);
       });
 
     return () => {
@@ -530,16 +550,26 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   };
 
   // 5. Credential Safe Operations
+  // Local state/localStorage is updated immediately so the UI never blocks on the network;
+  // the API call underneath is best-effort — if it fails (backend down, offline, etc.) the
+  // change still stands locally and just doesn't reach the shared database yet.
   const handleAddCredential = (newItem: CredentialItem) => {
     saveCredentials([newItem, ...credentials]);
+    createCredential(newItem).catch((err) => console.warn('Could not save credential to the API:', err));
   };
 
   const handleUpdateCredential = (id: string, updates: Partial<CredentialItem>) => {
-    saveCredentials(credentials.map(c => (c.id === id ? { ...c, ...updates } : c)));
+    const updated = credentials.map(c => (c.id === id ? { ...c, ...updates } : c));
+    saveCredentials(updated);
+    const updatedItem = updated.find(c => c.id === id);
+    if (updatedItem) {
+      updateCredentialRemote(id, updatedItem).catch((err) => console.warn('Could not update credential in the API:', err));
+    }
   };
 
   const handleDeleteCredential = (id: string) => {
     saveCredentials(credentials.filter(c => c.id !== id));
+    deleteCredentialRemote(id).catch((err) => console.warn('Could not delete credential in the API:', err));
   };
 
   // Unread Count

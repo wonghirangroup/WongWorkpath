@@ -1,4 +1,4 @@
-import { Employee } from '../types';
+import { Employee, CredentialItem } from '../types';
 
 // Vite only exposes env vars prefixed VITE_ to client code — set in .env,
 // separate from the server-only DB_* vars that server/db.ts reads.
@@ -42,4 +42,33 @@ export async function fetchEmployees(): Promise<Employee[]> {
   const res = await fetch(`${API_BASE_URL}/api/employees`);
   if (!res.ok) throw new Error(`Failed to fetch employees: ${res.status}`);
   return res.json();
+}
+
+export async function fetchCredentials(): Promise<CredentialItem[]> {
+  const res = await fetch(`${API_BASE_URL}/api/credentials`);
+  if (!res.ok) throw new Error(`Failed to fetch credentials: ${res.status}`);
+  return res.json();
+}
+
+export async function createCredential(item: CredentialItem): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/api/credentials`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(item),
+  });
+  if (!res.ok) throw new Error(`Failed to create credential: ${res.status}`);
+}
+
+export async function updateCredentialRemote(id: string, item: CredentialItem): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/api/credentials/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(item),
+  });
+  if (!res.ok) throw new Error(`Failed to update credential: ${res.status}`);
+}
+
+export async function deleteCredentialRemote(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/api/credentials/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`Failed to delete credential: ${res.status}`);
 }

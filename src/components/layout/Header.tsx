@@ -31,8 +31,8 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
 
   if (!currentUser) return null;
 
-  const displayName = 'คุณกิตตินันท์';
-  const displayRoleFull = 'UI/UX Designer';
+  const displayName = currentUser.name;
+  const displayRoleFull = currentUser.role;
   const displayRole = displayRoleFull.length > ROLE_MAX_CHARS
     ? `${displayRoleFull.slice(0, ROLE_MAX_CHARS)}...`
     : displayRoleFull;
@@ -96,7 +96,7 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
           id="btn-user-menu"
         >
           <img
-            src={profileImage}
+            src={currentUser.avatar || profileImage}
             alt={currentUser.name}
             className="w-11 h-11 sm:w-12 sm:h-12 rounded-full object-cover"
           />

@@ -17,8 +17,6 @@ import {
   Image as ImageIcon,
   Monitor,
   Archive,
-  Printer,
-  Download,
   ZoomIn,
   ZoomOut,
   ChevronDown,
@@ -444,7 +442,6 @@ export default function DocVault({
   const [previewDocId, setPreviewDocId] = useState<string | null>(initialSelectedDocId || null);
   const previewIframeRef = useRef<HTMLIFrameElement>(null);
   const previewDoc = documents.find(d => d.id === previewDocId);
-  const handlePrintPreview = () => previewIframeRef.current?.contentWindow?.print();
 
   // Image zoom in the preview modal — scales up from the "fit to modal" size (1x); the
   // container switches to scrollable so a zoomed-in image can be panned via scroll/trackpad.
@@ -1505,15 +1502,6 @@ export default function DocVault({
                 <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-100 shrink-0">
                   <h3 className="text-sm font-bold text-slate-800 truncate min-w-0">{previewDoc.name}</h3>
                   <div className="flex items-center gap-1.5 shrink-0">
-                    {previewIsPdf && (
-                      <button
-                        onClick={handlePrintPreview}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer"
-                        title="พิมพ์"
-                      >
-                        <Printer size={16} /> พิมพ์
-                      </button>
-                    )}
                     {previewIsImage && previewDoc.fileDataUrl && (
                       <>
                         <button
@@ -1533,16 +1521,6 @@ export default function DocVault({
                           <ZoomIn size={18} />
                         </button>
                       </>
-                    )}
-                    {previewDoc.fileDataUrl && (
-                      <a
-                        href={previewDoc.fileDataUrl}
-                        download={previewDoc.name}
-                        className="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
-                        title="ดาวน์โหลด"
-                      >
-                        <Download size={18} />
-                      </a>
                     )}
                     <button
                       onClick={() => setPreviewDocId(null)}
