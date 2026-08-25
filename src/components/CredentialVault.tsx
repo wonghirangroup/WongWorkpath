@@ -85,8 +85,6 @@ const SORT_OPTIONS: { value: 'latest' | 'oldest' | 'az'; label: string }[] = [
   { value: 'az', label: 'ชื่อ A-Z' }
 ];
 
-const TEAM_OPTIONS: Department[] = ['IT', 'HR', 'Marketing', 'Sales', 'Design', 'Finance'];
-
 const DEPARTMENT_TAG_COLORS: Record<Department, string> = {
   IT: 'text-blue-700 bg-blue-100',
   HR: 'text-fuchsia-700 bg-fuchsia-100',
@@ -256,6 +254,7 @@ interface CredentialVaultProps {
   credentials: CredentialItem[];
   auditLogs: AuditLog[];
   currentUserName: string;
+  currentUserDepartment?: Department;
   onAddCredential: (item: CredentialItem) => void;
   onUpdateCredential: (id: string, updates: Partial<CredentialItem>) => void;
   onDeleteCredential: (id: string) => void;
@@ -266,6 +265,7 @@ export default function CredentialVault({
   credentials,
   auditLogs,
   currentUserName,
+  currentUserDepartment,
   onAddCredential,
   onUpdateCredential,
   onDeleteCredential,
@@ -280,7 +280,6 @@ export default function CredentialVault({
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [scopeFilter, setScopeFilter] = useState<CredentialItem['scope'] | '__all__'>('__all__');
-  const [teamFilter, setTeamFilter] = useState<Department | '__all__'>('__all__');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [sortBy, setSortBy] = useState<'latest' | 'oldest' | 'az'>('latest');
   const [isResultFilterOpen, setIsResultFilterOpen] = useState(false);
@@ -319,7 +318,6 @@ export default function CredentialVault({
   const [newLabel, setNewLabel] = useState('');
   const [newType, setNewType] = useState<CredentialItem['type']>('Username & Password');
   const [newScope, setNewScope] = useState<CredentialItem['scope']>('ส่วนตัว');
-  const [newTeam, setNewTeam] = useState<Department | ''>('');
   const [newUsername, setNewUsername] = useState('');
   const [newKeyValue, setNewKeyValue] = useState('');
   const [newNotes, setNewNotes] = useState('');
@@ -477,7 +475,6 @@ export default function CredentialVault({
     setNewLabel('');
     setNewType('Username & Password');
     setNewScope('ส่วนตัว');
-    setNewTeam('');
     setNewUsername('');
     setNewKeyValue('');
     setNewNotes('');
@@ -498,7 +495,7 @@ export default function CredentialVault({
         label: newLabel,
         type: newType,
         scope: newScope,
-        team: newScope === 'ทีม' ? (newTeam || undefined) : undefined,
+        team: newScope === 'ทีม' ? currentUserDepartment : undefined,
         username: newUsername,
         password: newType === 'Username & Password' ? newKeyValue : undefined,
         keyValue: newType !== 'Username & Password' ? newKeyValue : undefined,
@@ -515,7 +512,7 @@ export default function CredentialVault({
         label: newLabel,
         type: newType,
         scope: newScope,
-        team: newScope === 'ทีม' ? (newTeam || undefined) : undefined,
+        team: newScope === 'ทีม' ? currentUserDepartment : undefined,
         username: newUsername,
         password: newType === 'Username & Password' ? newKeyValue : undefined,
         keyValue: newType !== 'Username & Password' ? newKeyValue : undefined,
@@ -541,7 +538,6 @@ export default function CredentialVault({
     setNewLabel(item.label);
     setNewType(item.type);
     setNewScope(item.scope);
-    setNewTeam(item.team || '');
     setNewUsername(item.username);
     setNewKeyValue(item.password || item.keyValue || '');
     setNewNotes(item.notes || '');
@@ -646,13 +642,19 @@ export default function CredentialVault({
     copySecret(value, item.id);
   };
 
-  const filteredCredentials = credentials.filter((item) => {
+  // Access control: a personal item is visible only to whoever created it; a team item is
+  // visible only to people in that same department. This runs before any of the search/scope
+  // filters below — it's not just narrowing what's shown, it's what this account can see at all.
+  const visibleCredentials = credentials.filter((item) =>
+    item.scope === 'ทีม' ? item.team === currentUserDepartment : item.createdBy === currentUserName
+  );
+
+  const filteredCredentials = visibleCredentials.filter((item) => {
     if (pendingDeleteIds.has(item.id)) return false;
     const matchesScope = scopeFilter === '__all__' || item.scope === scopeFilter;
-    const matchesTeam = scopeFilter !== 'ทีม' || teamFilter === '__all__' || item.team === teamFilter;
     const query = searchQuery.trim().toLowerCase();
     const matchesQuery = !query || item.label.toLowerCase().includes(query) || item.username.toLowerCase().includes(query);
-    return matchesScope && matchesTeam && matchesQuery;
+    return matchesScope && matchesQuery;
   });
 
   const sortedCredentials = [...filteredCredentials].sort((a, b) => {
@@ -677,7 +679,7 @@ export default function CredentialVault({
       <div className="flex flex-col h-full" id="vault-workspace">
           <div className="flex flex-col gap-4 flex-1 min-h-0">
 
-          {credentials.length - pendingDeleteIds.size === 0 ? (
+          {visibleCredentials.length - pendingDeleteIds.size === 0 ? (
             /* Nothing created yet (or everything just got soft-deleted) — big centered empty state, no search/filter controls */
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <img src={firstCreatePassIcon} alt="" className="w-62.5 h-62.5 object-contain" />
@@ -741,28 +743,11 @@ export default function CredentialVault({
                   value={scopeFilter}
                   onChange={(value) => {
                     setScopeFilter(value);
-                    setTeamFilter('__all__');
                     setCurrentPage(1);
                   }}
                   options={SCOPE_FILTER_OPTIONS}
                 />
               </div>
-
-              {scopeFilter === 'ทีม' && (
-                <div className="w-33.75 h-10">
-                  <Dropdown<Department | '__all__'>
-                    value={teamFilter}
-                    onChange={(value) => {
-                      setTeamFilter(value);
-                      setCurrentPage(1);
-                    }}
-                    options={[
-                      { value: '__all__', label: 'ทุกทีม' },
-                      ...TEAM_OPTIONS.map((team) => ({ value: team, label: team }))
-                    ]}
-                  />
-                </div>
-              )}
 
               <button
                 onClick={() => (showAddForm ? resetCredentialForm() : setShowAddForm(true))}
@@ -980,18 +965,16 @@ export default function CredentialVault({
                   </div>
 
                   {newScope === 'ทีม' && (
-                    <div>
-                      <label className="block text-[#272220] font-bold text-[11px] mb-1">เลือกทีม</label>
-                      <Dropdown<Department | '__unset__'>
-                        value={newTeam || '__unset__'}
-                        onChange={(value) => setNewTeam(value === '__unset__' ? '' : value)}
-                        placeholder="ไม่ระบุทีม"
-                        size="compact"
-                        options={[
-                          { value: '__unset__', label: 'ไม่ระบุทีม' },
-                          ...TEAM_OPTIONS.map((team) => ({ value: team, label: team }))
-                        ]}
-                      />
+                    <div className="flex items-center gap-1.5 text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-2">
+                      <span>ทีม:</span>
+                      {currentUserDepartment ? (
+                        <span className={`font-semibold px-1.5 py-0.5 rounded-full text-[10px] ${DEPARTMENT_TAG_COLORS[currentUserDepartment]}`}>
+                          {currentUserDepartment}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">ไม่ทราบแผนกของบัญชีนี้</span>
+                      )}
+                      <span className="text-slate-400">(เห็นได้เฉพาะแผนกเดียวกัน)</span>
                     </div>
                   )}
 
@@ -1028,7 +1011,7 @@ export default function CredentialVault({
           )}
 
           {/* List elements */}
-          {credentials.length - pendingDeleteIds.size > 0 && (
+          {visibleCredentials.length - pendingDeleteIds.size > 0 && (
           <>
           {viewMode === 'list' ? (
             filteredCredentials.length === 0 ? (
@@ -1157,7 +1140,7 @@ export default function CredentialVault({
           <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-2">
             {filteredCredentials.length === 0 ? (
               <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-400 text-sm lg:col-span-2">
-                {credentials.length === 0 ? 'ยังไม่ได้สร้างรหัสผ่าน' : 'ไม่พบรายการที่ตรงกับการค้นหา'}
+                {visibleCredentials.length === 0 ? 'ยังไม่ได้สร้างรหัสผ่าน' : 'ไม่พบรายการที่ตรงกับการค้นหา'}
               </div>
             ) : (
               paginatedCredentials.map(item => {

@@ -8,6 +8,7 @@ export default function VaultPage() {
       credentials={credentials}
       auditLogs={auditLogs}
       currentUserName={currentUser?.name || ''}
+      currentUserDepartment={currentUser?.department}
       onAddCredential={handleAddCredential}
       onUpdateCredential={handleUpdateCredential}
       onDeleteCredential={handleDeleteCredential}
