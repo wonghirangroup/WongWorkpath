@@ -17,6 +17,14 @@ function ProtectedLayoutRoute() {
   return <AppLayout />;
 }
 
+// Blocks direct URL navigation to admin-only pages for non-admin accounts — the Sidebar already
+// hides the nav link, but that alone wouldn't stop someone typing /employees into the address bar.
+function AdminOnlyRoute({ children }: { children: React.ReactNode }) {
+  const { currentUser } = useAppData();
+  if (!currentUser?.isAdmin) return <Navigate to="/dashboard" replace />;
+  return <>{children}</>;
+}
+
 function AppRoutes() {
   const { isRestoringSession, currentUser } = useAppData();
 
@@ -36,7 +44,7 @@ function AppRoutes() {
         <Route path="/docs" element={<DocsPage />} />
         <Route path="/vault" element={<VaultPage />} />
         <Route path="/reports" element={<ReportsPage />} />
-        <Route path="/employees" element={<EmployeesPage />} />
+        <Route path="/employees" element={<AdminOnlyRoute><EmployeesPage /></AdminOnlyRoute>} />
       </Route>
 
       <Route path="/" element={<Navigate to="/dashboard" replace />} />

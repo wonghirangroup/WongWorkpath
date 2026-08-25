@@ -49,8 +49,11 @@ interface SidebarProps {
 const SIDEBAR_COLLAPSED_KEY = 'unityspace_sidebar_collapsed';
 
 export default function Sidebar({ isMobileMenuOpen, onCloseMobileMenu }: SidebarProps) {
-  const { handleLogout } = useAppData();
+  const { handleLogout, currentUser } = useAppData();
   const { pathname } = useLocation();
+
+  // The Employee Management nav item is admin-only — hidden entirely for everyone else.
+  const visibleNavItems = NAV_ITEMS.filter((item) => item.id !== 'employees' || currentUser?.isAdmin);
 
   const [isCollapsed, setIsCollapsed] = useState(() => {
     try {
@@ -104,7 +107,7 @@ export default function Sidebar({ isMobileMenuOpen, onCloseMobileMenu }: Sidebar
           <div className="border-t border-[#666666] mx-4" />
 
           <nav className="space-y-0.5 px-2 pt-1.5">
-            {NAV_ITEMS.map(({ id, label, iconActive, iconInactive, iconHover, iconComponent: IconComponent }) => {
+            {visibleNavItems.map(({ id, label, iconActive, iconInactive, iconHover, iconComponent: IconComponent }) => {
               const isActive = pathname === `/${id}`;
               const hasHoverIcon = Boolean(iconHover);
               return (
@@ -201,7 +204,7 @@ export default function Sidebar({ isMobileMenuOpen, onCloseMobileMenu }: Sidebar
               </div>
 
               <nav className="space-y-1 mt-4">
-                {NAV_ITEMS.map(({ id, label, iconActive, iconInactive, iconComponent: IconComponent }) => {
+                {visibleNavItems.map(({ id, label, iconActive, iconInactive, iconComponent: IconComponent }) => {
                   const isActive = pathname === `/${id}`;
                   return (
                     <Link

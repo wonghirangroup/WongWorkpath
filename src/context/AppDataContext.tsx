@@ -18,7 +18,7 @@ import {
   INITIAL_LEAVE_REQUESTS,
   INITIAL_NOTIFICATIONS
 } from '../data/mockData';
-import { fetchEmployees, createEmployee, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote } from '../lib/api';
+import { fetchEmployees, createEmployee, updateEmployeeRemote, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote } from '../lib/api';
 
 // One-time shape migration for documents saved to localStorage before the Drive redesign added
 // `kind`/`parentId` (folders + file uploads) in place of the old `type` enum — without this,
@@ -61,6 +61,7 @@ interface AppDataContextValue {
 
   // Mutations
   handleAddEmployee: (employee: Employee & { password: string }) => Promise<void>;
+  handleUpdateEmployee: (id: string, updates: { name: string; role: string; avatar?: string }) => Promise<void>;
   handleSaveTask: (taskData: Partial<Task>) => void;
   handleDeleteTask: (id: string) => void;
   handleInitiateHandover: (taskId: string, fromUserId: string, toUserId: string, stageName: string, notes: string) => void;
@@ -289,6 +290,16 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     setEmployees(updated);
     localStorage.setItem('unityspace_employees', JSON.stringify(updated));
     handleLogAudit('ADD_EMPLOYEE', `สร้างบัญชีพนักงานใหม่: "${created.name}" (${created.department})`);
+  };
+
+  // currentUser re-syncs on its own once `employees` updates below — see the session-restore
+  // effect above, which re-derives currentUser from the employees array on every change.
+  const handleUpdateEmployee = async (id: string, updates: { name: string; role: string; avatar?: string }) => {
+    await updateEmployeeRemote(id, updates);
+    const updated = employees.map(emp => (emp.id === id ? { ...emp, ...updates } : emp));
+    setEmployees(updated);
+    localStorage.setItem('unityspace_employees', JSON.stringify(updated));
+    handleLogAudit('UPDATE_PROFILE', `แก้ไขโปรไฟล์ของ "${updates.name}"`);
   };
 
   // 1. Task Operations
@@ -627,6 +638,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     openEditTaskModal,
     closeTaskModal,
     handleAddEmployee,
+    handleUpdateEmployee,
     handleSaveTask,
     handleDeleteTask,
     handleInitiateHandover,

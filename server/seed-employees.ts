@@ -7,16 +7,17 @@ import { pool } from './db.ts';
 async function seedEmployees() {
   for (const emp of INITIAL_EMPLOYEES) {
     await pool.query(
-      `INSERT INTO employee (id, name, email, role, department, avatar, max_workload)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO employee (id, name, email, role, department, avatar, max_workload, is_admin)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
          name = VALUES(name),
          email = VALUES(email),
          role = VALUES(role),
          department = VALUES(department),
          avatar = VALUES(avatar),
-         max_workload = VALUES(max_workload)`,
-      [emp.id, emp.name, emp.email, emp.role, emp.department, emp.avatar, emp.maxWorkload]
+         max_workload = VALUES(max_workload),
+         is_admin = VALUES(is_admin)`,
+      [emp.id, emp.name, emp.email, emp.role, emp.department, emp.avatar, emp.maxWorkload, emp.isAdmin ? 1 : 0]
     );
   }
 

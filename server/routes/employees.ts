@@ -16,12 +16,13 @@ interface EmployeeRow extends RowDataPacket {
   department: string;
   avatar: string | null;
   max_workload: number;
+  is_admin: number;
 }
 
 employeesRouter.get('/', async (_req, res) => {
   try {
     const [rows] = await pool.query<EmployeeRow[]>(
-      'SELECT id, name, email, role, department, avatar, max_workload FROM employee ORDER BY id'
+      'SELECT id, name, email, role, department, avatar, max_workload, is_admin FROM employee ORDER BY id'
     );
 
     // camelCase to match the Employee type in src/types.ts.
@@ -34,6 +35,7 @@ employeesRouter.get('/', async (_req, res) => {
         department: r.department,
         avatar: r.avatar,
         maxWorkload: r.max_workload,
+        isAdmin: !!r.is_admin,
       }))
     );
   } catch (err) {
@@ -87,9 +89,32 @@ employeesRouter.post('/', async (req, res) => {
       department: e.department,
       avatar: e.avatar || null,
       maxWorkload: Number(e.maxWorkload) || 0,
+      isAdmin: false,
     });
   } catch (err) {
     console.error('POST /api/employees failed:', err);
+    res.status(500).json({ message: 'เกิดข้อผิดพลาดในระบบ กรุณาลองใหม่อีกครั้ง' });
+  }
+});
+
+// Self-service profile edit — deliberately narrow: only name/role/avatar are writable here.
+// Email is excluded (it's the login key, changing it needs to touch the `login` row too) and
+// department/isAdmin are excluded since those are access-control-relevant and shouldn't be
+// something an account can change on itself.
+employeesRouter.put('/:id', async (req, res) => {
+  const e = req.body ?? {};
+  if (!e.name || !e.role) {
+    return res.status(400).json({ message: 'ข้อมูลไม่ครบถ้วน' });
+  }
+
+  try {
+    await pool.query(
+      'UPDATE employee SET name = ?, role = ?, avatar = ? WHERE id = ?',
+      [e.name, e.role, e.avatar || null, req.params.id]
+    );
+    res.json({ id: req.params.id });
+  } catch (err) {
+    console.error('PUT /api/employees/:id failed:', err);
     res.status(500).json({ message: 'เกิดข้อผิดพลาดในระบบ กรุณาลองใหม่อีกครั้ง' });
   }
 });

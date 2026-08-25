@@ -71,7 +71,8 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     role: 'UX / UI Designer',
     department: 'Design',
     avatar: '',
-    maxWorkload: 4
+    maxWorkload: 4,
+    isAdmin: true
   }
 ];
 

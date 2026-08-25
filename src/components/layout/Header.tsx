@@ -1,6 +1,9 @@
-import { Bell, LogOut, ChevronDown, Menu, X } from 'lucide-react';
+import { Bell, LogOut, ChevronDown, Menu, X, Pencil } from 'lucide-react';
 import { ReactNode, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { AnimatePresence, motion } from 'motion/react';
 import { useAppData } from '../../context/AppDataContext';
+import { ApiError } from '../../lib/api';
 import logo from '../../../images/pp.png';
 import profileImage from '../../../images/profiles.png';
 
@@ -25,11 +28,42 @@ interface HeaderProps {
 }
 
 export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobileMenu }: HeaderProps) {
-  const { currentUser, notifications, unreadCount, handleLogout, handleMarkAllNotificationsRead } = useAppData();
+  const { currentUser, notifications, unreadCount, handleLogout, handleMarkAllNotificationsRead, handleUpdateEmployee } = useAppData();
   const [showNotificationPane, setShowNotificationPane] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
 
+  const [showEditProfile, setShowEditProfile] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editRole, setEditRole] = useState('');
+  const [editAvatar, setEditAvatar] = useState('');
+  const [profileFormError, setProfileFormError] = useState('');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+
   if (!currentUser) return null;
+
+  const openEditProfile = () => {
+    setEditName(currentUser.name);
+    setEditRole(currentUser.role);
+    setEditAvatar(currentUser.avatar || '');
+    setProfileFormError('');
+    setShowEditProfile(true);
+    setShowUserMenu(false);
+  };
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editName.trim() || !editRole.trim() || isSavingProfile) return;
+    setProfileFormError('');
+    setIsSavingProfile(true);
+    try {
+      await handleUpdateEmployee(currentUser.id, { name: editName.trim(), role: editRole.trim(), avatar: editAvatar.trim() || undefined });
+      setShowEditProfile(false);
+    } catch (err) {
+      setProfileFormError(err instanceof ApiError ? err.message : 'บันทึกโปรไฟล์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
 
   const displayName = currentUser.name;
   const displayRoleFull = currentUser.role;
@@ -115,6 +149,14 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
               <p className="text-xs text-slate-400 truncate">{displayRoleFull}</p>
             </div>
             <button
+              onClick={openEditProfile}
+              className="w-full flex items-center gap-2 px-4 py-2.5 text-slate-700 font-semibold hover:bg-slate-50 cursor-pointer"
+              id="btn-edit-profile"
+            >
+              <Pencil size={16} />
+              <span>แก้ไขโปรไฟล์</span>
+            </button>
+            <button
               onClick={() => { setShowUserMenu(false); handleLogout(); }}
               className="w-full flex items-center gap-2 px-4 py-2.5 text-[#f4622f] font-semibold hover:bg-orange-50 cursor-pointer"
               id="btn-logout-header"
@@ -171,6 +213,92 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
         )}
 
       </div>
+
+      {/* Edit Profile modal */}
+      {createPortal(
+        <AnimatePresence>
+          {showEditProfile && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <motion.div
+                className="absolute inset-0 bg-black/15 backdrop-blur-sm"
+                onClick={() => setShowEditProfile(false)}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+              />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                transition={{ duration: 0.2 }}
+                className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-5 space-y-4"
+              >
+                <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+                  <h3 className="text-sm font-bold text-slate-800">แก้ไขโปรไฟล์</h3>
+                  <button type="button" onClick={() => setShowEditProfile(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X size={18} /></button>
+                </div>
+
+                <form onSubmit={handleSaveProfile} className="space-y-3 text-xs">
+                  {profileFormError && (
+                    <div className="bg-rose-50 border border-rose-100 text-rose-700 text-xs px-3 py-2 rounded-lg">
+                      {profileFormError}
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-[#272220] font-bold text-[11px] mb-1">ชื่อ-นามสกุล *</label>
+                    <input
+                      type="text"
+                      required
+                      autoFocus
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      className="w-full p-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#FF6537]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[#272220] font-bold text-[11px] mb-1">ตำแหน่ง *</label>
+                    <input
+                      type="text"
+                      required
+                      value={editRole}
+                      onChange={(e) => setEditRole(e.target.value)}
+                      className="w-full p-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#FF6537]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[#272220] font-bold text-[11px] mb-1">ลิงก์รูปโปรไฟล์ <span className="font-normal text-slate-400">(ไม่บังคับ)</span></label>
+                    <input
+                      type="url"
+                      placeholder="https://..."
+                      value={editAvatar}
+                      onChange={(e) => setEditAvatar(e.target.value)}
+                      className="w-full p-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#FF6537]"
+                    />
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-1">
+                    <button type="button" onClick={() => setShowEditProfile(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs font-semibold cursor-pointer hover:bg-slate-50">ยกเลิก</button>
+                    <button
+                      type="submit"
+                      disabled={!editName.trim() || !editRole.trim() || isSavingProfile}
+                      className={`px-5 py-2 rounded-lg text-xs font-bold transition-colors ${
+                        editName.trim() && editRole.trim() && !isSavingProfile ? 'bg-[#FF6537] text-white hover:bg-[#e6572c] cursor-pointer' : 'bg-[#F68C6C] text-white cursor-not-allowed'
+                      }`}
+                    >
+                      {isSavingProfile ? 'กำลังบันทึก...' : 'บันทึก'}
+                    </button>
+                  </div>
+                </form>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
     </header>
   );
 }

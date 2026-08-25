@@ -8,6 +8,7 @@ export interface Employee {
   department: Department;
   avatar: string;
   maxWorkload: number; // Max allowed concurrent tasks
+  isAdmin?: boolean; // Gates access to the Employee Management page
 }
 
 export type Priority = 'Low' | 'Medium' | 'High';
