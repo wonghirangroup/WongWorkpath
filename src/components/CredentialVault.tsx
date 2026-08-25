@@ -360,8 +360,11 @@ export default function CredentialVault({
   // blurs the input (with the old, pre-selection text) before the click handler updates newLabel,
   // so onBlur alone would validate a stale value and silently miss the rename.
   const applyUniqueLabel = (candidateLabel: string) => {
-    const existingLabels = credentials
-      .filter((c) => c.id !== editingId)
+    // Only credentials in the same scope (and, for team scope, visible to this account at all —
+    // i.e. the same department) count as a collision — "Grow Store" (personal) and "Grow Store"
+    // (team) are different things and shouldn't force one of them into "Grow Store2".
+    const existingLabels = visibleCredentials
+      .filter((c) => c.id !== editingId && c.scope === newScope)
       .map((c) => c.label);
     const uniqueLabel = getUniqueLabel(candidateLabel, existingLabels);
     setNewLabel(uniqueLabel);
