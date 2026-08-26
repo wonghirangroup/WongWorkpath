@@ -8,27 +8,27 @@ export const authRouter = Router();
 interface LoginRow extends RowDataPacket {
   id: number;
   employee_id: string | null;
-  email: string;
+  username: string;
   password_hash: string;
   is_active: number;
 }
 
 // Generic message on every failure path so the response never reveals
-// whether the email exists — mirrors the wording the mock Login.tsx already uses.
+// whether the username exists — mirrors the wording the mock Login.tsx already uses.
 const INVALID_CREDENTIALS_MESSAGE = 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง';
 
 authRouter.post('/login', async (req, res) => {
-  const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+  const username = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
   const password = typeof req.body?.password === 'string' ? req.body.password : '';
 
-  if (!email || !password) {
+  if (!username || !password) {
     return res.status(400).json({ message: INVALID_CREDENTIALS_MESSAGE });
   }
 
   try {
     const [rows] = await pool.query<LoginRow[]>(
-      'SELECT id, employee_id, email, password_hash, is_active FROM login WHERE email = ? LIMIT 1',
-      [email]
+      'SELECT id, employee_id, username, password_hash, is_active FROM login WHERE username = ? LIMIT 1',
+      [username]
     );
     const row = rows[0];
 
@@ -45,7 +45,7 @@ authRouter.post('/login', async (req, res) => {
 
     return res.status(200).json({
       id: row.id,
-      email: row.email,
+      username: row.username,
       employeeId: row.employee_id,
     });
   } catch (err) {

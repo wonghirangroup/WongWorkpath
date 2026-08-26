@@ -1,102 +1,12 @@
 import { useState, useEffect, useRef, SyntheticEvent, KeyboardEvent } from 'react';
-import { Eye, EyeOff, AlertCircle, CheckCircle, ChevronLeft, ChevronDown } from 'lucide-react';
+import { Eye, EyeOff, AlertCircle, CheckCircle, ChevronLeft } from 'lucide-react';
 import { Employee } from '../types';
 import { loginRequest, ApiError } from '../lib/api';
 import logo from '../assets/logo.png';
 
-type CountryId = 'TH' | 'US' | 'SG' | 'VN' | 'MY';
-
-const COUNTRY_CODES: { country: CountryId; code: string; label: string }[] = [
-  { country: 'TH', code: '+66', label: 'ไทย' },
-  { country: 'US', code: '+1', label: 'สหรัฐอเมริกา' },
-  { country: 'SG', code: '+65', label: 'สิงคโปร์' },
-  { country: 'VN', code: '+84', label: 'เวียดนาม' },
-  { country: 'MY', code: '+60', label: 'มาเลเซีย' },
-];
-
-const STAR_CLIP = 'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)';
-
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 const REMEMBER_USERNAME_KEY = 'unityspace_remembered_username';
 
-const PHONE_FORMATS: Record<CountryId, { pattern: RegExp; placeholder: string; maxLength: number; groups: number[] }> = {
-  TH: { pattern: /^0[0-9]{9}$/, placeholder: '08X-XXX-XXXX', maxLength: 10, groups: [3, 3, 4] },
-  US: { pattern: /^[2-9][0-9]{9}$/, placeholder: '2XX-XXX-XXXX', maxLength: 10, groups: [3, 3, 4] },
-  SG: { pattern: /^[89][0-9]{7}$/, placeholder: '8XXX-XXXX', maxLength: 8, groups: [4, 4] },
-  VN: { pattern: /^[3-9][0-9]{8}$/, placeholder: '9XX-XXX-XXX', maxLength: 9, groups: [3, 3, 3] },
-  MY: { pattern: /^1[0-9]{8}$/, placeholder: '1X-XXX-XXXX', maxLength: 9, groups: [2, 3, 4] },
-};
-
-function formatPhoneWithDashes(digits: string, groups: number[]) {
-  const parts: string[] = [];
-  let idx = 0;
-  for (const len of groups) {
-    if (idx >= digits.length) break;
-    parts.push(digits.slice(idx, idx + len));
-    idx += len;
-  }
-  return parts.join('-');
-}
-
-function StripedFlag({ colors, canton }: { colors: string[]; canton?: React.ReactNode }) {
-  return (
-    <div className="w-5 h-3.5 rounded-[2px] overflow-hidden shrink-0 relative flex flex-col">
-      {colors.map((c, i) => (
-        <div key={i} className={`flex-1 ${c}`} />
-      ))}
-      {canton}
-    </div>
-  );
-}
-
-function FlagIcon({ country }: { country: CountryId }) {
-  if (country === 'TH') {
-    return <StripedFlag colors={['bg-red-600', 'bg-white', 'bg-blue-800 flex-[2]', 'bg-white', 'bg-red-600']} />;
-  }
-
-  if (country === 'US') {
-    return (
-      <StripedFlag
-        colors={['bg-red-600', 'bg-white', 'bg-red-600', 'bg-white', 'bg-red-600', 'bg-white', 'bg-red-600']}
-        canton={<div className="absolute top-0 left-0 w-[42%] h-[54%] bg-blue-900" />}
-      />
-    );
-  }
-
-  if (country === 'SG') {
-    return (
-      <div className="w-5 h-3.5 rounded-[2px] overflow-hidden shrink-0 flex flex-col">
-        <div className="flex-1 bg-red-600 relative">
-          <div className="absolute left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-white rounded-full" />
-          <div className="absolute left-1.5 top-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-red-600 rounded-full" />
-          <div className="absolute left-3 top-1/2 -translate-y-1/2 w-0.5 h-0.5 bg-white rounded-full" />
-        </div>
-        <div className="flex-1 bg-white" />
-      </div>
-    );
-  }
-
-  if (country === 'VN') {
-    return (
-      <div className="w-5 h-3.5 rounded-[2px] overflow-hidden shrink-0 bg-red-600 flex items-center justify-center">
-        <div className="w-2 h-2 bg-yellow-400" style={{ clipPath: STAR_CLIP }} />
-      </div>
-    );
-  }
-
-  // MY
-  return (
-    <StripedFlag
-      colors={['bg-red-600', 'bg-white', 'bg-red-600', 'bg-white', 'bg-red-600', 'bg-white', 'bg-red-600']}
-      canton={
-        <div className="absolute top-0 left-0 w-[55%] h-[54%] bg-blue-900 flex items-center justify-center">
-          <div className="w-1.5 h-1.5 bg-yellow-300" style={{ clipPath: STAR_CLIP }} />
-        </div>
-      }
-    />
-  );
-}
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function ErrorBanner({ message }: { message: string }) {
   return (
@@ -138,17 +48,15 @@ interface LoginProps {
 export default function Login({ employees, onLogin }: LoginProps) {
   const [view, setView] = useState<'login' | 'forgot' | 'otp' | 'reset' | 'loading'>('login');
   const [pendingEmployee, setPendingEmployee] = useState<Employee | null>(null);
-  const [username, setUsername] = useState(() => localStorage.getItem(REMEMBER_USERNAME_KEY) || 'somsak.r@company.com');
+  const [username, setUsername] = useState(() => localStorage.getItem(REMEMBER_USERNAME_KEY) || 'somsak.r');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(() => !!localStorage.getItem(REMEMBER_USERNAME_KEY));
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [shakeError, setShakeError] = useState(false);
   const [loginSuccess, setLoginSuccess] = useState('');
-  const [phone, setPhone] = useState('');
-  const [phoneError, setPhoneError] = useState('');
-  const [countryCode, setCountryCode] = useState(COUNTRY_CODES[0]);
-  const [isCountryDropdownOpen, setIsCountryDropdownOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotEmailError, setForgotEmailError] = useState('');
   const [otpDigits, setOtpDigits] = useState(['', '', '', '', '', '']);
   const [otpError, setOtpError] = useState('');
   const [resendCooldown, setResendCooldown] = useState(59);
@@ -185,11 +93,6 @@ export default function Login({ employees, onLogin }: LoginProps) {
 
     if (!isLoginFilled) return;
 
-    if (!EMAIL_PATTERN.test(username.trim())) {
-      rejectLogin('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
-      return;
-    }
-
     try {
       const result = await loginRequest(username.trim(), password);
       const matchedEmployee = employees.find(emp => emp.id === result.employeeId);
@@ -212,17 +115,17 @@ export default function Login({ employees, onLogin }: LoginProps) {
     }
   };
 
-  const isPhoneValid = PHONE_FORMATS[countryCode.country].pattern.test(phone.trim());
+  const isForgotEmailValid = EMAIL_PATTERN.test(forgotEmail.trim());
 
   const handleRequestOtp = (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    if (!isPhoneValid) {
-      setPhoneError('กรุณากรอกเบอร์มือถือให้ถูกต้อง');
+    if (!isForgotEmailValid) {
+      setForgotEmailError('กรุณากรอกอีเมลให้ถูกต้อง');
       return;
     }
 
-    setPhoneError('');
+    setForgotEmailError('');
     setOtpDigits(['', '', '', '', '', '']);
     setOtpError('');
     setResendCooldown(59);
@@ -231,8 +134,8 @@ export default function Login({ employees, onLogin }: LoginProps) {
 
   const handleBackToLogin = () => {
     setView('login');
-    setPhone('');
-    setPhoneError('');
+    setForgotEmail('');
+    setForgotEmailError('');
     setNewPassword('');
     setConfirmPassword('');
     setResetError('');
@@ -450,69 +353,30 @@ export default function Login({ employees, onLogin }: LoginProps) {
           <div className="space-y-5">
           <div className="text-center mb-2">
             <h2 className="text-3xl font-extrabold text-[#FF6537]">ลืมรหัสใช่ไหม?</h2>
-            <p className="text-sm text-slate-500 mt-1">กรุณากรอกเบอร์โทรศัพท์ที่ลงทะเบียนไว้ เพื่อรับรหัส OTP</p>
+            <p className="text-sm text-slate-500 mt-1">กรุณากรอกอีเมลที่ลงทะเบียนไว้ เพื่อรับรหัส OTP</p>
           </div>
 
-          {phoneError && <ErrorBanner message={phoneError} />}
+          {forgotEmailError && <ErrorBanner message={forgotEmailError} />}
 
           <div className="space-y-1.5">
-            <label htmlFor="forgot-phone" className="text-sm font-semibold text-slate-700">เบอร์มือถือ</label>
-            <div className="flex gap-2">
-              <div className="relative shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setIsCountryDropdownOpen(!isCountryDropdownOpen)}
-                  className="flex items-center gap-1.5 px-3 py-3 border border-slate-300 rounded-xl text-sm font-medium text-slate-700 cursor-pointer hover:bg-slate-50"
-                  id="btn-country-code"
-                >
-                  <FlagIcon country={countryCode.country} />
-                  {countryCode.code}
-                  <ChevronDown size={14} className={`text-slate-400 transition-transform ${isCountryDropdownOpen ? 'rotate-180' : ''}`} />
-                </button>
-
-                {isCountryDropdownOpen && (
-                  <div className="absolute left-0 top-full mt-1 w-44 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-10" id="country-code-dropdown">
-                    {COUNTRY_CODES.map((c) => (
-                      <button
-                        key={c.code}
-                        type="button"
-                        onClick={() => {
-                          setCountryCode(c);
-                          setIsCountryDropdownOpen(false);
-                          setPhone((prev) => prev.slice(0, PHONE_FORMATS[c.country].maxLength));
-                        }}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer"
-                      >
-                        <FlagIcon country={c.country} />
-                        <span className="flex-1 text-left">{c.label}</span>
-                        <span className="text-slate-400">{c.code}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <input
-                id="forgot-phone"
-                type="tel"
-                inputMode="numeric"
-                value={formatPhoneWithDashes(phone, PHONE_FORMATS[countryCode.country].groups)}
-                onChange={(e) => {
-                  const digitsOnly = e.target.value.replace(/[^0-9]/g, '').slice(0, PHONE_FORMATS[countryCode.country].maxLength);
-                  setPhone(digitsOnly);
-                }}
-                placeholder={PHONE_FORMATS[countryCode.country].placeholder}
-                className="flex-1 min-w-0 text-sm px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:border-[#FF6537]"
-                autoComplete="tel"
-              />
-            </div>
+            <label htmlFor="forgot-email" className="text-sm font-semibold text-slate-700">อีเมล</label>
+            <input
+              id="forgot-email"
+              type="email"
+              value={forgotEmail}
+              onChange={(e) => setForgotEmail(e.target.value)}
+              placeholder="name@company.com"
+              className="w-full text-sm px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:border-[#FF6537]"
+              autoComplete="email"
+            />
           </div>
           </div>
 
           <button
             type="submit"
-            disabled={!isPhoneValid}
+            disabled={!isForgotEmailValid}
             className={`w-full text-white text-base font-semibold py-3.5 rounded-xl transition-colors mt-auto ${
-              isPhoneValid ? 'bg-[#FF6537] hover:opacity-90 cursor-pointer' : 'bg-[#F68C6C] cursor-not-allowed'
+              isForgotEmailValid ? 'bg-[#FF6537] hover:opacity-90 cursor-pointer' : 'bg-[#F68C6C] cursor-not-allowed'
             }`}
             id="btn-request-otp"
           >
@@ -532,7 +396,7 @@ export default function Login({ employees, onLogin }: LoginProps) {
             onClick={handleBackToForgot}
             className="absolute left-8 top-9 text-slate-400 hover:text-slate-600 cursor-pointer"
             id="btn-back-to-forgot"
-            aria-label="กลับไปหน้ากรอกเบอร์มือถือ"
+            aria-label="กลับไปหน้ากรอกอีเมล"
           >
             <ChevronLeft size={22} />
           </button>
@@ -541,7 +405,7 @@ export default function Login({ employees, onLogin }: LoginProps) {
           <div className="text-center mb-2">
             <h2 className="text-3xl font-extrabold text-[#FF6537]">รหัส OTP</h2>
             <p className="text-sm text-slate-500 mt-1">
-              กรุณากรอกรหัส OTP 6 หลักที่ส่งไปที่เบอร์ {formatPhoneWithDashes(phone, PHONE_FORMATS[countryCode.country].groups)}
+              กรุณากรอกรหัส OTP 6 หลักที่ส่งไปที่อีเมล {forgotEmail}
             </p>
           </div>
 
@@ -681,7 +545,7 @@ export default function Login({ employees, onLogin }: LoginProps) {
 
       {view !== 'loading' && (
         <p className="self-start text-center text-xs text-white/60 mt-4 max-w-sm">
-          ใช้อีเมลพนักงานที่มีอยู่ในระบบ เช่น somsak.r@company.com
+          ใช้ Username ที่องค์กรกำหนดให้ เช่น somsak.r
         </p>
       )}
     </div>

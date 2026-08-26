@@ -7,8 +7,7 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     email: 'somsak.r@company.com',
     role: 'IT Lead / Senior Developer',
     department: 'IT',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-    maxWorkload: 4
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
   },
   {
     id: 'E02',
@@ -16,8 +15,7 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     email: 'nicha.w@company.com',
     role: 'Senior UI/UX Designer',
     department: 'Design',
-    avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
-    maxWorkload: 3
+    avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80'
   },
   {
     id: 'E03',
@@ -25,8 +23,7 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     email: 'wichai.m@company.com',
     role: 'Marketing Coordinator',
     department: 'Marketing',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-    maxWorkload: 5
+    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80'
   },
   {
     id: 'E04',
@@ -34,8 +31,7 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     email: 'pimonwan.s@company.com',
     role: 'Frontend Developer',
     department: 'IT',
-    avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&auto=format&fit=crop&q=80',
-    maxWorkload: 4
+    avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&auto=format&fit=crop&q=80'
   },
   {
     id: 'E05',
@@ -43,8 +39,7 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     email: 'anont.l@company.com',
     role: 'Product Owner / PM',
     department: 'Finance',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
-    maxWorkload: 3
+    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80'
   },
   {
     id: 'E06',
@@ -52,8 +47,7 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     email: 'thana.a@company.com',
     role: 'Junior UI Designer',
     department: 'Design',
-    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80',
-    maxWorkload: 4
+    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80'
   },
   {
     id: 'E07',
@@ -61,17 +55,27 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     email: 'kanya.s@company.com',
     role: 'HR Manager',
     department: 'HR',
-    avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150&auto=format&fit=crop&q=80',
-    maxWorkload: 3
+    avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150&auto=format&fit=crop&q=80'
   },
   {
     id: 'E08',
     name: 'กิตตินันท์ ทิพย์รักษา',
+    nickname: 'กิตตินันท์ ทิพย์รักษา',
     email: 'kittinan7689@company.com',
+    username: 'kittinan7689',
     role: 'UX / UI Designer',
     department: 'Design',
+    avatar: ''
+  },
+  {
+    id: 'E09',
+    name: 'ผู้ดูแลระบบ',
+    nickname: 'Admin',
+    email: 'adw001@company.com',
+    username: 'ADW001',
+    role: 'System Administrator',
+    department: 'IT',
     avatar: '',
-    maxWorkload: 4,
     isAdmin: true
   }
 ];

@@ -11,7 +11,9 @@ const port = Number(process.env.PORT ?? 4000);
 const corsOrigin = (process.env.CORS_ORIGIN ?? 'http://localhost:3000').split(',').map((o) => o.trim());
 
 app.use(cors({ origin: corsOrigin }));
-app.use(express.json());
+// Default 100kb is well under a base64-encoded avatar upload (500kb raw file * ~1.37 base64
+// overhead) — raised with headroom so those requests don't get silently dropped mid-transfer.
+app.use(express.json({ limit: '2mb' }));
 
 app.get('/api/health', async (_req, res) => {
   try {

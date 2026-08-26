@@ -15,17 +15,17 @@ export class ApiError extends Error {
 
 export interface LoginResult {
   id: number;
-  email: string;
+  username: string;
   employeeId: string | null;
 }
 
-export async function loginRequest(email: string, password: string): Promise<LoginResult> {
+export async function loginRequest(username: string, password: string): Promise<LoginResult> {
   let res: Response;
   try {
     res = await fetch(`${API_BASE_URL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ username, password }),
     });
   } catch {
     throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
@@ -63,7 +63,10 @@ export async function createEmployee(employee: Employee & { password: string }):
   return data as Employee;
 }
 
-export async function updateEmployeeRemote(id: string, updates: { name: string; role: string; avatar?: string }): Promise<void> {
+export async function updateEmployeeRemote(
+  id: string,
+  updates: Partial<Pick<Employee, 'name' | 'nickname' | 'role' | 'avatar' | 'department' | 'username'>> & { password?: string }
+): Promise<void> {
   let res: Response;
   try {
     res = await fetch(`${API_BASE_URL}/api/employees/${encodeURIComponent(id)}`, {
@@ -77,7 +80,20 @@ export async function updateEmployeeRemote(id: string, updates: { name: string; 
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new ApiError(data.message ?? 'บันทึกโปรไฟล์ไม่สำเร็จ', res.status);
+    throw new ApiError(data.message ?? 'บันทึกข้อมูลไม่สำเร็จ', res.status);
+  }
+}
+
+export async function deleteEmployeeRemote(id: string): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/employees/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(data.message ?? 'ลบบัญชีไม่สำเร็จ', res.status);
   }
 }
 

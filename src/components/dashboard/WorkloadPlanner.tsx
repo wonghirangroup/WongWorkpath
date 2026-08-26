@@ -13,7 +13,7 @@ export default function WorkloadPlanner({ employees, getEmployeeActiveTasks }: W
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-base font-bold text-slate-900">เครื่องมือวิเคราะห์ภาระงาน (Manpower Workload Planner)</h3>
-          <p className="text-xs text-slate-500">ตรวจสอบและกระจายงานเพื่อป้องกันปัญหาพนักงานทำงานหนักเกินไป (Overload)</p>
+          <p className="text-xs text-slate-500">ตรวจสอบภาระงานปัจจุบันของพนักงานแต่ละคนเพื่อกระจายงานได้อย่างเหมาะสม</p>
         </div>
         <span className="text-xs bg-slate-100 text-slate-600 font-semibold px-2.5 py-1 rounded-lg flex items-center gap-1">
           <Users size={12} /> {employees.length} คน

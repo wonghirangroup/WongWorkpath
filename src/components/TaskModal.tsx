@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Task, Employee, LinkedDoc, Priority, TaskStatus } from '../types';
+import { nowTimestamp } from '../lib/datetime';
 import { X, Calendar, User, FileText, Settings, Link as LinkIcon, Plus } from 'lucide-react';
 
 interface TaskModalProps {
@@ -159,9 +160,9 @@ export default function TaskModal({
       url: newDocUrl,
       scope: 'ส่วนตัว',
       version: 1,
-      lastUpdated: new Date().toISOString().replace('T', ' ').substring(0, 16),
+      lastUpdated: nowTimestamp(),
       updatedBy: 'ผู้ใช้งานปัจจุบัน',
-      history: [{ version: 1, updatedBy: 'ผู้ใช้งานปัจจุบัน', date: new Date().toISOString().replace('T', ' ').substring(0, 16), note: 'สร้างจากแบบฟอร์มเพิ่มงานด่วน' }]
+      history: [{ version: 1, updatedBy: 'ผู้ใช้งานปัจจุบัน', date: nowTimestamp(), note: 'สร้างจากแบบฟอร์มเพิ่มงานด่วน' }]
     };
     onAddDocument(newDoc);
     setLinkedDocs([...linkedDocs, newDoc.id]);

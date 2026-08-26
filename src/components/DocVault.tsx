@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { LinkedDoc, Department } from '../types';
+import { nowTimestamp } from '../lib/datetime';
 import {
   Plus,
   Copy,
@@ -573,7 +574,7 @@ export default function DocVault({
     return sortBy === 'latest' ? diff : -diff;
   });
 
-  const nowStamp = () => new Date().toISOString().replace('T', ' ').substring(0, 16);
+  const nowStamp = () => nowTimestamp();
 
   const handleCreateFolder = (e: React.FormEvent) => {
     e.preventDefault();

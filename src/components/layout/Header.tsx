@@ -20,6 +20,23 @@ function getThaiDateString() {
 
 const ROLE_MAX_CHARS = 13;
 
+const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function readFileAsDataUrl(file: globalThis.File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
 interface HeaderProps {
   title: ReactNode;
   subtitle?: ReactNode;
@@ -33,30 +50,42 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
   const [showUserMenu, setShowUserMenu] = useState(false);
 
   const [showEditProfile, setShowEditProfile] = useState(false);
-  const [editName, setEditName] = useState('');
-  const [editRole, setEditRole] = useState('');
+  const [editNickname, setEditNickname] = useState('');
   const [editAvatar, setEditAvatar] = useState('');
+  const [avatarFileError, setAvatarFileError] = useState('');
   const [profileFormError, setProfileFormError] = useState('');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   if (!currentUser) return null;
 
   const openEditProfile = () => {
-    setEditName(currentUser.name);
-    setEditRole(currentUser.role);
+    setEditNickname(currentUser.nickname || currentUser.name);
     setEditAvatar(currentUser.avatar || '');
+    setAvatarFileError('');
     setProfileFormError('');
     setShowEditProfile(true);
     setShowUserMenu(false);
   };
 
+  const handleAvatarFilePicked = async (file: globalThis.File | null) => {
+    setAvatarFileError('');
+    if (!file) return;
+    if (file.size > MAX_AVATAR_BYTES) {
+      setAvatarFileError(`ไฟล์ใหญ่เกินไป (${formatFileSize(file.size)}) — อัปโหลดได้ไม่เกิน ${formatFileSize(MAX_AVATAR_BYTES)}`);
+      return;
+    }
+    setEditAvatar(await readFileAsDataUrl(file));
+  };
+
+  // Deliberately narrow: a regular account can only change its own nickname and photo — name,
+  // role, username, and password are all admin-only, edited from Employee Management instead.
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editName.trim() || !editRole.trim() || isSavingProfile) return;
+    if (!editNickname.trim() || isSavingProfile) return;
     setProfileFormError('');
     setIsSavingProfile(true);
     try {
-      await handleUpdateEmployee(currentUser.id, { name: editName.trim(), role: editRole.trim(), avatar: editAvatar.trim() || undefined });
+      await handleUpdateEmployee(currentUser.id, { nickname: editNickname.trim(), avatar: editAvatar.trim() });
       setShowEditProfile(false);
     } catch (err) {
       setProfileFormError(err instanceof ApiError ? err.message : 'บันทึกโปรไฟล์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
@@ -65,7 +94,7 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
     }
   };
 
-  const displayName = currentUser.name;
+  const displayName = `คุณ${currentUser.nickname || currentUser.name}`;
   const displayRoleFull = currentUser.role;
   const displayRole = displayRoleFull.length > ROLE_MAX_CHARS
     ? `${displayRoleFull.slice(0, ROLE_MAX_CHARS)}...`
@@ -247,46 +276,50 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
                   )}
 
                   <div>
-                    <label className="block text-[#272220] font-bold text-[11px] mb-1">ชื่อ-นามสกุล *</label>
+                    <label className="block text-[#272220] font-bold text-[11px] mb-1">ชื่อเล่น *</label>
                     <input
                       type="text"
                       required
                       autoFocus
-                      value={editName}
-                      onChange={(e) => setEditName(e.target.value)}
+                      value={editNickname}
+                      onChange={(e) => setEditNickname(e.target.value)}
                       className="w-full p-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#FF6537]"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-[#272220] font-bold text-[11px] mb-1">ตำแหน่ง *</label>
-                    <input
-                      type="text"
-                      required
-                      value={editRole}
-                      onChange={(e) => setEditRole(e.target.value)}
-                      className="w-full p-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#FF6537]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[#272220] font-bold text-[11px] mb-1">ลิงก์รูปโปรไฟล์ <span className="font-normal text-slate-400">(ไม่บังคับ)</span></label>
-                    <input
-                      type="url"
-                      placeholder="https://..."
-                      value={editAvatar}
-                      onChange={(e) => setEditAvatar(e.target.value)}
-                      className="w-full p-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#FF6537]"
-                    />
+                    <label className="block text-[#272220] font-bold text-[11px] mb-1">
+                      รูปโปรไฟล์ <span className="font-normal text-slate-400">(ไม่บังคับ, ไม่เกิน {formatFileSize(MAX_AVATAR_BYTES)})</span>
+                    </label>
+                    <div className="flex items-center gap-2.5">
+                      {editAvatar.trim() && <img src={editAvatar.trim()} alt="" className="w-9 h-9 rounded-full object-cover shrink-0 bg-slate-50 border border-slate-100" />}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => handleAvatarFilePicked(e.target.files?.[0] || null)}
+                        className="flex-1 min-w-0 text-xs file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#FFF1EC] file:text-[#FF6537] file:font-bold file:cursor-pointer cursor-pointer"
+                      />
+                      {editAvatar.trim() && (
+                        <button
+                          type="button"
+                          onClick={() => setEditAvatar('')}
+                          className="text-slate-400 hover:text-slate-600 cursor-pointer shrink-0"
+                          title="ลบรูปโปรไฟล์"
+                        >
+                          <X size={16} />
+                        </button>
+                      )}
+                    </div>
+                    {avatarFileError && <p className="text-red-500 mt-1">{avatarFileError}</p>}
                   </div>
 
                   <div className="flex justify-end gap-2 pt-1">
                     <button type="button" onClick={() => setShowEditProfile(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs font-semibold cursor-pointer hover:bg-slate-50">ยกเลิก</button>
                     <button
                       type="submit"
-                      disabled={!editName.trim() || !editRole.trim() || isSavingProfile}
+                      disabled={!editNickname.trim() || isSavingProfile}
                       className={`px-5 py-2 rounded-lg text-xs font-bold transition-colors ${
-                        editName.trim() && editRole.trim() && !isSavingProfile ? 'bg-[#FF6537] text-white hover:bg-[#e6572c] cursor-pointer' : 'bg-[#F68C6C] text-white cursor-not-allowed'
+                        editNickname.trim() && !isSavingProfile ? 'bg-[#FF6537] text-white hover:bg-[#e6572c] cursor-pointer' : 'bg-[#F68C6C] text-white cursor-not-allowed'
                       }`}
                     >
                       {isSavingProfile ? 'กำลังบันทึก...' : 'บันทึก'}

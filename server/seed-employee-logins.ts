@@ -13,11 +13,15 @@ async function seedEmployeeLogins() {
   const passwordHash = await bcrypt.hash(defaultPassword, 10);
 
   for (const emp of INITIAL_EMPLOYEES) {
+    // Starting username derives from the email's local part, matching
+    // server/sql/006_add_login_username.sql's backfill for pre-existing rows — not carried
+    // through ON DUPLICATE KEY UPDATE below, so a since-customized username isn't reset on re-run.
+    const username = emp.username || emp.email.split('@')[0];
     await pool.query(
-      `INSERT INTO login (employee_id, email, password_hash, is_active)
-       VALUES (?, ?, ?, 1)
+      `INSERT INTO login (employee_id, email, username, password_hash, is_active)
+       VALUES (?, ?, ?, ?, 1)
        ON DUPLICATE KEY UPDATE employee_id = VALUES(employee_id), is_active = 1`,
-      [emp.id, emp.email, passwordHash]
+      [emp.id, emp.email, username, passwordHash]
     );
   }
 

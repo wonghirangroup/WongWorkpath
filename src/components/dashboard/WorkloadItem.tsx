@@ -1,4 +1,3 @@
-import { AlertTriangle } from 'lucide-react';
 import { Employee, Task } from '../../types';
 
 interface WorkloadItemProps {
@@ -8,9 +7,6 @@ interface WorkloadItemProps {
 
 export default function WorkloadItem({ employee: emp, activeTasks }: WorkloadItemProps) {
   const activeCount = activeTasks.length;
-  const maxWorkload = emp.maxWorkload;
-  const percentage = Math.min(100, Math.round((activeCount / maxWorkload) * 100));
-  const isOverloaded = activeCount > maxWorkload;
 
   return (
     <div className="p-4 rounded-xl border border-slate-100 hover:border-slate-200 transition-all bg-slate-50/50">
@@ -32,30 +28,9 @@ export default function WorkloadItem({ employee: emp, activeTasks }: WorkloadIte
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="text-right sm:text-right">
-            <p className="text-xs font-semibold text-slate-700">
-              ภาระงาน: <span className={isOverloaded ? "text-rose-600" : "text-indigo-600"}>{activeCount}</span> / {maxWorkload} งาน
-            </p>
-            <p className="text-[10px] text-slate-400">ขีดจำกัดสูงสุด: {maxWorkload} งาน</p>
-          </div>
-
-          {isOverloaded && (
-            <div className="bg-rose-50 text-rose-600 px-3 py-1.5 rounded-lg border border-rose-100 flex items-center gap-1.5 text-xs font-bold animate-pulse">
-              <AlertTriangle size={14} />
-              งานล้นมือ!
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="w-full bg-slate-200/80 h-2.5 rounded-full overflow-hidden flex">
-        <div
-          className={`h-full rounded-full transition-all duration-500 ${
-            isOverloaded ? 'bg-rose-500' : percentage > 75 ? 'bg-amber-500' : 'bg-indigo-600'
-          }`}
-          style={{ width: `${percentage}%` }}
-        ></div>
+        <p className="text-xs font-semibold text-slate-700">
+          ภาระงาน: <span className="text-indigo-600">{activeCount}</span> งาน
+        </p>
       </div>
 
       {activeCount > 0 && (

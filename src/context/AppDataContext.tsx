@@ -18,7 +18,8 @@ import {
   INITIAL_LEAVE_REQUESTS,
   INITIAL_NOTIFICATIONS
 } from '../data/mockData';
-import { fetchEmployees, createEmployee, updateEmployeeRemote, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote } from '../lib/api';
+import { fetchEmployees, createEmployee, updateEmployeeRemote, deleteEmployeeRemote, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote } from '../lib/api';
+import { nowTimestamp } from '../lib/datetime';
 
 // One-time shape migration for documents saved to localStorage before the Drive redesign added
 // `kind`/`parentId` (folders + file uploads) in place of the old `type` enum — without this,
@@ -61,7 +62,11 @@ interface AppDataContextValue {
 
   // Mutations
   handleAddEmployee: (employee: Employee & { password: string }) => Promise<void>;
-  handleUpdateEmployee: (id: string, updates: { name: string; role: string; avatar?: string }) => Promise<void>;
+  handleUpdateEmployee: (
+    id: string,
+    updates: Partial<Pick<Employee, 'name' | 'nickname' | 'role' | 'avatar' | 'department' | 'username'>> & { password?: string }
+  ) => Promise<void>;
+  handleDeleteEmployee: (id: string) => Promise<void>;
   handleSaveTask: (taskData: Partial<Task>) => void;
   handleDeleteTask: (id: string) => void;
   handleInitiateHandover: (taskId: string, fromUserId: string, toUserId: string, stageName: string, notes: string) => void;
@@ -206,6 +211,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           id: 'LOG01',
           timestamp: '2026-07-02 09:00',
           user: 'ผู้จัดการระบบ',
+          role: '-',
           action: 'SYSTEM_STARTUP',
           details: 'เริ่มต้นระบบจัดการแผนงานและข้อมูลความปลอดภัย UnitySpace สมบูรณ์แบบ'
         }
@@ -230,7 +236,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const handleLogin = (employee: Employee) => {
     setCurrentUser(employee);
     localStorage.setItem('unityspace_current_user_id', employee.id);
-    handleLogAudit('LOGIN', `${employee.name} เข้าสู่ระบบ`);
+    handleLogAudit('LOGIN', `${employee.name} เข้าสู่ระบบ`, employee);
   };
 
   const handleLogout = () => {
@@ -265,11 +271,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('unityspace_notifications', JSON.stringify(newNotifs));
   };
 
-  const handleLogAudit = (action: string, details: string) => {
+  const handleLogAudit = (action: string, details: string, actor: Employee | null = currentUser) => {
     const newLog: AuditLog = {
       id: 'LOG_' + Date.now(),
-      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16),
-      user: 'ผู้ใช้งานระบบ',
+      timestamp: nowTimestamp(),
+      user: actor?.nickname || actor?.name || 'ผู้ใช้งานระบบ',
+      role: actor?.role || '-',
       action,
       details
     };
@@ -293,13 +300,29 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   };
 
   // currentUser re-syncs on its own once `employees` updates below — see the session-restore
-  // effect above, which re-derives currentUser from the employees array on every change.
-  const handleUpdateEmployee = async (id: string, updates: { name: string; role: string; avatar?: string }) => {
+  // effect above, which re-derives currentUser from the employees array on every change. Shared
+  // by both the self-service "แก้ไขโปรไฟล์" form and the admin-only Employee Management edit form.
+  const handleUpdateEmployee = async (
+    id: string,
+    updates: Partial<Pick<Employee, 'name' | 'nickname' | 'role' | 'avatar' | 'department' | 'username'>> & { password?: string }
+  ) => {
     await updateEmployeeRemote(id, updates);
-    const updated = employees.map(emp => (emp.id === id ? { ...emp, ...updates } : emp));
+    // password is a login-only field, never part of the Employee shape kept in state/localStorage
+    const { password: _password, ...employeeFields } = updates;
+    const updated = employees.map(emp => (emp.id === id ? { ...emp, ...employeeFields } : emp));
     setEmployees(updated);
     localStorage.setItem('unityspace_employees', JSON.stringify(updated));
-    handleLogAudit('UPDATE_PROFILE', `แก้ไขโปรไฟล์ของ "${updates.name}"`);
+    const target = updated.find(emp => emp.id === id);
+    if (target) handleLogAudit('UPDATE_EMPLOYEE', `แก้ไขข้อมูลพนักงาน: "${target.name}"`);
+  };
+
+  const handleDeleteEmployee = async (id: string) => {
+    const target = employees.find(emp => emp.id === id);
+    await deleteEmployeeRemote(id);
+    const updated = employees.filter(emp => emp.id !== id);
+    setEmployees(updated);
+    localStorage.setItem('unityspace_employees', JSON.stringify(updated));
+    if (target) handleLogAudit('DELETE_EMPLOYEE', `ลบบัญชีพนักงาน: "${target.name}" ออกจากระบบถาวร`);
   };
 
   // 1. Task Operations
@@ -352,7 +375,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           id: 'NOTIF_' + Date.now(),
           title: 'ได้รับมอบหมายงานใหม่ 📝',
           message: `คุณได้รับมอบหมายงาน "${newTask.title}" ในโครงการ "${newTask.project}"`,
-          timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16),
+          timestamp: nowTimestamp(),
           read: false,
           type: 'info'
         };
@@ -387,7 +410,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       toUserId,
       stageName,
       notes,
-      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16),
+      timestamp: nowTimestamp(),
       status: 'Pending'
     };
 
@@ -410,7 +433,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       id: 'NOTIF_HO_' + Date.now(),
       title: 'ต้องการอนุมัติส่งมอบงาน 👉',
       message: `${sender?.name} ได้ทำการส่งมอบสเตจงานเพื่อให้คุณดูแลต่อเพื่อยืนยันโปรโตคอล`,
-      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16),
+      timestamp: nowTimestamp(),
       read: false,
       type: 'warning'
     };
@@ -466,7 +489,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       message: approved
         ? `ยินดีด้วย! การส่งมอบสเตจของคุณให้กับฝ่ายรับมอบช่วงผ่านการตรวจทานแล้ว`
         : `ข้อเสนอส่งมอบสเตจงานของคุณได้รับการตีกลับ: "${notes}"`,
-      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16),
+      timestamp: nowTimestamp(),
       read: false,
       type: approved ? 'success' : 'warning'
     };
@@ -564,7 +587,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       id: 'NOTIF_LEAVE_' + Date.now(),
       title: approved ? 'คำขออนุมัติลาผ่านแล้ว 🏖️' : 'คำขอลาถูกปฏิเสธ ❌',
       message: `ใบเสนอขอลาประเภท ${leave.type} ได้รับการพิจารณาเป็นที่เรียบร้อย`,
-      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16),
+      timestamp: nowTimestamp(),
       read: false,
       type: approved ? 'success' : 'warning'
     };
@@ -639,6 +662,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     closeTaskModal,
     handleAddEmployee,
     handleUpdateEmployee,
+    handleDeleteEmployee,
     handleSaveTask,
     handleDeleteTask,
     handleInitiateHandover,

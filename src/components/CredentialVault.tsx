@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useId, KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { CredentialItem, AuditLog, Department } from '../types';
+import { nowTimestamp } from '../lib/datetime';
 import Dropdown from './Dropdown';
 import {
   Eye,
@@ -522,7 +523,7 @@ export default function CredentialVault({
         notes: newNotes,
         url: newUrl.trim() || undefined,
         logoUrl: newLogoUrl.trim() || undefined,
-        createdAt: new Date().toISOString().replace('T', ' ').substring(0, 16),
+        createdAt: nowTimestamp(),
         createdBy: currentUserName
       };
 
@@ -1027,6 +1028,7 @@ export default function CredentialVault({
                   <thead>
                     <tr className="sticky top-0 z-10 bg-[#F9F9F9] text-[12px] font-semibold text-[#000000] border-b border-[#EDEEEF]">
                       <th className="px-4 py-3 whitespace-nowrap">ชื่อระบบ</th>
+                      <th className="px-4 py-3 whitespace-nowrap">แผนก</th>
                       <th className="px-4 py-3 whitespace-nowrap">ชื่อผู้ใช้ (Username)</th>
                       <th className="px-4 py-3 whitespace-nowrap">รหัสผ่าน (Password)</th>
                       <th className="px-4 py-3 whitespace-nowrap">สร้างโดย</th>
@@ -1086,6 +1088,15 @@ export default function CredentialVault({
                                 )}
                               </div>
                             </div>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            {item.scope === 'ทีม' && item.team ? (
+                              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${DEPARTMENT_TAG_COLORS[item.team]}`}>
+                                {item.team}
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-slate-400">ส่วนตัว</span>
+                            )}
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap">
                             <div className="flex items-center gap-1.5">

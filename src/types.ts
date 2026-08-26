@@ -2,12 +2,13 @@ export type Department = 'IT' | 'HR' | 'Marketing' | 'Sales' | 'Design' | 'Finan
 
 export interface Employee {
   id: string;
-  name: string;
-  email: string;
+  name: string; // Legal name — editable only by an admin, never by the account itself
+  nickname?: string; // Self-editable by the account itself; defaults to `name` until changed
+  email: string; // Contact info only — login now uses `username`, not this
+  username?: string; // Login credential, joined in from the `login` table
   role: string;
   department: Department;
   avatar: string;
-  maxWorkload: number; // Max allowed concurrent tasks
   isAdmin?: boolean; // Gates access to the Employee Management page
 }
 
@@ -95,6 +96,7 @@ export interface AuditLog {
   id: string;
   timestamp: string;
   user: string;
+  role: string; // ตำแหน่งของผู้ทำรายการ ณ เวลาที่บันทึก log
   action: string; // e.g. "VIEW_CREDENTIAL", "CREATE_TASK"
   details: string;
 }
