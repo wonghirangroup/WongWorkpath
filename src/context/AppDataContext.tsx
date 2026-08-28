@@ -212,6 +212,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           timestamp: '2026-07-02 09:00',
           user: 'ผู้จัดการระบบ',
           role: '-',
+          department: '',
           action: 'SYSTEM_STARTUP',
           details: 'เริ่มต้นระบบจัดการแผนงานและข้อมูลความปลอดภัย UnitySpace สมบูรณ์แบบ'
         }
@@ -277,6 +278,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       timestamp: nowTimestamp(),
       user: actor?.nickname || actor?.name || 'ผู้ใช้งานระบบ',
       role: actor?.role || '-',
+      department: actor?.department || '',
       action,
       details
     };

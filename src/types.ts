@@ -97,6 +97,7 @@ export interface AuditLog {
   timestamp: string;
   user: string;
   role: string; // ตำแหน่งของผู้ทำรายการ ณ เวลาที่บันทึก log
+  department: Department | ''; // แผนกของผู้ทำรายการ ณ เวลาที่บันทึก log ('' เมื่อไม่ทราบ)
   action: string; // e.g. "VIEW_CREDENTIAL", "CREATE_TASK"
   details: string;
 }

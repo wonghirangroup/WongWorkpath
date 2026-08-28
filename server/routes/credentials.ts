@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { RowDataPacket } from 'mysql2';
 import { pool } from '../db.ts';
+import { nowBangkokDateTime } from '../lib/datetime.ts';
 
 export const credentialsRouter = Router();
 
@@ -64,14 +65,15 @@ credentialsRouter.post('/', async (req, res) => {
   }
 
   try {
+    const now = nowBangkokDateTime();
     await pool.query(
       `INSERT INTO credential
-         (id, label, type, scope, team, username, password, key_value, notes, url, logo_url, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, label, type, scope, team, username, password, key_value, notes, url, logo_url, created_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         c.id, c.label, c.type, c.scope ?? 'ส่วนตัว', c.team ?? null,
         c.username ?? '', c.password ?? null, c.keyValue ?? null, c.notes ?? null,
-        c.url ?? null, c.logoUrl ?? null, c.createdBy ?? '',
+        c.url ?? null, c.logoUrl ?? null, c.createdBy ?? '', now, now,
       ]
     );
     res.status(201).json({ id: c.id });
@@ -87,12 +89,12 @@ credentialsRouter.put('/:id', async (req, res) => {
     await pool.query(
       `UPDATE credential SET
          label = ?, type = ?, scope = ?, team = ?, username = ?, password = ?,
-         key_value = ?, notes = ?, url = ?, logo_url = ?, last_viewed_at = ?
+         key_value = ?, notes = ?, url = ?, logo_url = ?, last_viewed_at = ?, updated_at = ?
        WHERE id = ?`,
       [
         c.label, c.type, c.scope, c.team ?? null, c.username, c.password ?? null,
         c.keyValue ?? null, c.notes ?? null, c.url ?? null, c.logoUrl ?? null,
-        c.lastViewedAt ?? null, req.params.id,
+        c.lastViewedAt ?? null, nowBangkokDateTime(), req.params.id,
       ]
     );
     res.json({ id: req.params.id });

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import type { RowDataPacket } from 'mysql2';
 import { pool } from '../db.ts';
+import { nowBangkokDateTime } from '../lib/datetime.ts';
 
 export const employeesRouter = Router();
 
@@ -83,17 +84,18 @@ employeesRouter.post('/', async (req, res) => {
       return res.status(409).json({ message: 'มี Username นี้ถูกใช้แล้ว' });
     }
 
+    const now = nowBangkokDateTime();
     await pool.query(
-      `INSERT INTO employee (id, name, nickname, email, role, department, avatar, is_admin)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [e.id, e.name, nickname, email, e.role, e.department, e.avatar || null, isAdmin ? 1 : 0]
+      `INSERT INTO employee (id, name, nickname, email, role, department, avatar, is_admin, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [e.id, e.name, nickname, email, e.role, e.department, e.avatar || null, isAdmin ? 1 : 0, now, now]
     );
 
     const passwordHash = await bcrypt.hash(password, 10);
     await pool.query(
-      `INSERT INTO login (employee_id, email, username, password_hash, is_active)
-       VALUES (?, ?, ?, ?, 1)`,
-      [e.id, email, username, passwordHash]
+      `INSERT INTO login (employee_id, email, username, password_hash, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 1, ?, ?)`,
+      [e.id, email, username, passwordHash, now, now]
     );
 
     res.status(201).json({
@@ -174,12 +176,14 @@ employeesRouter.put('/:id', async (req, res) => {
     }
 
     if (employeeFields.length > 0) {
+      employeeFields.push('updated_at = ?');
+      employeeValues.push(nowBangkokDateTime());
       await pool.query(`UPDATE employee SET ${employeeFields.join(', ')} WHERE id = ?`, [...employeeValues, req.params.id]);
     }
 
     if (newUsername || newPassword) {
-      const loginFields: string[] = [];
-      const loginValues: unknown[] = [];
+      const loginFields: string[] = ['updated_at = ?'];
+      const loginValues: unknown[] = [nowBangkokDateTime()];
       if (newUsername) {
         loginFields.push('username = ?');
         loginValues.push(newUsername);

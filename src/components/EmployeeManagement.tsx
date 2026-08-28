@@ -1,28 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
-import { Plus, X, Search, Mail, Briefcase, MoreHorizontal, Pencil, Trash2, AtSign, ScrollText } from 'lucide-react';
+import { Plus, X, Search, Mail, Briefcase, Pencil, Trash2, AtSign, ScrollText, LayoutGrid, List, Crown } from 'lucide-react';
 import { Employee, Department, AuditLog } from '../types';
 import { ApiError } from '../lib/api';
+import { getAvatarColor } from '../lib/avatarColor';
+import { DEPARTMENT_TAG_COLORS } from '../lib/departmentColors';
 import Dropdown from './Dropdown';
 
 const DEPARTMENT_OPTIONS: Department[] = ['IT', 'HR', 'Marketing', 'Sales', 'Design', 'Finance'];
-
-const DEPARTMENT_TAG_COLORS: Record<Department, string> = {
-  IT: 'text-blue-700 bg-blue-100',
-  HR: 'text-fuchsia-700 bg-fuchsia-100',
-  Marketing: 'text-orange-700 bg-orange-100',
-  Sales: 'text-emerald-700 bg-emerald-100',
-  Design: 'text-purple-700 bg-purple-100',
-  Finance: 'text-slate-700 bg-slate-200'
-};
-
-const AVATAR_COLORS = ['#6366F1', '#EC4899', '#10B981', '#F59E0B', '#3B82F6', '#8B5CF6', '#EF4444', '#14B8A6'];
-function getAvatarColor(name: string) {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
-}
 
 const DEFAULT_PASSWORD = 'Wongwork2026!';
 
@@ -103,44 +89,29 @@ function RoleField({ value, onChange, roleOptions }: { value: string; onChange: 
   );
 }
 
-function EmployeeCardMenu({ onEdit, onDelete, deleteDisabled }: { onEdit: () => void; onDelete: () => void; deleteDisabled: boolean }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setIsOpen(false);
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isOpen]);
-
+// Direct icon buttons instead of a "..." menu — edit/delete are the only two actions here, so
+// hiding them behind an extra click added a step without saving any real space.
+function EmployeeCardMenu({ onEdit, onDelete, deleteDisabled, editDisabled }: { onEdit: () => void; onDelete: () => void; deleteDisabled: boolean; editDisabled: boolean }) {
   return (
-    <div className="relative shrink-0" ref={ref}>
+    <div className="flex items-center gap-0.5 shrink-0">
       <button
-        onClick={() => setIsOpen((prev) => !prev)}
-        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+        onClick={() => { if (!editDisabled) onEdit(); }}
+        disabled={editDisabled}
+        title={editDisabled ? 'Admin ไม่สามารถแก้ไขข้อมูลของ Admin คนอื่นได้' : 'แก้ไข'}
+        className={`p-1.5 rounded-lg ${
+          editDisabled ? 'text-slate-300 cursor-not-allowed' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer'
+        }`}
       >
-        <MoreHorizontal size={16} />
+        <Pencil size={15} />
       </button>
-      {isOpen && (
-        <div className="absolute right-0 top-full mt-1 w-36 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-20 text-left">
-          <button
-            onClick={() => { setIsOpen(false); onEdit(); }}
-            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 cursor-pointer"
-          >
-            <Pencil size={13} /> แก้ไข
-          </button>
-          {!deleteDisabled && (
-            <button
-              onClick={() => { setIsOpen(false); onDelete(); }}
-              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-rose-600 hover:bg-rose-50 cursor-pointer"
-            >
-              <Trash2 size={13} /> ลบ
-            </button>
-          )}
-        </div>
+      {!deleteDisabled && (
+        <button
+          onClick={onDelete}
+          title="ลบ"
+          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+        >
+          <Trash2 size={15} />
+        </button>
       )}
     </div>
   );
@@ -160,9 +131,27 @@ interface EmployeeManagementProps {
 
 export default function EmployeeManagement({ employees, auditLogs, currentUserId, onAddEmployee, onUpdateEmployee, onDeleteEmployee }: EmployeeManagementProps) {
   const [activeTab, setActiveTab] = useState<'employees' | 'logs'>('employees');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchTerm, setSearchTerm] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState<Department | '__all__'>('__all__');
   const [logSearchTerm, setLogSearchTerm] = useState('');
+  const [logDateFilter, setLogDateFilter] = useState('');
+  const [logDepartmentFilter, setLogDepartmentFilter] = useState<Department | '__all__'>('__all__');
+  const [logActionFilter, setLogActionFilter] = useState<string>('__all__');
+
+  // Click-to-mark a single card/row (purely visual — a persistent "hover-look" pin, not a
+  // multi-select). Only clicking outside every card/row unmarks it, via data-markable-id below.
+  // Shared across the employee and log tables since only one is ever rendered at a time.
+  const [markedId, setMarkedId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!markedId) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if ((e.target as HTMLElement).closest('[data-markable-id]')) return;
+      setMarkedId(null);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [markedId]);
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [newName, setNewName] = useState('');
@@ -194,7 +183,12 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [editSuccessNotice, setEditSuccessNotice] = useState(false);
 
+  // Everyone who can reach this page is already an admin, so the only case to guard against is
+  // one admin editing a *different* admin's account — editing your own record here is still fine.
+  const isEditLockedForAdmin = (emp: Employee) => !!emp.isAdmin && emp.id !== currentUserId;
+
   const openEdit = (emp: Employee) => {
+    if (isEditLockedForAdmin(emp)) return;
     setEditingId(emp.id);
     setEditName(emp.name);
     setEditNickname(emp.nickname || emp.name);
@@ -326,16 +320,30 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
     return matchesQuery && matchesDepartment;
   });
 
+  const logActionOptions = Array.from(new Set(auditLogs.map((log) => log.action))).sort();
+
   const filteredLogs = auditLogs.filter((log) => {
     const query = logSearchTerm.trim().toLowerCase();
-    return !query
+    const matchesQuery = !query
       || log.user.toLowerCase().includes(query)
       || log.action.toLowerCase().includes(query)
       || log.details.toLowerCase().includes(query);
+    const matchesDate = !logDateFilter || log.timestamp.slice(0, 10) === logDateFilter;
+    const matchesDepartment = logDepartmentFilter === '__all__' || log.department === logDepartmentFilter;
+    const matchesAction = logActionFilter === '__all__' || log.action === logActionFilter;
+    return matchesQuery && matchesDate && matchesDepartment && matchesAction;
   });
 
   return (
     <div className="space-y-6" id="employee-management-tab">
+      {/* Tabs + whichever tab's search/filter row are grouped into one sticky unit so both stay
+          pinned below the (already-sticky) page header while the table scrolls underneath —
+          rather than each row needing its own independently-computed sticky offset. Negative
+          top looks backwards, but sticky's `top` is relative to <main>'s padding-box edge, not
+          the viewport, so it lands at (header height + <main>'s own top padding + this value) —
+          the negative value here is exactly what cancels <main>'s own padding back out so this
+          sits flush against the header with no gap for table rows to show through. */}
+      <div className="sticky -top-4 sm:-top-6 lg:-top-8 z-30 bg-white pt-1 space-y-4">
       <div className="flex items-center gap-0.5 bg-[#F4F4F5] rounded-xl p-1 w-fit">
         <button
           type="button"
@@ -358,7 +366,6 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
       </div>
 
       {activeTab === 'employees' ? (
-      <>
       <div className="flex flex-col lg:flex-row gap-3 lg:items-center">
         <div className="relative w-full lg:w-137.5 lg:flex-none">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -382,6 +389,25 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
         </div>
 
         <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className="flex items-center gap-0.5 bg-[#F4F4F5] rounded-xl p-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => setViewMode('grid')}
+              className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'grid' ? 'bg-white shadow-sm text-[#272220]' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
+              title="มุมมองการ์ด"
+            >
+              <LayoutGrid size={15} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'list' ? 'bg-white shadow-sm text-[#272220]' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
+              title="มุมมองรายการ"
+            >
+              <List size={15} />
+            </button>
+          </div>
+
           <div className="w-36 h-10">
             <Dropdown<Department | '__all__'>
               value={departmentFilter}
@@ -401,19 +427,90 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
           </button>
         </div>
       </div>
+      ) : (
+        <div className="flex flex-col lg:flex-row gap-3 lg:items-center">
+          <div className="relative w-full lg:w-137.5 lg:flex-none">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={logSearchTerm}
+              onChange={(e) => setLogSearchTerm(e.target.value)}
+              placeholder="ค้นหา Log (ผู้ใช้ / การกระทำ / รายละเอียด)"
+              className="w-full h-10 pl-9 pr-9 bg-[#F6F6F8] border border-transparent rounded-xl text-[13px] font-normal focus:outline-none focus:border-[#FF6537]"
+            />
+            {logSearchTerm && (
+              <button
+                type="button"
+                onClick={() => setLogSearchTerm('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                title="ล้างคำค้นหา"
+              >
+                <X size={15} />
+              </button>
+            )}
+          </div>
 
+          <div className="flex flex-wrap items-center gap-3">
+            <input
+              type="date"
+              value={logDateFilter}
+              onChange={(e) => setLogDateFilter(e.target.value)}
+              className="h-10 px-3 bg-[#F6F6F8] border border-transparent rounded-xl text-[13px] font-normal focus:outline-none focus:border-[#FF6537] cursor-pointer"
+              title="กรองตามวันที่"
+            />
+            <div className="w-36 h-10">
+              <Dropdown<Department | '__all__'>
+                value={logDepartmentFilter}
+                onChange={setLogDepartmentFilter}
+                options={[
+                  { value: '__all__', label: 'ทุกแผนก' },
+                  ...DEPARTMENT_OPTIONS.map((d) => ({ value: d, label: d }))
+                ]}
+              />
+            </div>
+            <div className="w-44 h-10">
+              <Dropdown<string>
+                value={logActionFilter}
+                onChange={setLogActionFilter}
+                options={[
+                  { value: '__all__', label: 'ทุกการกระทำ' },
+                  ...logActionOptions.map((a) => ({ value: a, label: a }))
+                ]}
+              />
+            </div>
+            {(logDateFilter || logDepartmentFilter !== '__all__' || logActionFilter !== '__all__') && (
+              <button
+                type="button"
+                onClick={() => { setLogDateFilter(''); setLogDepartmentFilter('__all__'); setLogActionFilter('__all__'); }}
+                className="text-[12px] text-slate-500 hover:text-[#FF6537] underline cursor-pointer"
+              >
+                ล้างตัวกรอง
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+      </div>
+
+      {activeTab === 'employees' ? (
+      <>
       <p className="font-normal text-[16px] text-[#6F6F6F] leading-none">ทั้งหมด {filteredEmployees.length} คน</p>
 
       {filteredEmployees.length === 0 ? (
         <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-400 text-sm">
           {employees.length === 0 ? 'ยังไม่มีพนักงานในระบบ' : 'ไม่พบรายการที่ตรงกับการค้นหา'}
         </div>
-      ) : (
+      ) : viewMode === 'grid' ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filteredEmployees.map((emp) => (
             <div
               key={emp.id}
-              className="bg-white shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] p-4 rounded-2xl space-y-3"
+              data-markable-id={emp.id}
+              onClick={() => setMarkedId(emp.id)}
+              className={`bg-white shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] p-4 rounded-2xl space-y-3 transition-all duration-200 hover:-translate-y-1 hover:shadow-lg cursor-pointer ${
+                markedId === emp.id ? 'shadow-lg' : ''
+              }`}
+              style={markedId === emp.id ? { transform: 'translateY(-4px)' } : undefined}
             >
               <div className="flex items-start gap-3">
                 {emp.avatar ? (
@@ -427,7 +524,15 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
-                  <h4 className="text-[15px] font-bold text-[#272220] truncate">{emp.nickname || emp.name}</h4>
+                  <h4 className="text-[15px] font-bold text-[#272220] truncate flex items-center gap-1.5">
+                    <span className="truncate">{emp.nickname || emp.name}</span>
+                    {emp.isAdmin && (
+                      <span className="shrink-0 inline-flex items-center gap-1 text-[9px] font-bold uppercase px-2 py-0.5 rounded-full leading-none text-[#FF6537] bg-black border border-[#FF6537]">
+                        <Crown size={9} className="fill-current" />
+                        Admin
+                      </span>
+                    )}
+                  </h4>
                   {emp.nickname && emp.nickname !== emp.name && (
                     <p className="text-[11px] text-slate-400 truncate">{emp.name}</p>
                   )}
@@ -439,6 +544,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                   onEdit={() => openEdit(emp)}
                   onDelete={() => setDeleteTarget({ id: emp.id, name: emp.name })}
                   deleteDisabled={emp.id === currentUserId}
+                  editDisabled={isEditLockedForAdmin(emp)}
                 />
               </div>
 
@@ -461,52 +567,113 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
             </div>
           ))}
         </div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              {/* Sticky lives on each <th>, not <thead>/<tr> — position:sticky on a
+                  table-header-group or table-row box is inert in most browsers; table cells
+                  (display:table-cell) are what actually support it. It also needs this wrapper
+                  to be the scrolling element: overflow-x-auto here implicitly computes
+                  overflow-y to auto too (a CSS rule, not a typo), which — without an explicit
+                  max-height — makes this div a zero-overflow, non-scrolling "scroll container"
+                  that becomes the sticky reference frame instead of <main>, so sticky never
+                  visually engages against the page's real scrolling. Bounding the height here
+                  makes this div the thing that actually scrolls, so top-0 below just works. */}
+              <tr className="bg-[#F9F9F9] text-[12px] font-semibold text-[#000000] border-b border-[#EDEEEF]">
+                <th className="px-4 py-3 whitespace-nowrap sticky top-0 z-20 bg-[#F9F9F9]">ชื่อ</th>
+                <th className="px-4 py-3 whitespace-nowrap sticky top-0 z-20 bg-[#F9F9F9]">ตำแหน่ง</th>
+                <th className="px-4 py-3 whitespace-nowrap sticky top-0 z-20 bg-[#F9F9F9]">Username</th>
+                <th className="px-4 py-3 whitespace-nowrap sticky top-0 z-20 bg-[#F9F9F9]">อีเมล</th>
+                <th className="px-4 py-3 whitespace-nowrap sticky top-0 z-20 bg-[#F9F9F9]">แผนก</th>
+                <th className="px-4 py-3 whitespace-nowrap sticky top-0 z-20 bg-[#F9F9F9]">การกระทำ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredEmployees.map((emp) => (
+                <tr
+                  key={emp.id}
+                  data-markable-id={emp.id}
+                  onClick={() => setMarkedId(emp.id)}
+                  className={`border-b border-[#EDEEEF] last:border-b-0 cursor-pointer ${markedId === emp.id ? 'bg-slate-200' : 'bg-white hover:bg-slate-50'}`}
+                >
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <div className="flex items-center gap-2.5">
+                      {emp.avatar ? (
+                        <img src={emp.avatar} alt="" className="w-9 h-9 rounded-full object-cover shrink-0 bg-slate-50 border border-slate-100" />
+                      ) : (
+                        <div
+                          className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0"
+                          style={{ backgroundColor: getAvatarColor(emp.name) }}
+                        >
+                          {emp.name.trim().charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-[13px] font-bold text-slate-900 leading-tight flex items-center gap-1.5">
+                          <span className="truncate">{emp.nickname || emp.name}</span>
+                          {emp.isAdmin && (
+                            <span className="shrink-0 inline-flex items-center gap-1 text-[9px] font-bold uppercase px-2 py-0.5 rounded-full leading-none text-[#FF6537] bg-black border border-[#FF6537]">
+                              <Crown size={9} className="fill-current" />
+                              Admin
+                            </span>
+                          )}
+                        </p>
+                        {emp.nickname && emp.nickname !== emp.name && (
+                          <p className="text-[11px] text-slate-400 leading-tight truncate">{emp.name}</p>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap text-[12px] font-normal text-[#6F6F6F]">{emp.role}</td>
+                  <td className="px-4 py-3 whitespace-nowrap text-[12px] font-normal text-[#6F6F6F]">{emp.username || '—'}</td>
+                  <td className="px-4 py-3 whitespace-nowrap text-[12px] font-normal text-[#6F6F6F]">{emp.email}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <span className={`inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${DEPARTMENT_TAG_COLORS[emp.department]}`}>
+                      {emp.department}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <EmployeeCardMenu
+                      onEdit={() => openEdit(emp)}
+                      onDelete={() => setDeleteTarget({ id: emp.id, name: emp.name })}
+                      deleteDisabled={emp.id === currentUserId}
+                      editDisabled={isEditLockedForAdmin(emp)}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
       </>
       ) : (
       <>
-        <div className="relative w-full lg:w-137.5">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            value={logSearchTerm}
-            onChange={(e) => setLogSearchTerm(e.target.value)}
-            placeholder="ค้นหา Log (ผู้ใช้ / การกระทำ / รายละเอียด)"
-            className="w-full h-10 pl-9 pr-9 bg-[#F6F6F8] border border-transparent rounded-xl text-[13px] font-normal focus:outline-none focus:border-[#FF6537]"
-          />
-          {logSearchTerm && (
-            <button
-              type="button"
-              onClick={() => setLogSearchTerm('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-              title="ล้างคำค้นหา"
-            >
-              <X size={15} />
-            </button>
-          )}
-        </div>
-
-        <p className="font-normal text-[16px] text-[#6F6F6F] leading-none">ทั้งหมด {filteredLogs.length} รายการ</p>
-
         {filteredLogs.length === 0 ? (
           <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-400 text-sm">
             {auditLogs.length === 0 ? 'ยังไม่มีบันทึกกิจกรรม' : 'ไม่พบรายการที่ตรงกับการค้นหา'}
           </div>
         ) : (
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] overflow-x-auto">
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-[#F9F9F9] text-[12px] font-semibold text-[#000000] border-b border-[#EDEEEF]">
-                  <th className="px-4 py-3 whitespace-nowrap">เวลา</th>
-                  <th className="px-4 py-3 whitespace-nowrap">ผู้ใช้</th>
-                  <th className="px-4 py-3 whitespace-nowrap">ตำแหน่ง</th>
-                  <th className="px-4 py-3 whitespace-nowrap">การกระทำ</th>
-                  <th className="px-4 py-3">รายละเอียด</th>
+                  <th className="px-4 py-3 whitespace-nowrap sticky top-0 z-20 bg-[#F9F9F9]">เวลา</th>
+                  <th className="px-4 py-3 whitespace-nowrap sticky top-0 z-20 bg-[#F9F9F9]">ผู้ใช้</th>
+                  <th className="px-4 py-3 whitespace-nowrap sticky top-0 z-20 bg-[#F9F9F9]">ตำแหน่ง</th>
+                  <th className="px-4 py-3 whitespace-nowrap sticky top-0 z-20 bg-[#F9F9F9]">การกระทำ</th>
+                  <th className="px-4 py-3 sticky top-0 z-20 bg-[#F9F9F9]">รายละเอียด</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredLogs.map((log) => (
-                  <tr key={log.id} className="bg-white border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50">
+                  <tr
+                    key={log.id}
+                    data-markable-id={log.id}
+                    onClick={() => setMarkedId(log.id)}
+                    className={`border-b border-[#EDEEEF] last:border-b-0 cursor-pointer ${markedId === log.id ? 'bg-slate-200' : 'bg-white hover:bg-slate-50'}`}
+                  >
                     <td className="px-4 py-3 whitespace-nowrap text-[12px] font-normal text-[#6F6F6F]">{log.timestamp}</td>
                     <td className="px-4 py-3 whitespace-nowrap text-[13px] font-bold text-slate-900">{log.user}</td>
                     <td className="px-4 py-3 whitespace-nowrap text-[12px] font-normal text-[#6F6F6F]">{log.role}</td>

@@ -20,6 +20,8 @@ import {
   Archive,
   ZoomIn,
   ZoomOut,
+  Printer,
+  Download,
   ChevronDown,
   LayoutGrid,
   List,
@@ -122,10 +124,11 @@ function formatThaiShortDate(dateStr: string) {
 // so it floats above the page instead of getting clipped by the table's horizontal-scroll wrapper.
 // Each action is only rendered when its handler is supplied, so folder/file/link cards each show
 // only the actions that make sense for that kind.
-function DocCardMenu({ onOpenFolder, onEdit, onOpenFile, onCopyLink, onDelete, copied }: {
+function DocCardMenu({ onOpenFolder, onEdit, onOpenFile, onOpenLink, onCopyLink, onDelete, copied }: {
   onOpenFolder?: () => void;
   onEdit?: () => void;
   onOpenFile?: () => void;
+  onOpenLink?: () => void;
   onCopyLink?: () => void;
   onDelete: () => void;
   copied?: boolean;
@@ -149,7 +152,7 @@ function DocCardMenu({ onOpenFolder, onEdit, onOpenFile, onCopyLink, onDelete, c
 
   const openMenu = () => {
     const rect = buttonRef.current?.getBoundingClientRect();
-    if (rect) setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    if (rect) setMenuPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
     setIsOpen(true);
   };
 
@@ -197,6 +200,14 @@ function DocCardMenu({ onOpenFolder, onEdit, onOpenFile, onCopyLink, onDelete, c
                   className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer"
                 >
                   <ExternalLink size={15} /> เปิด/ดาวน์โหลด
+                </button>
+              )}
+              {onOpenLink && (
+                <button
+                  onClick={() => { setIsOpen(false); onOpenLink(); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer"
+                >
+                  <ExternalLink size={15} /> เปิดลิงก์
                 </button>
               )}
               {onCopyLink && (
@@ -376,8 +387,7 @@ export default function DocVault({
       setDropUploadError(`ไฟล์ใหญ่เกิน ${formatFileSize(MAX_FILE_BYTES)} ถูกข้าม: ${oversized.join(', ')}`);
       setTimeout(() => setDropUploadError(''), 5000);
     } else if (valid.length > 0) {
-      setAddSuccessNotice(true);
-      setTimeout(() => setAddSuccessNotice(false), 3000);
+      showActionToast('บันทึกรายการสำเร็จแล้ว');
     }
   };
 
@@ -411,21 +421,67 @@ export default function DocVault({
   // Quick state to notify link copy
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  // Click-to-mark a single card/row (purely visual — a persistent "hover-look" pin, not a
+  // multi-select). Clicking a marked card/row again, or any interactive control inside one,
+  // doesn't unmark it — only clicking outside every card/row does, via data-markable-id below.
+  const [markedDocId, setMarkedDocId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!markedDocId) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if ((e.target as HTMLElement).closest('[data-markable-id]')) return;
+      setMarkedDocId(null);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [markedDocId]);
+
   // "+ เพิ่มใหม่" split button — choosing an option opens the matching lightweight form below the toolbar
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [addMode, setAddMode] = useState<'folder' | 'file' | 'link' | null>(null);
   const addMenuRef = useRef<HTMLDivElement>(null);
 
+  // Right-click on blank canvas (Google-Drive-style) — a second, independent entry point to the
+  // same create options. Kept entirely separate from addMenuOpen/addMenuRef above: this one is
+  // positioned at the cursor, not anchored to the "+ สร้าง / อัปโหลด" button.
+  const [bgContextMenu, setBgContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const bgContextMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!bgContextMenu) return;
+    const close = (e: MouseEvent) => {
+      if (bgContextMenuRef.current?.contains(e.target as Node)) return;
+      setBgContextMenu(null);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [bgContextMenu]);
+
+  const openBgContextMenu = (e: React.MouseEvent) => {
+    if (e.target !== e.currentTarget) return;
+    e.preventDefault();
+    const MENU_W = 192; // w-48
+    const MENU_H = 124; // 3 options + padding
+    const x = Math.min(e.clientX, window.innerWidth - MENU_W - 8);
+    const y = Math.min(e.clientY, window.innerHeight - MENU_H - 8);
+    setBgContextMenu({ x, y });
+  };
+
   const [newName, setNewName] = useState('');
   const [newUrl, setNewUrl] = useState('');
-  const [newNote, setNewNote] = useState('');
   const [newScope, setNewScope] = useState<LinkedDoc['scope']>('ส่วนตัว');
   const [newTeam, setNewTeam] = useState<Department | ''>('');
   const [nameTouched, setNameTouched] = useState(false);
   const [pickedFile, setPickedFile] = useState<globalThis.File | null>(null);
   const [fileError, setFileError] = useState('');
   const [isSubmittingFile, setIsSubmittingFile] = useState(false);
-  const [addSuccessNotice, setAddSuccessNotice] = useState(false);
+
+  // Bottom-right action toast — one shared message slot for every "you just did X" confirmation
+  // (create, edit, delete, open link, copy link) rather than a separate boolean+timeout per case.
+  const [actionToast, setActionToast] = useState<string | null>(null);
+  const showActionToast = (message: string) => {
+    setActionToast(message);
+    setTimeout(() => setActionToast((current) => (current === message ? null : current)), 3000);
+  };
 
   // Edit modal — rename a folder/file, or rename + change the URL of a link
   const [editDocId, setEditDocId] = useState<string | null>(null);
@@ -433,7 +489,6 @@ export default function DocVault({
   const [editUrl, setEditUrl] = useState('');
   const [editScope, setEditScope] = useState<LinkedDoc['scope']>('ส่วนตัว');
   const [editTeam, setEditTeam] = useState<Department | ''>('');
-  const [editSuccessNotice, setEditSuccessNotice] = useState(false);
 
   // Delete confirmation modal
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; hasChildren: boolean } | null>(null);
@@ -444,15 +499,75 @@ export default function DocVault({
   const previewIframeRef = useRef<HTMLIFrameElement>(null);
   const previewDoc = documents.find(d => d.id === previewDocId);
 
-  // Image zoom in the preview modal — scales up from the "fit to modal" size (1x); the
-  // container switches to scrollable so a zoomed-in image can be panned via scroll/trackpad.
-  // Steps stay gentle (small increments) so the subject grows without pushing key content
-  // out of frame — a "slight zoom" rather than a hard crop.
-  const ZOOM_STEPS = [1, 1.15, 1.3, 1.5];
+  // Image zoom in the preview modal — scales up from the "fit to modal" size (1x). The container
+  // switches to scrollable past 1x, and dragging the image pans it (see handlePreviewPanStart)
+  // like a design tool rather than relying on scrollbars alone.
+  const ZOOM_STEPS = [1, 1.5, 2, 2.5, 3, 4, 5];
   const [zoomLevel, setZoomLevel] = useState(1);
   useEffect(() => { setZoomLevel(1); }, [previewDocId]);
   const zoomIn = () => setZoomLevel((z) => ZOOM_STEPS[Math.min(ZOOM_STEPS.indexOf(z) + 1, ZOOM_STEPS.length - 1)]);
   const zoomOut = () => setZoomLevel((z) => ZOOM_STEPS[Math.max(ZOOM_STEPS.indexOf(z) - 1, 0)]);
+
+  // Drag-to-pan the zoomed preview image (Photoshop/Figma-style) — scrolls the container
+  // directly rather than tracking an offset in state, since the container is already the
+  // scrollable element. Distinguishes a genuine drag from a plain click (which still toggles
+  // zoom) by requiring a few pixels of movement before treating it as a pan; justDraggedRef
+  // survives past mouseup (unlike previewPanRef, cleared there) so the click handler that
+  // fires right after can tell "was this a drag" and skip toggling zoom for it.
+  const previewPanRef = useRef<{ startX: number; startY: number; scrollLeft: number; scrollTop: number; dragged: boolean } | null>(null);
+  const justDraggedRef = useRef(false);
+  const handlePreviewPanStart = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (zoomLevel <= 1) return;
+    const container = e.currentTarget;
+    previewPanRef.current = { startX: e.clientX, startY: e.clientY, scrollLeft: container.scrollLeft, scrollTop: container.scrollTop, dragged: false };
+  };
+  useEffect(() => {
+    const handleMove = (e: MouseEvent) => {
+      const pan = previewPanRef.current;
+      if (!pan) return;
+      const dx = e.clientX - pan.startX;
+      const dy = e.clientY - pan.startY;
+      if (!pan.dragged && Math.hypot(dx, dy) < 4) return;
+      pan.dragged = true;
+      const container = document.getElementById('preview-image-scroll');
+      if (container) {
+        container.scrollLeft = pan.scrollLeft - dx;
+        container.scrollTop = pan.scrollTop - dy;
+      }
+    };
+    const handleUp = () => {
+      justDraggedRef.current = previewPanRef.current?.dragged ?? false;
+      previewPanRef.current = null;
+    };
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', handleUp);
+    return () => {
+      document.removeEventListener('mousemove', handleMove);
+      document.removeEventListener('mouseup', handleUp);
+    };
+  }, []);
+  const handlePreviewImageClick = () => {
+    if (justDraggedRef.current) { justDraggedRef.current = false; return; }
+    setZoomLevel((z) => (z > 1 ? 1 : ZOOM_STEPS[1]));
+  };
+
+  // Print just the image (not the whole app chrome) via a throwaway blank tab. Built with DOM
+  // APIs rather than a document.write template string so a filename containing markup can't
+  // inject into the printed page.
+  const handlePrintPreview = () => {
+    if (!previewDoc?.fileDataUrl) return;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    const title = printWindow.document.createElement('title');
+    title.textContent = previewDoc.name;
+    printWindow.document.head.appendChild(title);
+    Object.assign(printWindow.document.body.style, { margin: '0', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' });
+    const img = printWindow.document.createElement('img');
+    img.src = previewDoc.fileDataUrl;
+    Object.assign(img.style, { maxWidth: '100%', maxHeight: '100%' });
+    img.onload = () => { printWindow.print(); printWindow.close(); };
+    printWindow.document.body.appendChild(img);
+  };
 
   useEffect(() => {
     if (!isSortOpen) return;
@@ -476,7 +591,6 @@ export default function DocVault({
     setAddMode(null);
     setNewName('');
     setNewUrl('');
-    setNewNote('');
     setNewScope('ส่วนตัว');
     setNewTeam('');
     setNameTouched(false);
@@ -518,8 +632,7 @@ export default function DocVault({
       team: editScope === 'ทีม' ? (editTeam || undefined) : undefined
     });
     closeEdit();
-    setEditSuccessNotice(true);
-    setTimeout(() => setEditSuccessNotice(false), 3000);
+    showActionToast('บันทึกการแก้ไขสำเร็จแล้ว');
   };
 
   const confirmDelete = () => {
@@ -529,6 +642,7 @@ export default function DocVault({
     if (previewDocId === deleteTarget.id) setPreviewDocId(null);
     if (currentFolderId === deleteTarget.id) goToFolder(null);
     setDeleteTarget(null);
+    showActionToast('ลบรายการสำเร็จแล้ว');
   };
 
   const askDelete = (doc: LinkedDoc) => {
@@ -541,7 +655,10 @@ export default function DocVault({
   const openDoc = (doc: LinkedDoc) => {
     if (doc.kind === 'folder') return goToFolder(doc.id);
     if (doc.kind === 'link') {
-      if (doc.url) window.open(doc.url, '_blank', 'noopener,noreferrer');
+      if (doc.url) {
+        window.open(doc.url, '_blank', 'noopener,noreferrer');
+        showActionToast('เปิดลิงก์แล้ว');
+      }
       return;
     }
     setPreviewDocId(doc.id);
@@ -597,8 +714,7 @@ export default function DocVault({
     setScopeFilter(scope);
     setTeamFilter(team || '__all__');
     closeAddForm();
-    setAddSuccessNotice(true);
-    setTimeout(() => setAddSuccessNotice(false), 3000);
+    showActionToast('บันทึกรายการสำเร็จแล้ว');
   };
 
   const handleFilePicked = (file: globalThis.File | null) => {
@@ -635,14 +751,13 @@ export default function DocVault({
         version: 1,
         lastUpdated: date,
         updatedBy: currentUserName,
-        history: [{ version: 1, updatedBy: currentUserName, date, note: newNote.trim() || 'อัปโหลดไฟล์ครั้งแรก' }]
+        history: [{ version: 1, updatedBy: currentUserName, date, note: 'อัปโหลดไฟล์ครั้งแรก' }]
       };
       onAddDocument(newDoc);
       setScopeFilter(scope);
       setTeamFilter(team || '__all__');
       closeAddForm();
-      setAddSuccessNotice(true);
-      setTimeout(() => setAddSuccessNotice(false), 3000);
+      showActionToast('บันทึกรายการสำเร็จแล้ว');
     } finally {
       setIsSubmittingFile(false);
     }
@@ -664,14 +779,13 @@ export default function DocVault({
       version: 1,
       lastUpdated: date,
       updatedBy: currentUserName,
-      history: [{ version: 1, updatedBy: currentUserName, date, note: newNote.trim() || 'แนบลิงก์ครั้งแรก' }]
+      history: [{ version: 1, updatedBy: currentUserName, date, note: 'แนบลิงก์ครั้งแรก' }]
     };
     onAddDocument(newDoc);
     setScopeFilter(scope);
     setTeamFilter(team || '__all__');
     closeAddForm();
-    setAddSuccessNotice(true);
-    setTimeout(() => setAddSuccessNotice(false), 3000);
+    showActionToast('บันทึกรายการสำเร็จแล้ว');
   };
 
   const handleUrlChange = (value: string) => {
@@ -683,6 +797,7 @@ export default function DocVault({
     navigator.clipboard.writeText(url);
     setCopiedId(docId);
     setTimeout(() => setCopiedId(null), 2000);
+    showActionToast('คัดลอกลิงก์แล้ว');
   };
 
   const openFile = (doc: LinkedDoc) => {
@@ -838,7 +953,7 @@ export default function DocVault({
               onClick={() => setAddMenuOpen((prev) => !prev)}
               className="bg-[#FF6537] hover:opacity-90 text-white text-sm font-bold px-4 h-10 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
             >
-              <Plus size={16} /> เพิ่มเอกสารใหม่
+              <Plus size={16} /> สร้าง / อัปโหลด
               <ChevronDown size={14} className={`transition-transform duration-150 ease-out ${addMenuOpen ? 'rotate-180' : ''}`} />
             </button>
             <AnimatePresence>
@@ -942,16 +1057,18 @@ export default function DocVault({
                   return (
                     <tr
                       key={doc.id}
+                      data-markable-id={doc.id}
                       draggable
                       onDragStart={(e) => handleDragStart(e, doc)}
                       onDragEnd={handleDragEnd}
                       onDragOver={doc.kind === 'folder' ? (e) => handleFolderDragOver(e, doc) : undefined}
                       onDragLeave={doc.kind === 'folder' ? () => handleFolderDragLeave(doc) : undefined}
                       onDrop={doc.kind === 'folder' ? (e) => handleFolderDrop(e, doc) : undefined}
+                      onClick={() => setMarkedDocId(doc.id)}
                       onDoubleClick={() => openDoc(doc)}
-                      className={`bg-white border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50 cursor-pointer select-none ${
-                        draggedDocId === doc.id ? 'opacity-40' : ''
-                      } ${dragOverFolderId === doc.id ? 'bg-orange-50 outline outline-2 outline-[#FF6537] -outline-offset-2' : ''}`}
+                      className={`border-b border-[#EDEEEF] last:border-b-0 cursor-pointer select-none ${
+                        markedDocId === doc.id ? 'bg-slate-200' : 'bg-white hover:bg-slate-50'
+                      } ${draggedDocId === doc.id ? 'opacity-40' : ''} ${dragOverFolderId === doc.id ? 'bg-orange-50 outline outline-2 outline-[#FF6537] -outline-offset-2' : ''}`}
                     >
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="flex items-center gap-2.5">
@@ -998,7 +1115,10 @@ export default function DocVault({
           </div>
         )
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+        <div
+          className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 min-h-[60vh] content-start"
+          onContextMenu={openBgContextMenu}
+        >
           {sortedDocs.length === 0 ? (
             <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-400 text-sm col-span-full">
               {itemsHere.length === 0 ? 'โฟลเดอร์นี้ว่างเปล่า' : 'ไม่พบรายการที่ตรงกับการค้นหา'}
@@ -1015,6 +1135,7 @@ export default function DocVault({
                   onOpenFolder={doc.kind === 'folder' ? () => goToFolder(doc.id) : undefined}
                   onEdit={() => openEdit(doc)}
                   onOpenFile={doc.kind === 'file' ? () => openFile(doc) : undefined}
+                  onOpenLink={doc.kind === 'link' && doc.url ? () => openDoc(doc) : undefined}
                   onCopyLink={doc.kind === 'link' && doc.url ? () => copyToClipboard(doc.url!, doc.id) : undefined}
                   onDelete={() => askDelete(doc)}
                   copied={copiedId === doc.id}
@@ -1030,16 +1151,19 @@ export default function DocVault({
               return (
                 <div
                   key={doc.id}
+                  data-markable-id={doc.id}
                   draggable
                   onDragStart={(e) => handleDragStart(e, doc)}
                   onDragEnd={handleDragEnd}
                   onDragOver={doc.kind === 'folder' ? (e) => handleFolderDragOver(e, doc) : undefined}
                   onDragLeave={doc.kind === 'folder' ? () => handleFolderDragLeave(doc) : undefined}
                   onDrop={doc.kind === 'folder' ? (e) => handleFolderDrop(e, doc) : undefined}
+                  onClick={() => setMarkedDocId(doc.id)}
                   onDoubleClick={() => openDoc(doc)}
                   className={`h-64 bg-white shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] p-4 rounded-2xl space-y-3 transition-all duration-200 hover:-translate-y-1 hover:shadow-lg cursor-pointer flex flex-col select-none ${
-                    draggedDocId === doc.id ? 'opacity-40' : ''
-                  } ${dragOverFolderId === doc.id ? 'bg-orange-50 outline outline-2 outline-[#FF6537] -outline-offset-2' : ''}`}
+                    markedDocId === doc.id ? 'shadow-lg' : ''
+                  } ${draggedDocId === doc.id ? 'opacity-40' : ''} ${dragOverFolderId === doc.id ? 'bg-orange-50 outline outline-2 outline-[#FF6537] -outline-offset-2' : ''}`}
+                  style={markedDocId === doc.id ? { transform: 'translateY(-4px)' } : undefined}
                 >
                   {doc.kind === 'folder' ? (
                     <>
@@ -1101,6 +1225,36 @@ export default function DocVault({
       )}
 
       </>
+      )}
+
+      {/* Right-click-on-blank-canvas menu — same 3 create options as the "+" button, but
+          positioned at the cursor instead of anchored to the button (a second, independent
+          entry point; see openBgContextMenu). */}
+      {createPortal(
+        <AnimatePresence>
+          {bgContextMenu && (
+            <motion.div
+              ref={bgContextMenuRef}
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              transition={{ duration: 0.12 }}
+              style={{ position: 'fixed', top: bgContextMenu.y, left: bgContextMenu.x }}
+              className="w-48 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-50 origin-top-left"
+            >
+              <button onClick={() => { setBgContextMenu(null); openAddMode('folder'); }} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer">
+                <FolderPlus size={15} className="text-[#FF6537]" /> สร้างโฟลเดอร์
+              </button>
+              <button onClick={() => { setBgContextMenu(null); openAddMode('file'); }} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer">
+                <Upload size={15} className="text-blue-500" /> อัปโหลดไฟล์
+              </button>
+              <button onClick={() => { setBgContextMenu(null); openAddMode('link'); }} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer">
+                <Link2 size={15} className="text-emerald-600" /> แนบลิงก์
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body
       )}
 
       {/* Create modal — folder / file-upload / link, whichever "+" option was picked */}
@@ -1217,16 +1371,6 @@ export default function DocVault({
                         placeholder="เช่น สัญญาว่าจ้างพนักงาน"
                         value={newName}
                         onChange={(e) => { setNewName(e.target.value); setNameTouched(true); }}
-                        className="w-full p-2.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-[#FF6537]"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-500 mb-1">บันทึกเพิ่มเติม <span className="font-normal text-slate-400">(ไม่บังคับ)</span></label>
-                      <input
-                        type="text"
-                        placeholder="เขียนบันทึกว่าไฟล์นี้ใช้ทำอะไร"
-                        value={newNote}
-                        onChange={(e) => setNewNote(e.target.value)}
                         className="w-full p-2.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-[#FF6537]"
                       />
                     </div>
@@ -1521,6 +1665,21 @@ export default function DocVault({
                         >
                           <ZoomIn size={18} />
                         </button>
+                        <div className="w-px h-5 bg-slate-200 mx-0.5" />
+                        <button
+                          onClick={handlePrintPreview}
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+                          title="พิมพ์"
+                        >
+                          <Printer size={18} />
+                        </button>
+                        <button
+                          onClick={() => openFile(previewDoc)}
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+                          title="ดาวน์โหลด"
+                        >
+                          <Download size={18} />
+                        </button>
                       </>
                     )}
                     <button
@@ -1542,6 +1701,8 @@ export default function DocVault({
                   />
                 ) : previewIsImage && previewDoc.fileDataUrl ? (
                   <div
+                    id="preview-image-scroll"
+                    onMouseDown={handlePreviewPanStart}
                     className={`flex-1 min-h-0 flex items-center justify-center bg-slate-50 p-4 ${
                       zoomLevel > 1 ? 'overflow-auto' : 'overflow-hidden'
                     }`}
@@ -1549,11 +1710,12 @@ export default function DocVault({
                     <img
                       src={previewDoc.fileDataUrl}
                       alt=""
-                      onClick={() => setZoomLevel((z) => (z > 1 ? 1 : ZOOM_STEPS[1]))}
-                      className={`max-w-full max-h-full object-contain transition-transform duration-150 ${
-                        zoomLevel > 1 ? 'cursor-zoom-out' : 'cursor-zoom-in'
+                      draggable={false}
+                      onClick={handlePreviewImageClick}
+                      className={`max-w-full max-h-full object-contain transition-transform duration-150 select-none ${
+                        zoomLevel > 1 ? 'cursor-grab active:cursor-grabbing' : 'cursor-zoom-in'
                       }`}
-                      style={{ transform: `scale(${zoomLevel})` }}
+                      style={{ transform: `scale(${zoomLevel})`, WebkitUserDrag: 'none' } as React.CSSProperties}
                     />
                   </div>
                 ) : previewDoc.kind === 'link' ? (
@@ -1635,13 +1797,13 @@ export default function DocVault({
         document.body
       )}
 
-      {/* Action toast (add document / new version) */}
-      {(addSuccessNotice || editSuccessNotice) && (
+      {/* Action toast — one shared slot for every "you just did X" confirmation */}
+      {actionToast && (
         <div className="fixed bottom-6 right-6 z-50">
           <div className="bg-slate-900 text-white rounded-xl shadow-xl px-5 py-3.5 flex items-center gap-4">
-            <span className="text-sm">{addSuccessNotice ? 'บันทึกรายการสำเร็จแล้ว' : 'บันทึกการแก้ไขสำเร็จแล้ว'}</span>
+            <span className="text-sm">{actionToast}</span>
             <button
-              onClick={() => { setAddSuccessNotice(false); setEditSuccessNotice(false); }}
+              onClick={() => setActionToast(null)}
               className="text-[#FF9776] font-semibold text-sm hover:underline cursor-pointer shrink-0"
             >
               ปิด

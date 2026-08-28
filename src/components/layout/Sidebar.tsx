@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { Link, useLocation } from 'react-router-dom';
 import { X, Users } from 'lucide-react';
 import { useAppData } from '../../context/AppDataContext';
+import LogoutConfirmModal from './LogoutConfirmModal';
 
 import logo from '../../../images/new side bar/Logo.png';
 import logoutIcon from '../../../images/new side bar/logout icon active.png';
@@ -51,6 +52,7 @@ const SIDEBAR_COLLAPSED_KEY = 'unityspace_sidebar_collapsed';
 export default function Sidebar({ isMobileMenuOpen, onCloseMobileMenu }: SidebarProps) {
   const { handleLogout, currentUser } = useAppData();
   const { pathname } = useLocation();
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   // The Employee Management nav item is admin-only — hidden entirely for everyone else.
   const visibleNavItems = NAV_ITEMS.filter((item) => item.id !== 'employees' || currentUser?.isAdmin);
@@ -115,7 +117,7 @@ export default function Sidebar({ isMobileMenuOpen, onCloseMobileMenu }: Sidebar
                   key={id}
                   to={`/${id}`}
                   className={`group relative w-full min-w-0 flex items-center gap-3 pl-6 pr-3.5 py-3 rounded-xl text-sm font-medium transition-colors duration-150 ease-out cursor-pointer ${
-                    isActive ? 'text-white' : 'text-[#6F6F6F] hover:text-white'
+                    isActive ? 'text-white' : 'text-[#ACACAC] hover:text-white'
                   }`}
                   id={`menu-${id}`}
                   title={isCollapsed ? label : undefined}
@@ -173,7 +175,7 @@ export default function Sidebar({ isMobileMenuOpen, onCloseMobileMenu }: Sidebar
 
         <div className="px-2 pb-4">
           <button
-            onClick={handleLogout}
+            onClick={() => setShowLogoutConfirm(true)}
             className="w-full min-w-0 flex items-center gap-3 pl-6 pr-3.5 py-3 rounded-xl text-sm font-medium text-[#FF4E4E] hover:text-white hover:bg-white/5 transition-all cursor-pointer"
             id="btn-logout"
             title={isCollapsed ? 'ออกจากระบบ' : undefined}
@@ -241,7 +243,7 @@ export default function Sidebar({ isMobileMenuOpen, onCloseMobileMenu }: Sidebar
             </div>
 
             <button
-              onClick={() => { handleLogout(); onCloseMobileMenu(); }}
+              onClick={() => { onCloseMobileMenu(); setShowLogoutConfirm(true); }}
               className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-[#f4622f] hover:text-white hover:bg-white/5 transition-all cursor-pointer"
             >
               <img src={logoutIcon} alt="" className="w-3.75 h-3.75 object-contain shrink-0" />
@@ -250,6 +252,12 @@ export default function Sidebar({ isMobileMenuOpen, onCloseMobileMenu }: Sidebar
           </div>
         </div>
       )}
+
+      <LogoutConfirmModal
+        open={showLogoutConfirm}
+        onCancel={() => setShowLogoutConfirm(false)}
+        onConfirm={() => { setShowLogoutConfirm(false); handleLogout(); }}
+      />
     </>
   );
 }

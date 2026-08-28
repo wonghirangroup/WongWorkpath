@@ -72,7 +72,7 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     name: 'ผู้ดูแลระบบ',
     nickname: 'Admin',
     email: 'adw001@company.com',
-    username: 'ADW001',
+    username: 'ADMIN-002',
     role: 'System Administrator',
     department: 'IT',
     avatar: '',

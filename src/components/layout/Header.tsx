@@ -1,11 +1,14 @@
-import { Bell, LogOut, ChevronDown, Menu, X, Pencil } from 'lucide-react';
+import { Bell, ChevronDown, Menu, X, Pencil, Eye, EyeOff, Crown } from 'lucide-react';
 import { ReactNode, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { useAppData } from '../../context/AppDataContext';
 import { ApiError } from '../../lib/api';
+import { getAvatarColor } from '../../lib/avatarColor';
+import { DEPARTMENT_TAG_COLORS } from '../../lib/departmentColors';
+import LogoutConfirmModal from './LogoutConfirmModal';
 import logo from '../../../images/pp.png';
-import profileImage from '../../../images/profiles.png';
+import logoutIcon from '../../../images/new side bar/logout icon active.png';
 
 // Intl's 'short' weekday for th-TH falls back to the full name (e.g. "พุธ"), not the
 // period-abbreviated form ("พ.") used elsewhere in the app, so it's mapped by hand here.
@@ -48,11 +51,17 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
   const { currentUser, notifications, unreadCount, handleLogout, handleMarkAllNotificationsRead, handleUpdateEmployee } = useAppData();
   const [showNotificationPane, setShowNotificationPane] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [editNickname, setEditNickname] = useState('');
   const [editAvatar, setEditAvatar] = useState('');
   const [avatarFileError, setAvatarFileError] = useState('');
+  const [showPasswordReset, setShowPasswordReset] = useState(false);
+  const [editNewPassword, setEditNewPassword] = useState('');
+  const [editConfirmPassword, setEditConfirmPassword] = useState('');
+  const [showNewPasswordText, setShowNewPasswordText] = useState(false);
+  const [showConfirmPasswordText, setShowConfirmPasswordText] = useState(false);
   const [profileFormError, setProfileFormError] = useState('');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
@@ -62,6 +71,11 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
     setEditNickname(currentUser.nickname || currentUser.name);
     setEditAvatar(currentUser.avatar || '');
     setAvatarFileError('');
+    setShowPasswordReset(false);
+    setEditNewPassword('');
+    setEditConfirmPassword('');
+    setShowNewPasswordText(false);
+    setShowConfirmPasswordText(false);
     setProfileFormError('');
     setShowEditProfile(true);
     setShowUserMenu(false);
@@ -77,15 +91,23 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
     setEditAvatar(await readFileAsDataUrl(file));
   };
 
-  // Deliberately narrow: a regular account can only change its own nickname and photo — name,
-  // role, username, and password are all admin-only, edited from Employee Management instead.
+  // Deliberately narrow: a regular account can only change its own nickname, photo, and password —
+  // name, role, and username are admin-only, edited from Employee Management instead.
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editNickname.trim() || isSavingProfile) return;
+    if (editNewPassword.trim() && editNewPassword.trim() !== editConfirmPassword.trim()) {
+      setProfileFormError('รหัสผ่านใหม่และการยืนยันไม่ตรงกัน');
+      return;
+    }
     setProfileFormError('');
     setIsSavingProfile(true);
     try {
-      await handleUpdateEmployee(currentUser.id, { nickname: editNickname.trim(), avatar: editAvatar.trim() });
+      await handleUpdateEmployee(currentUser.id, {
+        nickname: editNickname.trim(),
+        avatar: editAvatar.trim(),
+        ...(editNewPassword.trim() ? { password: editNewPassword.trim() } : {})
+      });
       setShowEditProfile(false);
     } catch (err) {
       setProfileFormError(err instanceof ApiError ? err.message : 'บันทึกโปรไฟล์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
@@ -158,16 +180,28 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
           className="flex items-center gap-2.5 cursor-pointer"
           id="btn-user-menu"
         >
-          <img
-            src={currentUser.avatar || profileImage}
-            alt={currentUser.name}
-            className="w-11 h-11 sm:w-12 sm:h-12 rounded-full object-cover"
-          />
+          {currentUser.avatar ? (
+            <img
+              src={currentUser.avatar}
+              alt={currentUser.name}
+              className="w-11 h-11 sm:w-12 sm:h-12 rounded-full object-cover"
+            />
+          ) : (
+            <div
+              className="w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center text-white font-bold shrink-0"
+              style={{ backgroundColor: getAvatarColor(currentUser.name) }}
+            >
+              {currentUser.name.trim().charAt(0).toUpperCase()}
+            </div>
+          )}
           <div className="hidden sm:block text-sm text-left">
             <p className="font-bold text-[#272220] text-[18px] whitespace-nowrap">{displayName}</p>
             <p className="text-[13px] text-[#A0A0A0] whitespace-nowrap">{displayRole}</p>
           </div>
-          <ChevronDown size={20} className="text-slate-500 hidden sm:block" />
+          <ChevronDown
+            size={20}
+            className={`text-slate-500 hidden sm:block transition-transform duration-200 ${showUserMenu ? 'rotate-180' : ''}`}
+          />
         </button>
 
         {/* User Dropdown Menu */}
@@ -176,6 +210,17 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
             <div className="px-4 py-2.5 border-b border-slate-100 mb-1">
               <p className="font-semibold text-slate-800 truncate">{displayName}</p>
               <p className="text-xs text-slate-400 truncate">{displayRoleFull}</p>
+              <div className="flex items-center gap-1.5 mt-1">
+                <span className={`inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${DEPARTMENT_TAG_COLORS[currentUser.department]}`}>
+                  {currentUser.department}
+                </span>
+                {currentUser.isAdmin && (
+                  <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase px-2 py-0.5 rounded-full leading-none text-[#FF6537] bg-black border border-[#FF6537]">
+                    <Crown size={9} className="fill-current" />
+                    Admin
+                  </span>
+                )}
+              </div>
             </div>
             <button
               onClick={openEditProfile}
@@ -186,11 +231,11 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
               <span>แก้ไขโปรไฟล์</span>
             </button>
             <button
-              onClick={() => { setShowUserMenu(false); handleLogout(); }}
-              className="w-full flex items-center gap-2 px-4 py-2.5 text-[#f4622f] font-semibold hover:bg-orange-50 cursor-pointer"
+              onClick={() => { setShowUserMenu(false); setShowLogoutConfirm(true); }}
+              className="w-full flex items-center gap-2 px-4 py-2.5 text-[#FF4E4E] font-semibold hover:bg-orange-50 cursor-pointer"
               id="btn-logout-header"
             >
-              <LogOut size={16} />
+              <img src={logoutIcon} alt="" className="w-4 h-4 object-contain shrink-0" />
               <span>ออกจากระบบ</span>
             </button>
           </div>
@@ -224,7 +269,7 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
                       <span className="font-semibold text-slate-800 text-[11px]">{notif.title}</span>
                       <span className="text-[9px] text-slate-400">{notif.timestamp.split(' ')[1]}</span>
                     </div>
-                    <p className="text-[10px] mt-0.5 text-slate-600">{notif.message}</p>
+                    <p className={`text-[10px] mt-0.5 ${notif.read ? 'text-slate-600' : 'text-slate-700'}`}>{notif.message}</p>
                   </div>
                 ))
               )}
@@ -313,6 +358,71 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
                     {avatarFileError && <p className="text-red-500 mt-1">{avatarFileError}</p>}
                   </div>
 
+                  {showPasswordReset ? (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[#272220] font-bold text-[11px] mb-1">รหัสผ่านใหม่</label>
+                        <div className="relative">
+                          <input
+                            type={showNewPasswordText ? 'text' : 'password'}
+                            autoFocus
+                            autoComplete="new-password"
+                            placeholder="••••••••"
+                            value={editNewPassword}
+                            onChange={(e) => setEditNewPassword(e.target.value)}
+                            className="w-full p-2.5 pr-9 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#FF6537]"
+                          />
+                          <button
+                            type="button"
+                            tabIndex={-1}
+                            onClick={() => setShowNewPasswordText((v) => !v)}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                            aria-label={showNewPasswordText ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'}
+                          >
+                            {showNewPasswordText ? <EyeOff size={15} /> : <Eye size={15} />}
+                          </button>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-[#272220] font-bold text-[11px] mb-1">ยืนยันรหัสผ่านใหม่</label>
+                        <div className="relative">
+                          <input
+                            type={showConfirmPasswordText ? 'text' : 'password'}
+                            autoComplete="new-password"
+                            placeholder="••••••••"
+                            value={editConfirmPassword}
+                            onChange={(e) => setEditConfirmPassword(e.target.value)}
+                            className="w-full p-2.5 pr-9 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#FF6537]"
+                          />
+                          <button
+                            type="button"
+                            tabIndex={-1}
+                            onClick={() => setShowConfirmPasswordText((v) => !v)}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                            aria-label={showConfirmPasswordText ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'}
+                          >
+                            {showConfirmPasswordText ? <EyeOff size={15} /> : <Eye size={15} />}
+                          </button>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => { setShowPasswordReset(false); setEditNewPassword(''); setEditConfirmPassword(''); }}
+                        className="col-span-2 text-left text-[11px] text-slate-400 hover:text-slate-600 cursor-pointer w-fit"
+                      >
+                        ยกเลิกการเปลี่ยนรหัสผ่าน
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setShowPasswordReset(true)}
+                      className="text-[11px] font-bold text-[#FF6537] hover:underline cursor-pointer"
+                    >
+                      รีเซ็ตรหัสผ่าน
+                    </button>
+                  )}
+
                   <div className="flex justify-end gap-2 pt-1">
                     <button type="button" onClick={() => setShowEditProfile(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs font-semibold cursor-pointer hover:bg-slate-50">ยกเลิก</button>
                     <button
@@ -332,6 +442,12 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
         </AnimatePresence>,
         document.body
       )}
+
+      <LogoutConfirmModal
+        open={showLogoutConfirm}
+        onCancel={() => setShowLogoutConfirm(false)}
+        onConfirm={() => { setShowLogoutConfirm(false); handleLogout(); }}
+      />
     </header>
   );
 }

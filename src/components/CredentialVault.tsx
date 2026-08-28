@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { CredentialItem, AuditLog, Department } from '../types';
 import { nowTimestamp } from '../lib/datetime';
+import { getAvatarColor } from '../lib/avatarColor';
+import { DEPARTMENT_TAG_COLORS } from '../lib/departmentColors';
 import Dropdown from './Dropdown';
 import {
   Eye,
@@ -14,17 +16,16 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  MoreHorizontal,
   LayoutGrid,
   List,
+  Pencil,
+  Trash2,
   X
 } from 'lucide-react';
 import searchIcon from '../../images/icon/Search pass.png';
 import firstCreatePassIcon from '../../images/frist create pass icon.png';
 import linkIcon from '../../images/icon menu/linkki.png';
 import linkActiveIcon from '../../images/icon menu/linkki active.png';
-import editIcon from '../../images/icon menu/edit.png';
-import deleteIcon from '../../images/icon menu/delete.png';
 
 // Common services suggested while typing the "ชื่อบริการ" field, auto-filling their site URL
 const KNOWN_SERVICES: { name: string; url: string }[] = [
@@ -86,21 +87,6 @@ const SORT_OPTIONS: { value: 'latest' | 'oldest' | 'az'; label: string }[] = [
   { value: 'az', label: 'ชื่อ A-Z' }
 ];
 
-const DEPARTMENT_TAG_COLORS: Record<Department, string> = {
-  IT: 'text-blue-700 bg-blue-100',
-  HR: 'text-fuchsia-700 bg-fuchsia-100',
-  Marketing: 'text-orange-700 bg-orange-100',
-  Sales: 'text-emerald-700 bg-emerald-100',
-  Design: 'text-purple-700 bg-purple-100',
-  Finance: 'text-slate-700 bg-slate-200'
-};
-
-const AVATAR_COLORS = ['#6366F1', '#EC4899', '#10B981', '#F59E0B', '#3B82F6', '#8B5CF6', '#EF4444', '#14B8A6'];
-function getAvatarColor(label: string) {
-  let hash = 0;
-  for (let i = 0; i < label.length; i++) hash = label.charCodeAt(i) + ((hash << 5) - hash);
-  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
-}
 
 // Matches query characters against target in sequence (not necessarily adjacent), e.g. "fig" matches "Figma".
 // Returns a score where lower = better (earlier match start, tighter character span); null = no match.
@@ -180,73 +166,17 @@ function formatThaiShortDate(dateStr: string) {
 // by an `overflow: auto` ancestor — e.g. the list-view table's horizontal-scroll wrapper, which
 // (per the CSS spec) forces overflow-y to auto too, the same way it did for the Sidebar's own
 // scroll container before that got `scrollbar-none`.
+// Direct icon buttons instead of a "..." menu — edit/delete are the only two actions, so hiding
+// them behind an extra click added a step without saving any real space.
 function CredentialCardMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (buttonRef.current?.contains(target)) return;
-      if (menuRef.current?.contains(target)) return;
-      setIsOpen(false);
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isOpen]);
-
-  const openMenu = () => {
-    const rect = buttonRef.current?.getBoundingClientRect();
-    if (rect) {
-      setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
-    }
-    setIsOpen(true);
-  };
-
   return (
-    <div className="relative">
-      <button
-        ref={buttonRef}
-        onClick={() => (isOpen ? setIsOpen(false) : openMenu())}
-        className="p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer"
-        title="ตัวเลือกเพิ่มเติม"
-      >
-        <MoreHorizontal size={20} className="text-slate-500" />
+    <div className="flex items-center gap-0.5">
+      <button onClick={onEdit} title="แก้ไข" className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer">
+        <Pencil size={15} />
       </button>
-      {createPortal(
-        <AnimatePresence>
-          {isOpen && menuPos && (
-            <motion.div
-              ref={menuRef}
-              initial={{ opacity: 0, y: -6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.15 }}
-              style={{ position: 'fixed', top: menuPos.top, right: menuPos.right }}
-              className="w-36 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-50"
-            >
-              <button
-                onClick={() => { setIsOpen(false); onEdit(); }}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer"
-              >
-                <img src={editIcon} alt="" className="w-4.5 h-4.5" />
-                แก้ไข
-              </button>
-              <button
-                onClick={() => { setIsOpen(false); onDelete(); }}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer"
-              >
-                <img src={deleteIcon} alt="" className="w-4.5 h-4.5" />
-                ลบ
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>,
-        document.body
-      )}
+      <button onClick={onDelete} title="ลบ" className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer">
+        <Trash2 size={15} />
+      </button>
     </div>
   );
 }
@@ -281,7 +211,7 @@ export default function CredentialVault({
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [scopeFilter, setScopeFilter] = useState<CredentialItem['scope'] | '__all__'>('__all__');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [sortBy, setSortBy] = useState<'latest' | 'oldest' | 'az'>('latest');
   const [isResultFilterOpen, setIsResultFilterOpen] = useState(false);
   const resultFilterRef = useRef<HTMLDivElement>(null);
@@ -345,7 +275,10 @@ export default function CredentialVault({
 
   const serviceSuggestions = (() => {
     const query = newLabel.trim();
-    if (!query) return [];
+    // Nothing left to suggest once the field already reads exactly like one of the known
+    // services (e.g. reopening the edit form for a "Grow Store" credential) — suggesting the
+    // name back to the user when they haven't changed anything is just noise.
+    if (!query || KNOWN_SERVICES.some((service) => service.name.toLowerCase() === query.toLowerCase())) return [];
 
     return KNOWN_SERVICES
       .map((service) => ({ service, score: fuzzyMatchScore(query, service.name) }))
@@ -404,6 +337,20 @@ export default function CredentialVault({
 
   // Alert State
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copiedNotice, setCopiedNotice] = useState('');
+
+  // Click-to-mark a single card/row (purely visual — a persistent "hover-look" pin, not a
+  // multi-select). Only clicking outside every card/row unmarks it, via data-markable-id below.
+  const [markedId, setMarkedId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!markedId) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if ((e.target as HTMLElement).closest('[data-markable-id]')) return;
+      setMarkedId(null);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [markedId]);
 
   // Tracks progress through each credential's avatar fallback chain (logoUrl -> favicon.ico -> Google cache -> initials)
   const [avatarCandidateIndex, setAvatarCandidateIndex] = useState<Record<string, number>>({});
@@ -634,16 +581,18 @@ export default function CredentialVault({
 
   const isCredentialFormValid = !!(newLabel.trim() && newUsername.trim() && newKeyValue.trim());
 
-  const copySecret = (text: string, id: string) => {
+  const copySecret = (text: string, id: string, noticeMessage = 'คัดลอกไปยังคลิปบอร์ดแล้ว') => {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 1500);
+    setCopiedNotice(noticeMessage);
+    setTimeout(() => setCopiedNotice(''), 2000);
     onLogAudit('COPY_SECURE_SECRET', `คัดลอกรหัสผ่านลับลงคลิปบอร์ดสำหรับรายการดึงระบบ`);
   };
 
   const copySecretForItem = (item: CredentialItem) => {
     const value = decryptedValues[item.id] ?? item.password ?? item.keyValue ?? '';
-    copySecret(value, item.id);
+    copySecret(value, item.id, 'คัดลอกรหัสผ่านแล้ว');
   };
 
   // Access control: a personal item is visible only to whoever created it; a team item is
@@ -1023,10 +972,10 @@ export default function CredentialVault({
                 ไม่พบรายการที่ตรงกับการค้นหา
               </div>
             ) : (
-              <div className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] overflow-auto flex-1 min-h-0">
+              <div className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="sticky top-0 z-10 bg-[#F9F9F9] text-[12px] font-semibold text-[#000000] border-b border-[#EDEEEF]">
+                    <tr className="bg-[#F9F9F9] text-[12px] font-semibold text-[#000000] border-b border-[#EDEEEF]">
                       <th className="px-4 py-3 whitespace-nowrap">ชื่อระบบ</th>
                       <th className="px-4 py-3 whitespace-nowrap">แผนก</th>
                       <th className="px-4 py-3 whitespace-nowrap">ชื่อผู้ใช้ (Username)</th>
@@ -1046,7 +995,12 @@ export default function CredentialVault({
                       const currentAvatarSrc = avatarCandidates[currentCandidateIndex];
 
                       return (
-                        <tr key={item.id} className="bg-white border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50 transition-colors">
+                        <tr
+                          key={item.id}
+                          data-markable-id={item.id}
+                          onClick={() => setMarkedId(item.id)}
+                          className={`border-b border-[#EDEEEF] last:border-b-0 transition-colors cursor-pointer ${markedId === item.id ? 'bg-slate-200' : 'bg-white hover:bg-slate-50'}`}
+                        >
                           <td className="px-4 py-3 whitespace-nowrap">
                             <div className="flex items-center gap-2.5">
                               {currentAvatarSrc ? (
@@ -1102,7 +1056,7 @@ export default function CredentialVault({
                             <div className="flex items-center gap-1.5">
                               <span className="text-[12px] font-medium text-[#272220] select-all">{item.username}</span>
                               <button
-                                onClick={() => copySecret(item.username, usernameCopyId)}
+                                onClick={() => copySecret(item.username, usernameCopyId, 'คัดลอกชื่อผู้ใช้แล้ว')}
                                 className="p-1 rounded text-[#6F6F6F] hover:bg-slate-100 cursor-pointer"
                                 title="คัดลอกชื่อผู้ใช้"
                               >
@@ -1166,7 +1120,15 @@ export default function CredentialVault({
                 const currentAvatarSrc = avatarCandidates[currentCandidateIndex];
 
                 return (
-                  <div key={item.id} className="bg-white shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] p-4 rounded-2xl space-y-3 transition-all duration-200 hover:-translate-y-1 hover:shadow-lg">
+                  <div
+                    key={item.id}
+                    data-markable-id={item.id}
+                    onClick={() => setMarkedId(item.id)}
+                    className={`bg-white shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] p-4 rounded-2xl space-y-3 transition-all duration-200 hover:-translate-y-1 hover:shadow-lg cursor-pointer ${
+                      markedId === item.id ? 'shadow-lg' : ''
+                    }`}
+                    style={markedId === item.id ? { transform: 'translateY(-4px)' } : undefined}
+                  >
                     <div className="flex justify-between items-start">
                       <div className="flex items-center gap-2.5">
                         {currentAvatarSrc ? (
@@ -1234,7 +1196,7 @@ export default function CredentialVault({
                           <span className="text-[12px] font-medium text-[#272220] select-all truncate">{item.username}</span>
                           <span className="w-5 h-5 shrink-0" aria-hidden="true" />
                           <button
-                            onClick={() => copySecret(item.username, usernameCopyId)}
+                            onClick={() => copySecret(item.username, usernameCopyId, 'คัดลอกชื่อผู้ใช้แล้ว')}
                             className="p-1 rounded shrink-0 text-[#6F6F6F] hover:bg-slate-100 cursor-pointer"
                             title="คัดลอกชื่อผู้ใช้"
                           >
@@ -1289,8 +1251,8 @@ export default function CredentialVault({
           )}
           </div>
 
-          {/* Action toast (create / edit / delete-undo) — same position/style for all three */}
-          {(undoNotice || editSuccessNotice || createSuccessNotice) && (
+          {/* Action toast (create / edit / delete-undo / copy) — same position/style for all */}
+          {(undoNotice || editSuccessNotice || createSuccessNotice || copiedNotice) && (
             <div className="fixed bottom-6 right-6 z-50">
               <div className="bg-slate-900 text-white rounded-xl shadow-xl px-5 py-3.5 flex items-center gap-4">
                 {undoNotice ? (
@@ -1303,6 +1265,8 @@ export default function CredentialVault({
                       เลิกทำ
                     </button>
                   </>
+                ) : copiedNotice ? (
+                  <span className="text-sm">{copiedNotice}</span>
                 ) : editSuccessNotice ? (
                   <>
                     <span className="text-sm">แก้ไขรายการสำเร็จแล้ว</span>

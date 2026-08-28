@@ -2,6 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import type { RowDataPacket } from 'mysql2';
 import { pool } from '../db.ts';
+import { nowBangkokDateTime } from '../lib/datetime.ts';
 
 export const authRouter = Router();
 
@@ -41,7 +42,7 @@ authRouter.post('/login', async (req, res) => {
       return res.status(401).json({ message: INVALID_CREDENTIALS_MESSAGE });
     }
 
-    await pool.query('UPDATE login SET last_login_at = NOW() WHERE id = ?', [row.id]);
+    await pool.query('UPDATE login SET last_login_at = ? WHERE id = ?', [nowBangkokDateTime(), row.id]);
 
     return res.status(200).json({
       id: row.id,
