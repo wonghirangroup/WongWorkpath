@@ -6,56 +6,70 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     name: 'สมศักดิ์ รักดี',
     email: 'somsak.r@company.com',
     role: 'IT Lead / Senior Developer',
-    department: 'IT',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
+    department: 'แผนกเทคโนโลยีและไอที',
+    division: 'ฝ่ายพัฒนาและไอที',
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+    accountType: 'employee'
   },
   {
     id: 'E02',
     name: 'ณิชา วงศ์สุวรรณ',
     email: 'nicha.w@company.com',
     role: 'Senior UI/UX Designer',
-    department: 'Design',
-    avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80'
+    department: 'แผนกเทคโนโลยีและไอที',
+    division: 'ฝ่ายพัฒนาและไอที',
+    avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
+    accountType: 'employee'
   },
   {
     id: 'E03',
     name: 'วิชัย มีสุข',
     email: 'wichai.m@company.com',
     role: 'Marketing Coordinator',
-    department: 'Marketing',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80'
+    department: 'แผนกธุรการการตลาด',
+    division: 'ฝ่ายการตลาดและออนไลน์',
+    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+    accountType: 'employee'
   },
   {
     id: 'E04',
     name: 'พิมลวรรณ แสนคำ',
     email: 'pimonwan.s@company.com',
     role: 'Frontend Developer',
-    department: 'IT',
-    avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&auto=format&fit=crop&q=80'
+    department: 'แผนกเทคโนโลยีและไอที',
+    division: 'ฝ่ายพัฒนาและไอที',
+    avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&auto=format&fit=crop&q=80',
+    accountType: 'employee'
   },
   {
     id: 'E05',
     name: 'อานนท์ เลิศวิทยา',
     email: 'anont.l@company.com',
     role: 'Product Owner / PM',
-    department: 'Finance',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80'
+    department: 'แผนกพัฒนาธุรกิจและองค์กร',
+    division: 'ฝ่ายพัฒนาและไอที',
+    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
+    accountType: 'employee'
   },
   {
     id: 'E06',
     name: 'ธนา อัครเดช',
     email: 'thana.a@company.com',
     role: 'Junior UI Designer',
-    department: 'Design',
-    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80'
+    department: 'แผนกเทคโนโลยีและไอที',
+    division: 'ฝ่ายพัฒนาและไอที',
+    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80',
+    accountType: 'employee'
   },
   {
     id: 'E07',
     name: 'กัญญา ศรีสุข',
     email: 'kanya.s@company.com',
     role: 'HR Manager',
-    department: 'HR',
-    avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150&auto=format&fit=crop&q=80'
+    department: 'แผนกบุคคล',
+    division: 'ฝ่ายบริหารและสนับสนุน',
+    avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150&auto=format&fit=crop&q=80',
+    accountType: 'employee'
   },
   {
     id: 'E08',
@@ -64,8 +78,10 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     email: 'kittinan7689@company.com',
     username: 'kittinan7689',
     role: 'UX / UI Designer',
-    department: 'Design',
-    avatar: ''
+    department: 'แผนกเทคโนโลยีและไอที',
+    division: 'ฝ่ายพัฒนาและไอที',
+    avatar: '',
+    accountType: 'employee'
   },
   {
     id: 'E09',
@@ -74,9 +90,10 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     email: 'adw001@company.com',
     username: 'ADMIN-002',
     role: 'System Administrator',
-    department: 'IT',
+    department: 'แผนกเทคโนโลยีและไอที',
+    division: 'ฝ่ายพัฒนาและไอที',
     avatar: '',
-    isAdmin: true
+    accountType: 'admin'
   }
 ];
 
@@ -88,7 +105,7 @@ export const INITIAL_DOCS: LinkedDoc[] = [
     parentId: null,
     url: 'https://docs.google.com/spreadsheets/d/1XyZABC123/edit',
     scope: 'ทีม',
-    team: 'Finance',
+    team: 'แผนกการเงินและการบัญชี',
     version: 3,
     lastUpdated: '2026-07-01 14:30',
     updatedBy: 'อานนท์ เลิศวิทยา',
@@ -105,7 +122,7 @@ export const INITIAL_DOCS: LinkedDoc[] = [
     parentId: null,
     url: 'https://docs.google.com/document/d/1YzDEF456/edit',
     scope: 'ทีม',
-    team: 'IT',
+    team: 'แผนกเทคโนโลยีและไอที',
     version: 1,
     lastUpdated: '2026-06-30 11:20',
     updatedBy: 'สมศักดิ์ รักดี',
@@ -120,7 +137,7 @@ export const INITIAL_DOCS: LinkedDoc[] = [
     parentId: null,
     url: 'https://figma.com/file/1Z_UIUX_Design/edit',
     scope: 'ทีม',
-    team: 'Design',
+    team: 'แผนกเทคโนโลยีและไอที',
     version: 5,
     lastUpdated: '2026-07-02 16:45',
     updatedBy: 'ณิชา วงศ์สุวรรณ',
@@ -142,7 +159,7 @@ export const INITIAL_TASKS: Task[] = [
     progress: 75,
     startDate: '2026-06-25',
     dueDate: '2026-07-05',
-    department: 'Design',
+    department: 'แผนกเทคโนโลยีและไอที',
     primaryOwnerId: 'E02',
     secondaryAssigneeIds: ['E06'],
     contributorIds: ['E04'],
@@ -174,7 +191,7 @@ export const INITIAL_TASKS: Task[] = [
     progress: 40,
     startDate: '2026-06-28',
     dueDate: '2026-07-10',
-    department: 'IT',
+    department: 'แผนกเทคโนโลยีและไอที',
     primaryOwnerId: 'E01',
     secondaryAssigneeIds: ['E04'],
     contributorIds: [],
@@ -194,7 +211,7 @@ export const INITIAL_TASKS: Task[] = [
     progress: 0,
     startDate: '2026-07-04',
     dueDate: '2026-07-15',
-    department: 'Finance',
+    department: 'แผนกการเงินและการบัญชี',
     primaryOwnerId: 'E05',
     secondaryAssigneeIds: [],
     contributorIds: ['E01', 'E03'],
@@ -215,7 +232,7 @@ export const INITIAL_TASKS: Task[] = [
     startDate: '2026-06-20',
     dueDate: '2026-07-02',
     actualEndDate: '2026-07-02',
-    department: 'Marketing',
+    department: 'แผนกออนไลน์',
     primaryOwnerId: 'E03',
     secondaryAssigneeIds: ['E06'],
     contributorIds: [],
@@ -236,7 +253,7 @@ export const INITIAL_TASKS: Task[] = [
     startDate: '2026-06-24',
     dueDate: '2026-07-01',
     actualEndDate: '2026-06-30',
-    department: 'IT',
+    department: 'แผนกเทคโนโลยีและไอที',
     primaryOwnerId: 'E04',
     secondaryAssigneeIds: ['E01'],
     contributorIds: [],

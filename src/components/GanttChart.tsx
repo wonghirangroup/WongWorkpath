@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Task, Employee, Department } from '../types';
+import { Task, Employee } from '../types';
 import { Filter, Calendar, Users, Briefcase, ArrowRight, HelpCircle } from 'lucide-react';
 
 interface GanttChartProps {

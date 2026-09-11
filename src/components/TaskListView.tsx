@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Task, Employee, LinkedDoc, Priority, TaskStatus } from '../types';
+import { useAppData } from '../context/AppDataContext';
 import { 
   Search, 
   Filter, 
@@ -39,6 +40,7 @@ export default function TaskListView({
   onInitiateHandover,
   onOpenDoc
 }: TaskListViewProps) {
+  const { orgSections } = useAppData();
   // Search & Filters State
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string>('All');
@@ -298,12 +300,9 @@ export default function TaskListView({
               className="w-full p-2 border border-slate-200 rounded-lg bg-white"
             >
               <option value="All">ทุกแผนก</option>
-              <option value="IT">IT Department</option>
-              <option value="HR">HR Department</option>
-              <option value="Marketing">Marketing</option>
-              <option value="Sales">Sales Department</option>
-              <option value="Design">Design Department</option>
-              <option value="Finance">Finance Department</option>
+              {orgSections.map((section) => (
+                <option key={section} value={section}>{section}</option>
+              ))}
             </select>
           </div>
 

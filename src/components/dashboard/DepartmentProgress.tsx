@@ -1,15 +1,9 @@
 import { Task } from '../../types';
+import { getDepartmentBarClass } from '../../lib/departmentColors';
 
 interface DepartmentProgressProps {
   tasks: Task[];
 }
-
-const DEPARTMENT_COLORS: Record<string, string> = {
-  IT: 'bg-indigo-600',
-  Design: 'bg-fuchsia-600',
-  Marketing: 'bg-pink-600',
-  Finance: 'bg-emerald-600',
-};
 
 export default function DepartmentProgress({ tasks }: DepartmentProgressProps) {
   const departmentStats: Record<string, { total: number; completed: number }> = {};
@@ -39,14 +33,14 @@ export default function DepartmentProgress({ tasks }: DepartmentProgressProps) {
             return (
               <div key={dept} className="space-y-1.5">
                 <div className="flex justify-between items-center text-xs">
-                  <span className="font-bold text-slate-700">{dept} Department</span>
+                  <span className="font-bold text-slate-700">{dept}</span>
                   <span className="text-slate-500">
                     เสร็จ {data.completed}/{data.total} งาน ({completionRate}%)
                   </span>
                 </div>
                 <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden flex">
                   <div
-                    className={`h-full rounded-full transition-all duration-500 ${DEPARTMENT_COLORS[dept] || 'bg-slate-500'}`}
+                    className={`h-full rounded-full transition-all duration-500 ${getDepartmentBarClass(dept)}`}
                     style={{ width: `${completionRate}%` }}
                   ></div>
                 </div>

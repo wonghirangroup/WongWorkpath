@@ -6,7 +6,9 @@ import { nowBangkokDateTime } from '../lib/datetime.ts';
 
 export const employeesRouter = Router();
 
-const DEPARTMENTS = new Set(['IT', 'HR', 'Marketing', 'Sales', 'Design', 'Finance']);
+// `division`/`department` hold real org-chart names now, and that structure is admin-editable at
+// runtime (see AppDataContext's orgDivisions, client-side/localStorage only) — there's no fixed
+// server-side whitelist to check against, so these are just validated as non-empty strings.
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 interface EmployeeRow extends RowDataPacket {
@@ -15,16 +17,23 @@ interface EmployeeRow extends RowDataPacket {
   nickname: string | null;
   email: string;
   username: string | null;
+  phone: string | null;
+  address: string | null;
   role: string;
   department: string;
+  division: string | null;
   avatar: string | null;
-  is_admin: number;
+  account_type: string;
+  restricted_menu_ids: string | null;
+  created_at: string;
 }
+
+const ACCOUNT_TYPES = ['employee', 'admin', 'superadmin', 'executive'];
 
 employeesRouter.get('/', async (_req, res) => {
   try {
     const [rows] = await pool.query<EmployeeRow[]>(
-      `SELECT e.id, e.name, e.nickname, e.email, l.username, e.role, e.department, e.avatar, e.is_admin
+      `SELECT e.id, e.name, e.nickname, e.email, l.username, e.phone, e.address, e.role, e.department, e.division, e.avatar, e.account_type, e.restricted_menu_ids, e.created_at
        FROM employee e
        LEFT JOIN login l ON l.employee_id = e.id
        ORDER BY e.id`
@@ -38,10 +47,15 @@ employeesRouter.get('/', async (_req, res) => {
         nickname: r.nickname || r.name,
         email: r.email,
         username: r.username,
+        phone: r.phone || undefined,
+        address: r.address || undefined,
         role: r.role,
         department: r.department,
+        division: r.division || undefined,
         avatar: r.avatar,
-        isAdmin: !!r.is_admin,
+        accountType: r.account_type,
+        restrictedMenuIds: r.restricted_menu_ids ? JSON.parse(r.restricted_menu_ids) : undefined,
+        createdAt: r.created_at,
       }))
     );
   } catch (err) {
@@ -59,9 +73,14 @@ employeesRouter.post('/', async (req, res) => {
   const username = typeof e.username === 'string' ? e.username.trim() : '';
   const password = typeof e.password === 'string' ? e.password : '';
   const nickname = typeof e.nickname === 'string' && e.nickname.trim() ? e.nickname.trim() : e.name;
-  const isAdmin = !!e.isAdmin;
+  const accountType = ACCOUNT_TYPES.includes(e.accountType) ? e.accountType : 'employee';
+  const restrictedMenuIds = Array.isArray(e.restrictedMenuIds) ? e.restrictedMenuIds.filter((id: unknown) => typeof id === 'string') : [];
+  const phone = typeof e.phone === 'string' && e.phone.trim() ? e.phone.trim() : null;
+  const address = typeof e.address === 'string' && e.address.trim() ? e.address.trim() : null;
 
-  if (!e.id || !e.name || !email || !username || !e.role || !DEPARTMENTS.has(e.department) || !password) {
+  const hasDepartment = typeof e.department === 'string' && e.department.trim();
+  const hasDivision = typeof e.division === 'string' && e.division.trim();
+  if (!e.id || !e.name || !email || !username || !e.role || !hasDepartment || !hasDivision || !password) {
     return res.status(400).json({ message: 'ข้อมูลไม่ครบถ้วนหรือไม่ถูกต้อง' });
   }
   if (!EMAIL_PATTERN.test(email)) {
@@ -86,9 +105,9 @@ employeesRouter.post('/', async (req, res) => {
 
     const now = nowBangkokDateTime();
     await pool.query(
-      `INSERT INTO employee (id, name, nickname, email, role, department, avatar, is_admin, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [e.id, e.name, nickname, email, e.role, e.department, e.avatar || null, isAdmin ? 1 : 0, now, now]
+      `INSERT INTO employee (id, name, nickname, email, role, department, division, avatar, account_type, restricted_menu_ids, phone, address, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [e.id, e.name, nickname, email, e.role, e.department, e.division, e.avatar || null, accountType, restrictedMenuIds.length ? JSON.stringify(restrictedMenuIds) : null, phone, address, now, now]
     );
 
     const passwordHash = await bcrypt.hash(password, 10);
@@ -106,8 +125,13 @@ employeesRouter.post('/', async (req, res) => {
       username,
       role: e.role,
       department: e.department,
+      division: e.division,
       avatar: e.avatar || null,
-      isAdmin,
+      accountType,
+      restrictedMenuIds: restrictedMenuIds.length ? restrictedMenuIds : undefined,
+      phone: phone || undefined,
+      address: address || undefined,
+      createdAt: now,
     });
   } catch (err) {
     console.error('POST /api/employees failed:', err);
@@ -118,9 +142,8 @@ employeesRouter.post('/', async (req, res) => {
 // Partial update — only touches the columns actually present in the body, so the same endpoint
 // serves both the self-service "แก้ไขโปรไฟล์" form (nickname/avatar only — a regular account can
 // never change its own name, role, username, or password here) and the admin-only Employee
-// Management edit form (name/nickname/avatar/department, plus optionally username/password to
-// reset a user's login). isAdmin is deliberately excluded here — it's only settable at creation
-// time (POST /) and can't be flipped afterward through this endpoint.
+// Management edit form (name/nickname/avatar/department/accountType/restrictedMenuIds, plus
+// optionally username/password to reset a user's login).
 employeesRouter.put('/:id', async (req, res) => {
   const e = req.body ?? {};
   const employeeFields: string[] = [];
@@ -142,12 +165,30 @@ employeesRouter.put('/:id', async (req, res) => {
     employeeFields.push('avatar = ?');
     employeeValues.push(e.avatar || null);
   }
-  if (typeof e.department === 'string') {
-    if (!DEPARTMENTS.has(e.department)) {
-      return res.status(400).json({ message: 'แผนกไม่ถูกต้อง' });
-    }
+  if (typeof e.department === 'string' && e.department.trim()) {
     employeeFields.push('department = ?');
-    employeeValues.push(e.department);
+    employeeValues.push(e.department.trim());
+  }
+  if (typeof e.division === 'string' && e.division.trim()) {
+    employeeFields.push('division = ?');
+    employeeValues.push(e.division.trim());
+  }
+  if (typeof e.accountType === 'string' && ACCOUNT_TYPES.includes(e.accountType)) {
+    employeeFields.push('account_type = ?');
+    employeeValues.push(e.accountType);
+  }
+  if ('restrictedMenuIds' in e) {
+    const restrictedMenuIds = Array.isArray(e.restrictedMenuIds) ? e.restrictedMenuIds.filter((id: unknown) => typeof id === 'string') : [];
+    employeeFields.push('restricted_menu_ids = ?');
+    employeeValues.push(restrictedMenuIds.length ? JSON.stringify(restrictedMenuIds) : null);
+  }
+  if ('phone' in e) {
+    employeeFields.push('phone = ?');
+    employeeValues.push(typeof e.phone === 'string' && e.phone.trim() ? e.phone.trim() : null);
+  }
+  if ('address' in e) {
+    employeeFields.push('address = ?');
+    employeeValues.push(typeof e.address === 'string' && e.address.trim() ? e.address.trim() : null);
   }
   const newUsername = typeof e.username === 'string' && e.username.trim() ? e.username.trim() : null;
   const newPassword = typeof e.password === 'string' && e.password ? e.password : null;
@@ -159,11 +200,11 @@ employeesRouter.put('/:id', async (req, res) => {
   try {
     if (newUsername) {
       const [[target]] = await pool.query<RowDataPacket[]>(
-        'SELECT is_admin FROM employee WHERE id = ? LIMIT 1',
+        'SELECT account_type FROM employee WHERE id = ? LIMIT 1',
         [req.params.id]
       );
-      if (target?.is_admin) {
-        return res.status(403).json({ message: 'ไม่สามารถเปลี่ยน Username ของบัญชี Admin ได้' });
+      if (target?.account_type === 'admin' || target?.account_type === 'superadmin') {
+        return res.status(403).json({ message: 'ไม่สามารถเปลี่ยน Username ของบัญชี Admin/Super Admin ได้' });
       }
 
       const [existingUsername] = await pool.query<RowDataPacket[]>(

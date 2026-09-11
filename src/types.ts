@@ -1,4 +1,17 @@
-export type Department = 'IT' | 'HR' | 'Marketing' | 'Sales' | 'Design' | 'Finance';
+// The company's real org-chart divisions (โครงสร้างองค์กร) and, within each, its real sections —
+// admin-editable from the Employee Management > โครงสร้างองค์กร tab (see AppDataContext's
+// `orgDivisions` state and src/data/orgStructure.ts for the seed data and placement helpers).
+// Every `department`/`team` field below (Employee, Task, LinkedDoc, CredentialItem, AuditLog)
+// holds one of those real section names now — the old generic IT/HR/Marketing/... placeholder
+// categories have been retired entirely since the company hadn't settled on abbreviations for them.
+// A plain string, not a fixed union, since the set of valid names can change at runtime.
+export type Division = string;
+
+// 4-level account type — see src/lib/permissions.ts for exactly what each can do. Replaced the
+// old boolean `isAdmin` because a boolean can't express "admin can't edit another admin's
+// account but superadmin can" or "executive sees everything but can't manage employees."
+export const ACCOUNT_TYPES = ['employee', 'admin', 'superadmin', 'executive'] as const;
+export type AccountType = typeof ACCOUNT_TYPES[number];
 
 export interface Employee {
   id: string;
@@ -6,10 +19,18 @@ export interface Employee {
   nickname?: string; // Self-editable by the account itself; defaults to `name` until changed
   email: string; // Contact info only — login now uses `username`, not this
   username?: string; // Login credential, joined in from the `login` table
+  phone?: string;
+  address?: string;
   role: string;
-  department: Department;
+  department: string; // Real org-chart section (แผนก) — cascades from `division` below
+  division?: Division; // Placement in the company org chart (โครงสร้างองค์กร)
   avatar: string;
-  isAdmin?: boolean; // Gates access to the Employee Management page
+  accountType: AccountType; // Gates which pages/menus this account can reach — see permissions.ts
+  // Per-account Sidebar menu blocklist (nav item ids, see Sidebar.tsx's NAV_ITEMS), layered on
+  // top of `accountType`'s own default access — lets an admin deny one specific person a menu
+  // their role would otherwise allow.
+  restrictedMenuIds?: string[];
+  createdAt?: string; // When the account row was created (server-assigned) — shown as "เข้าร่วมเมื่อ"
 }
 
 export type Priority = 'Low' | 'Medium' | 'High';
@@ -26,7 +47,7 @@ export interface Task {
   startDate: string;
   dueDate: string;
   actualEndDate?: string;
-  department: Department;
+  department: string; // Real org-chart section (แผนก)
   primaryOwnerId: string; // Primary responsible person
   secondaryAssigneeIds: string[]; // Secondary assignees
   contributorIds: string[]; // Contributors
@@ -61,7 +82,7 @@ export interface LinkedDoc {
   fileMimeType?: string; // kind === 'file'
   fileSize?: number; // kind === 'file' — bytes
   scope: 'ส่วนตัว' | 'ทีม';
-  team?: Department; // scope === 'ทีม'
+  team?: string; // scope === 'ทีม' — real org-chart section (แผนก)
   version: number;
   lastUpdated: string;
   updatedBy: string;
@@ -80,7 +101,7 @@ export interface CredentialItem {
   label: string;
   type: 'Username & Password' | 'API Key' | 'Bank Account' | 'Access Token';
   scope: 'ส่วนตัว' | 'ทีม';
-  team?: Department;
+  team?: string; // Matches the creator's `Employee.department` (real org-chart section) at creation time
   username: string;
   password?: string;
   keyValue?: string;
@@ -97,7 +118,7 @@ export interface AuditLog {
   timestamp: string;
   user: string;
   role: string; // ตำแหน่งของผู้ทำรายการ ณ เวลาที่บันทึก log
-  department: Department | ''; // แผนกของผู้ทำรายการ ณ เวลาที่บันทึก log ('' เมื่อไม่ทราบ)
+  department: string; // แผนกของผู้ทำรายการ ณ เวลาที่บันทึก log ('' เมื่อไม่ทราบ)
   action: string; // e.g. "VIEW_CREDENTIAL", "CREATE_TASK"
   details: string;
 }
@@ -111,6 +132,25 @@ export interface LeaveRequest {
   endDate: string;
   status: 'Pending' | 'Approved' | 'Rejected';
   notes: string;
+}
+
+// A scheduled meeting — optionally tied to a project (from the "จัดการงานและโครงการ" module's
+// "เพิ่มงาน" modal's new "การประชุม" tab), but not required to be, so it can also work as a
+// standalone/company-wide meeting shown only on the calendar. Kept as a real AppDataContext/
+// localStorage-backed domain type (like LeaveRequest above) rather than local component state,
+// so a meeting created from a project's page and one shown on the Calendar page are the same
+// record — see CalendarView.tsx and projectBoard/ProjectDetail.tsx, both of which read this type.
+export interface Meeting {
+  id: string;
+  projectId?: string;
+  title: string;
+  description?: string;
+  date: string; // YYYY-MM-DD
+  startTime: string; // HH:mm
+  endTime?: string; // HH:mm
+  attendeeIds: string[]; // Employee ids
+  location?: string; // a physical place or an online meeting link — free text either way
+  createdBy?: string; // Employee id
 }
 
 export interface Notification {

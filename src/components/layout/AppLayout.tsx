@@ -1,17 +1,18 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
-import { ChevronRight, Folder, Home } from 'lucide-react';
+import { ArrowLeft, ChevronRight, Folder, Home } from 'lucide-react';
 import { useAppData } from '../../context/AppDataContext';
 import Header from './Header';
 import Sidebar, { NAV_ITEMS } from './Sidebar';
 import TaskModal from '../TaskModal';
+import { STATUS_LABEL, STATUS_PILL, STATUS_ICON } from '../projectBoard/statusMeta';
 
 // Title/subtitle shown in the Header for each route — kept separate from NAV_ITEMS' short
 // sidebar labels since some pages (e.g. docs) use different, longer wording for their page title.
 const PAGE_META: Record<string, { title: string; subtitle?: string }> = {
   dashboard: { title: 'แดชบอร์ด' },
-  tasks: { title: 'จัดการงานและโครงงาน' },
-  calendar: { title: 'ปฏิทินและตารางเวลา' },
+  tasks: { title: 'จัดการงานและโครงการ', subtitle: 'วางแผนและติดตามความคืบหน้าของโครงการทั้งหมด' },
+  calendar: { title: 'ปฏิทินและตารางเวลา', subtitle: 'ดูภาพรวมงานและการประชุมทั้งหมดในปฏิทินเดียว' },
   gantt: { title: 'ตารางภาระงาน' },
   docs: { title: 'เอกสาร Drive', subtitle: 'จัดการและจัดเก็บเอกสารสำหรับใช้งานในองค์กรอย่างปลอดภัย' },
   reports: { title: 'การออกรายงาน' },
@@ -39,12 +40,24 @@ export default function AppLayout() {
     handleSaveTask,
     selectedTaskToEdit,
     employees,
+    projects,
     tasks,
     documents,
     saveDocuments,
     docCurrentFolderId,
-    setDocCurrentFolderId
+    setDocCurrentFolderId,
+    taskSelectedProjectId,
+    setTaskSelectedProjectId
   } = useAppData();
+
+  // On the Tasks page, once a project's detail view is open, the Header swaps to the project's
+  // own name as the title (with a back arrow to return to the list) and status+code as the
+  // subtitle underneath — instead of the page's normal static title/subtitle. Title/status/code
+  // used to repeat again inside ProjectDetail's own page body; now shown once, here.
+  const selectedProject = activeId === 'tasks'
+    ? projects.find((p) => p.id === taskSelectedProjectId)
+    : undefined;
+  const SelectedProjectStatusIcon = selectedProject ? STATUS_ICON[selectedProject.status] : null;
 
   // On the Docs Drive page, once you've navigated into a folder, the Header's subtitle line
   // becomes a breadcrumb ("เอกสาร Drive > Grow Store") instead of the page's normal static
@@ -139,10 +152,44 @@ export default function AppLayout() {
         </Fragment>
       ))}
     </span>
+  ) : selectedProject ? (
+    // This whole line sits inside Header's 20px subtitle <p> — without an explicit size, the code
+    // span used to inherit that 20px, dwarfing the 11px status pill right next to it. A thin
+    // border (tinted to the status's own color) keeps the pill legible here too: its pale fills
+    // like draft's near-white were designed to sit on a white card, not directly on the page's
+    // #F6F6F6 background, where they'd otherwise all but disappear.
+    <span className="flex items-center gap-2 min-w-0">
+      <span
+        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-medium whitespace-nowrap shrink-0"
+        style={{
+          backgroundColor: STATUS_PILL[selectedProject.status].bg,
+          color: STATUS_PILL[selectedProject.status].text,
+          borderColor: `${STATUS_PILL[selectedProject.status].text}33`,
+        }}
+      >
+        {SelectedProjectStatusIcon && <SelectedProjectStatusIcon size={11} strokeWidth={2} />}
+        {STATUS_LABEL[selectedProject.status]}
+      </span>
+      <span className="text-[13px] text-[#A0A0A0] shrink-0">{selectedProject.code}</span>
+    </span>
   ) : pageMeta?.subtitle;
 
+  const headerTitle = selectedProject ? (
+    <span className="inline-flex items-center gap-3 min-w-0">
+      <button
+        type="button"
+        onClick={() => setTaskSelectedProjectId(null)}
+        title="กลับไปหน้ารายการโครงการ"
+        className="text-[#515151] hover:text-[#FF6537] cursor-pointer shrink-0"
+      >
+        <ArrowLeft size={28} />
+      </button>
+      <span className="truncate">{selectedProject.title}</span>
+    </span>
+  ) : (pageMeta?.title ?? '');
+
   return (
-    <div className="h-dvh overflow-hidden bg-[#FFFFFF] flex gap-1 font-sans text-slate-800 antialiased" id="main-app-container">
+    <div className="h-dvh overflow-hidden bg-[#F6F6F6] flex gap-1 font-sans text-slate-800 antialiased" id="main-app-container">
       <Sidebar
         isMobileMenuOpen={isMobileMenuOpen}
         onCloseMobileMenu={() => setIsMobileMenuOpen(false)}
@@ -151,13 +198,13 @@ export default function AppLayout() {
       {/* Header + Scrollable Main Area column */}
       <div className="flex flex-col flex-1 overflow-hidden">
         <Header
-          title={pageMeta?.title ?? ''}
+          title={headerTitle}
           subtitle={headerSubtitle}
           isMobileMenuOpen={isMobileMenuOpen}
           onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
         />
 
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:px-8 lg:pt-8 lg:pb-4" >
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:px-8 lg:pt-8 lg:pb-4 bg-[#F6F6F6]" >
           <Outlet />
         </main>
       </div>

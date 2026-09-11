@@ -1,0 +1,26 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "gray-on-color",
+        "value": "*",
+        "files": [
+          "src/components/CredentialVault.tsx"
+        ],
+        "createdAt": "2026-09-01T09:41:15.900Z",
+        "reason": "Pagination buttons: gray text only shows on a white disabled background, never with a colored one - confirmed false positive"
+      },
+      {
+        "rule": "broken-image",
+        "value": "*",
+        "files": [
+          "src/components/CredentialVault.tsx"
+        ],
+        "createdAt": "2026-09-01T09:41:22.583Z",
+        "reason": "Words placeholder image / <img> only appear inside an explanatory code comment about favicon fallback logic, not real <img> tags - confirmed false positive"
+      }
+    ]
+  }
+}

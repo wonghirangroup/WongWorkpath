@@ -7,8 +7,8 @@ import { pool } from './db.ts';
 async function seedEmployees() {
   for (const emp of INITIAL_EMPLOYEES) {
     await pool.query(
-      `INSERT INTO employee (id, name, nickname, email, role, department, avatar, is_admin)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO employee (id, name, nickname, email, role, department, avatar, account_type, restricted_menu_ids)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
          -- nickname deliberately left out here — re-running the seed against an existing
          -- employee shouldn't stomp a nickname they've since customized through the app.
@@ -17,8 +17,13 @@ async function seedEmployees() {
          role = VALUES(role),
          department = VALUES(department),
          avatar = VALUES(avatar),
-         is_admin = VALUES(is_admin)`,
-      [emp.id, emp.name, emp.nickname || emp.name, emp.email, emp.role, emp.department, emp.avatar, emp.isAdmin ? 1 : 0]
+         account_type = VALUES(account_type),
+         restricted_menu_ids = VALUES(restricted_menu_ids)`,
+      [
+        emp.id, emp.name, emp.nickname || emp.name, emp.email, emp.role, emp.department, emp.avatar,
+        emp.accountType,
+        emp.restrictedMenuIds?.length ? JSON.stringify(emp.restrictedMenuIds) : null
+      ]
     );
   }
 

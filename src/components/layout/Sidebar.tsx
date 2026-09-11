@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { Link, useLocation } from 'react-router-dom';
 import { X, Users } from 'lucide-react';
 import { useAppData } from '../../context/AppDataContext';
+import { canAccessNavItem } from '../../lib/permissions';
 import LogoutConfirmModal from './LogoutConfirmModal';
 
 import logo from '../../../images/new side bar/Logo.png';
@@ -31,7 +32,7 @@ import passwordHold from '../../../images/new side bar/password icon hold.png';
 
 export const NAV_ITEMS = [
   { id: 'dashboard', label: 'แดชบอร์ด', iconActive: dashboardActive, iconInactive: dashboardInactive, iconHover: undefined as string | undefined, iconComponent: undefined as typeof Users | undefined },
-  { id: 'tasks', label: 'จัดการงานและโครงงาน', iconActive: projectActive, iconInactive: projectInactive, iconHover: projectHover as string | undefined, iconComponent: undefined as typeof Users | undefined },
+  { id: 'tasks', label: 'จัดการงานและโครงการ', iconActive: projectActive, iconInactive: projectInactive, iconHover: projectHover as string | undefined, iconComponent: undefined as typeof Users | undefined },
   { id: 'calendar', label: 'ปฏิทินและตารางเวลา', iconActive: calendarActive, iconInactive: calendarInactive, iconHover: calendarHover as string | undefined, iconComponent: undefined as typeof Users | undefined },
   { id: 'gantt', label: 'ตารางภาระงาน', iconActive: employeeActive, iconInactive: employeeInactive, iconHover: employeeHover as string | undefined, iconComponent: undefined as typeof Users | undefined },
   { id: 'docs', label: 'เอกสาร Drive', iconActive: fileActive, iconInactive: fileInactive, iconHover: fileHover as string | undefined, iconComponent: undefined as typeof Users | undefined },
@@ -54,8 +55,11 @@ export default function Sidebar({ isMobileMenuOpen, onCloseMobileMenu }: Sidebar
   const { pathname } = useLocation();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
-  // The Employee Management nav item is admin-only — hidden entirely for everyone else.
-  const visibleNavItems = NAV_ITEMS.filter((item) => item.id !== 'employees' || currentUser?.isAdmin);
+  // Role-based defaults (e.g. Employee Management is admin/superadmin-only) plus this specific
+  // account's own `restrictedMenuIds` blocklist, if an admin has denied them a menu individually.
+  const visibleNavItems = currentUser
+    ? NAV_ITEMS.filter((item) => canAccessNavItem(currentUser, item.id))
+    : NAV_ITEMS;
 
   const [isCollapsed, setIsCollapsed] = useState(() => {
     try {

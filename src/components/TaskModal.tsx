@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Task, Employee, LinkedDoc, Priority, TaskStatus } from '../types';
+import { useAppData } from '../context/AppDataContext';
 import { nowTimestamp } from '../lib/datetime';
 import { X, Calendar, User, FileText, Settings, Link as LinkIcon, Plus } from 'lucide-react';
 
@@ -24,6 +25,7 @@ export default function TaskModal({
   documents,
   onAddDocument
 }: TaskModalProps) {
+  const { orgSections } = useAppData();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [project, setProject] = useState('');
@@ -33,7 +35,7 @@ export default function TaskModal({
   const [startDate, setStartDate] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [actualEndDate, setActualEndDate] = useState('');
-  const [department, setDepartment] = useState<'IT' | 'HR' | 'Marketing' | 'Sales' | 'Design' | 'Finance'>('IT');
+  const [department, setDepartment] = useState<string>(orgSections[0]);
   const [primaryOwnerId, setPrimaryOwnerId] = useState('');
   const [secondaryAssignees, setSecondaryAssignees] = useState<string[]>([]);
   const [contributors, setContributors] = useState<string[]>([]);
@@ -57,7 +59,7 @@ export default function TaskModal({
       setStartDate(task.startDate || '');
       setDueDate(task.dueDate || '');
       setActualEndDate(task.actualEndDate || '');
-      setDepartment(task.department || 'IT');
+      setDepartment(task.department || orgSections[0]);
       setPrimaryOwnerId(task.primaryOwnerId || '');
       setSecondaryAssignees(task.secondaryAssigneeIds || []);
       setContributors(task.contributorIds || []);
@@ -75,7 +77,7 @@ export default function TaskModal({
       setStartDate(new Date().toISOString().split('T')[0]);
       setDueDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
       setActualEndDate('');
-      setDepartment('IT');
+      setDepartment(orgSections[0]);
       setPrimaryOwnerId(employees[0]?.id || '');
       setSecondaryAssignees([]);
       setContributors([]);
@@ -255,15 +257,12 @@ export default function TaskModal({
                   <label className="block text-xs font-bold text-slate-700 mb-1">แผนกที่เกี่ยวข้อง</label>
                   <select
                     value={department}
-                    onChange={(e) => setDepartment(e.target.value as any)}
+                    onChange={(e) => setDepartment(e.target.value)}
                     className="w-full text-sm px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
                   >
-                    <option value="IT">IT Department</option>
-                    <option value="HR">HR Department</option>
-                    <option value="Marketing">Marketing</option>
-                    <option value="Sales">Sales Department</option>
-                    <option value="Design">Design Department</option>
-                    <option value="Finance">Finance Department</option>
+                    {orgSections.map((section) => (
+                      <option key={section} value={section}>{section}</option>
+                    ))}
                   </select>
                 </div>
               </div>

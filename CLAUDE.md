@@ -1,45 +1,53 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+ไฟล์นี้ให้คำแนะนำสำหรับ Claude Code (claude.ai/code) เมื่อทำงานกับโค้ดในโปรเจกต์นี้
 
-## Commands
+## แนวทางการทำงานร่วมกัน (Collaboration guidelines)
+
+- คุยกับผู้ใช้เป็นภาษาไทยโดยภาษาที่เข้าใจง่ายๆ เหมือนคุยกับเพื่อน
+- หากติดปัญหา ไม่แน่ใจ หรือไม่ชัดเจนว่าควรทำแบบไหน ให้ถามผู้ใช้ก่อนเสมอ อย่าเดาเอาเอง
+- อธิบายให้ผู้ใช้เข้าใจ
+- ให้อธิบายเวลาเริ่มทำงานของวัน ต้องอัพเดตกับผู้ใช้ว่าทำอะไรอยู่
+- เตือนผู้ใช้เสมอว่าตรงไหนผิด พร้อมทางแก้ไข
+
+## คำสั่ง (Commands)
 
 ```
-npm run dev       # Vite dev server on port 3000 (host 0.0.0.0)
-npm run build     # production build via Vite
-npm run preview   # preview the production build
-npm run lint      # tsc --noEmit (type-check only, no separate linter)
+npm run dev       # เปิด Vite dev server ที่พอร์ต 3000 (host 0.0.0.0)
+npm run build     # บิลด์เวอร์ชันโปรดักชันด้วย Vite
+npm run preview   # พรีวิวเวอร์ชันโปรดักชันที่บิลด์แล้ว
+npm run lint      # tsc --noEmit (เช็คชนิดข้อมูลอย่างเดียว ไม่มี linter แยกต่างหาก)
 npm run clean     # rm -rf dist server.js
 ```
 
-There is no test runner configured in this project (no Jest/Vitest/Playwright test suite, no `test` script). Treat `npm run lint` (`tsc --noEmit`) as the primary automated correctness check after changes.
+โปรเจกต์นี้ไม่มีการตั้งค่า test runner (ไม่มีชุดทดสอบ Jest/Vitest/Playwright ไม่มีสคริปต์ `test`) ให้ใช้ `npm run lint` (`tsc --noEmit`) เป็นการตรวจสอบความถูกต้องอัตโนมัติหลักหลังจากแก้ไขโค้ด
 
-## Architecture
+## สถาปัตยกรรม (Architecture)
 
-This is a React 19 + TypeScript + Vite + Tailwind CSS v4 SPA ("Wong Workpath" — internal `unityspace_*` localStorage key prefixes and audit-log strings still reference the original "UnitySpace" name), an internal project/task management + credential-vault tool. Tailwind v4 is wired via `@tailwindcss/vite` with no `tailwind.config.*` — theme tokens live in `src/index.css` under `@theme`.
+นี่คือแอป React 19 + TypeScript + Vite + Tailwind CSS v4 แบบ SPA ("Wong Workpath" — ยังคงมีการอ้างอิงชื่อเดิม "UnitySpace" หลงเหลืออยู่ใน localStorage key prefix `unityspace_*` และข้อความ audit-log) เป็นเครื่องมือภายในสำหรับจัดการโปรเจกต์/งาน และคลังเก็บรหัสผ่าน Tailwind v4 เชื่อมต่อผ่าน `@tailwindcss/vite` โดยไม่มีไฟล์ `tailwind.config.*` — theme tokens อยู่ใน `src/index.css` ภายใต้ `@theme`
 
-**Routing is `react-router-dom` v7**, mounted via `<BrowserRouter>` in `src/main.tsx`. `src/App.tsx` defines all routes: `/login` (public), and `/dashboard`, `/tasks`, `/gantt`, `/calendar`, `/docs`, `/reports`, `/vault` behind a `ProtectedLayoutRoute` that redirects to `/login` when `currentUser` is null. Each route renders a thin page component in `src/pages/*.tsx` that pulls data/handlers from `useAppData()` and passes them as props into the matching presentational component in `src/components/`.
+**การทำ routing ใช้ `react-router-dom` v7** ติดตั้งผ่าน `<BrowserRouter>` ใน `src/main.tsx` ไฟล์ `src/App.tsx` กำหนด route ทั้งหมด: `/login` (เข้าถึงได้แบบสาธารณะ) และ `/dashboard`, `/tasks`, `/gantt`, `/calendar`, `/docs`, `/reports`, `/vault` ซึ่งอยู่หลัง `ProtectedLayoutRoute` ที่จะ redirect ไปหน้า `/login` เมื่อ `currentUser` เป็น null แต่ละ route จะ render page component แบบบางๆ ใน `src/pages/*.tsx` ที่ดึงข้อมูล/handler จาก `useAppData()` แล้วส่งเป็น props ไปยัง component ที่แสดงผลจริงใน `src/components/`
 
-**All app state lives in `src/context/AppDataContext.tsx`**, exposed via the `useAppData()` hook (`AppDataProvider` wraps the router in `App.tsx`). There is no other state library. It owns: auth (`currentUser`), every domain slice (employees, tasks, documents, credentials, leave requests, notifications, audit logs), and the task-modal open/edit state — plus all the mutation handlers (`handleSaveTask`, `handleAddCredential`, etc.).
+**state ทั้งหมดของแอปอยู่ใน `src/context/AppDataContext.tsx`** เข้าถึงผ่าน hook `useAppData()` (`AppDataProvider` ครอบ router ไว้ใน `App.tsx`) ไม่มี state library อื่นนอกจากนี้ โดยจะเก็บ: การยืนยันตัวตน (`currentUser`), ข้อมูลทุกโดเมน (พนักงาน, งาน, เอกสาร, รหัสผ่าน, คำขอลา, การแจ้งเตือน, audit log) และสถานะเปิด/แก้ไขของ task-modal — รวมถึง handler สำหรับการเปลี่ยนแปลงข้อมูลทั้งหมด (`handleSaveTask`, `handleAddCredential` ฯลฯ)
 
-**Persistence is localStorage, not a backend.** On mount, `AppDataContext` reads each domain slice from `localStorage` (keys prefixed `unityspace_*`, e.g. `unityspace_tasks`, `unityspace_employees`) and falls back to seed data in `src/data/mockData.ts` if nothing is stored yet. Every mutation goes through a `saveX` helper (`saveTasks`, `saveDocs`, `saveCredentials`, `saveLeaves`, `saveNotifications`) that updates state and writes straight back to the same `localStorage` key in one step — there is no server/API layer despite `express` and `@google/genai` appearing in `package.json` (leftovers from the original AI Studio template scaffold; neither is actually imported anywhere in `src/`).
+**การเก็บข้อมูลใช้ localStorage ไม่ใช่ backend** เมื่อ mount แล้ว `AppDataContext` จะอ่านข้อมูลแต่ละโดเมนจาก `localStorage` (คีย์ขึ้นต้นด้วย `unityspace_*` เช่น `unityspace_tasks`, `unityspace_employees`) และจะใช้ seed data ใน `src/data/mockData.ts` แทนถ้ายังไม่มีข้อมูลเก็บไว้ ทุกการเปลี่ยนแปลงข้อมูลจะผ่าน helper `saveX` (`saveTasks`, `saveDocs`, `saveCredentials`, `saveLeaves`, `saveNotifications`) ที่อัปเดต state และเขียนกลับไปยัง `localStorage` key เดิมในขั้นตอนเดียว — ไม่มี server/API layer แม้ว่า `express` และ `@google/genai` จะปรากฏใน `package.json` (เป็นของเหลือจากเทมเพลต AI Studio ดั้งเดิม ไม่มีการ import ใช้งานจริงใน `src/`)
 
-**Auth is a mock login, not real authentication.** `src/components/Login.tsx` matches the entered email against the `employees` array from mock data (any password is accepted) and drives a UI-only forgot-password/OTP flow. The logged-in user id is persisted to `localStorage` (`unityspace_current_user_id`) and restored by `AppDataContext` on reload (gated by `isRestoringSession` so routes don't flash the login page).
+**ระบบยืนยันตัวตนเป็นการ mock login ไม่ใช่ authentication จริง** `src/components/Login.tsx` จะจับคู่อีเมลที่กรอกกับ array `employees` จาก mock data (รหัสผ่านอะไรก็ผ่านหมด) และขับเคลื่อน flow ลืมรหัสผ่าน/OTP ที่เป็น UI เท่านั้น id ของผู้ใช้ที่ล็อกอินจะถูกเก็บไว้ใน `localStorage` (`unityspace_current_user_id`) และถูกกู้คืนโดย `AppDataContext` เมื่อโหลดหน้าใหม่ (ควบคุมด้วย `isRestoringSession` เพื่อไม่ให้ route กระพริบไปที่หน้า login)
 
-**`CredentialVault` (คลังรหัสพนักงาน, the `/vault` route) has a second, independent auth gate on top of the main login**: a 4-digit PIN, hashed client-side and stored in `localStorage` (`master_password_hash`), that must be set up once and re-entered to unlock the credential list each time the tab is (re)mounted. Secrets are encrypted with the PIN itself as the key via `src/utils/crypto.ts` (`encryptValue`/`decryptValue`/`getSimpleHash`) — this is a simulated/cosmetic XOR-with-hashed-key cipher, not real AES-256; don't treat it as a real security boundary. Because the PIN doubles as the encryption key, resetting a forgotten PIN does not recover previously-encrypted secrets. `decryptValue` throws on anything that isn't valid ciphertext, so callers fall back to the raw stored value for legacy/never-encrypted records.
+**`CredentialVault` (คลังรหัสพนักงาน, route `/vault`) มีระบบยืนยันตัวตนชั้นที่สองแยกต่างหากจากการล็อกอินหลัก**: PIN 4 หลักที่ hash ฝั่ง client แล้วเก็บไว้ใน `localStorage` (`master_password_hash`) ต้องตั้งค่าครั้งแรกและกรอกใหม่ทุกครั้งที่ tab ถูก (re)mount เพื่อปลดล็อครายการรหัสผ่าน ข้อมูลลับจะถูกเข้ารหัสด้วย PIN เองผ่าน `src/utils/crypto.ts` (`encryptValue`/`decryptValue`/`getSimpleHash`) — นี่คือการเข้ารหัสแบบจำลอง/เพื่อความสวยงามด้วย XOR-with-hashed-key ไม่ใช่ AES-256 จริง อย่าคิดว่านี่คือขอบเขตความปลอดภัยที่แท้จริง เนื่องจาก PIN ทำหน้าที่เป็นกุญแจเข้ารหัสไปด้วย การรีเซ็ต PIN ที่ลืมจะไม่สามารถกู้คืนข้อมูลลับที่เข้ารหัสไว้ก่อนหน้าได้ `decryptValue` จะ throw error กับอะไรก็ตามที่ไม่ใช่ ciphertext ที่ถูกต้อง ดังนั้นตัวเรียกใช้จะ fallback ไปใช้ค่าดิบที่เก็บไว้สำหรับข้อมูลเก่า/ที่ไม่เคยเข้ารหัส
 
-**Two different icon sources are mixed in the nav.** Most icons come from `lucide-react`, but the 7 sidebar menu items (`NAV_ITEMS` in `src/components/layout/Sidebar.tsx`) use paired active/inactive PNGs from `images/icon menu/` at the repo root, swapped based on the current route and hover state. Brand assets (logo, favicon) also live in the root `images/` directory, not `src/assets/`.
+**ไอคอนใน nav มาจาก 2 แหล่งที่ต่างกัน** ไอคอนส่วนใหญ่มาจาก `lucide-react` แต่เมนู sidebar ทั้ง 7 รายการ (`NAV_ITEMS` ใน `src/components/layout/Sidebar.tsx`) ใช้ไฟล์ PNG แบบ active/inactive คู่กันจาก `images/icon menu/` ที่ root ของ repo สลับกันตาม route ปัจจุบันและสถานะ hover ทรัพยากรแบรนด์ (โลโก้, favicon) ก็อยู่ใน root directory `images/` เช่นกัน ไม่ได้อยู่ใน `src/assets/`
 
-**Path alias**: `@/*` resolves to the project root (not `src/`), configured in both `tsconfig.json` and `vite.config.ts`.
+**Path alias**: `@/*` ชี้ไปที่ root ของโปรเจกต์ (ไม่ใช่ `src/`) ตั้งค่าไว้ทั้งใน `tsconfig.json` และ `vite.config.ts`
 
-**`vite.config.ts` has AI-Studio-specific HMR handling** (`DISABLE_HMR` env var toggles `server.hmr`/`server.watch` off) to avoid flicker while an agent is editing files in that environment — don't remove this without checking the deployment context.
+**`vite.config.ts` มีการจัดการ HMR เฉพาะสำหรับ AI Studio** (ตัวแปร env `DISABLE_HMR` ใช้เปิด/ปิด `server.hmr`/`server.watch`) เพื่อลดการกระพริบขณะที่ agent กำลังแก้ไขไฟล์ในสภาพแวดล้อมนั้น — อย่าลบส่วนนี้โดยไม่ตรวจสอบบริบทของการ deploy ก่อน
 
-### Code layout
+### โครงสร้างโค้ด (Code layout)
 
-- `src/pages/*.tsx` — one thin route-level wrapper per tab; connects `useAppData()` to the corresponding component in `src/components/`.
-- `src/components/layout/` — `AppLayout` (Header + Sidebar + `<Outlet>` + the global `TaskModal`), `Header`, `Sidebar`.
-- `src/components/*.tsx` — one presentational component per top-level tab (`Dashboard`, `TaskListView`, `GanttChart`, `CalendarView`, `DocVault`, `CredentialVault`), plus `Login` and `TaskModal`.
-- `src/components/dashboard/*.tsx` — smaller presentational pieces composed inside `Dashboard.tsx` only.
-- `src/context/AppDataContext.tsx` — all app state, localStorage sync, and audit logging (see Architecture above).
-- `src/data/mockData.ts` — seed data for every domain type in `src/types.ts` (Employee, Task, LinkedDoc, CredentialItem, LeaveRequest, Notification).
-- `src/types.ts` — the shared domain model; all components consume these types rather than defining their own.
+- `src/pages/*.tsx` — wrapper ระดับ route แบบบางๆ หนึ่งไฟล์ต่อหนึ่งแท็บ เชื่อม `useAppData()` เข้ากับ component ที่ตรงกันใน `src/components/`
+- `src/components/layout/` — `AppLayout` (Header + Sidebar + `<Outlet>` + `TaskModal` แบบ global), `Header`, `Sidebar`
+- `src/components/*.tsx` — component แสดงผลหนึ่งตัวต่อหนึ่งแท็บหลัก (`Dashboard`, `TaskListView`, `GanttChart`, `CalendarView`, `DocVault`, `CredentialVault`) รวมถึง `Login` และ `TaskModal`
+- `src/components/dashboard/*.tsx` — ชิ้นส่วนแสดงผลย่อยๆ ที่ประกอบกันอยู่ใน `Dashboard.tsx` เท่านั้น
+- `src/context/AppDataContext.tsx` — state ทั้งหมดของแอป, การ sync กับ localStorage, และ audit logging (ดูหัวข้อสถาปัตยกรรมด้านบน)
+- `src/data/mockData.ts` — seed data สำหรับทุกโดเมนใน `src/types.ts` (Employee, Task, LinkedDoc, CredentialItem, LeaveRequest, Notification)
+- `src/types.ts` — โมเดลข้อมูลกลางที่ใช้ร่วมกัน — ทุก component ใช้ type เหล่านี้แทนที่จะสร้าง type ของตัวเอง

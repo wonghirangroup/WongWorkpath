@@ -5,7 +5,8 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useAppData } from '../../context/AppDataContext';
 import { ApiError } from '../../lib/api';
 import { getAvatarColor } from '../../lib/avatarColor';
-import { DEPARTMENT_TAG_COLORS } from '../../lib/departmentColors';
+import { getDepartmentTagClass } from '../../lib/departmentColors';
+import { ACCOUNT_TYPE_LABELS } from '../../lib/permissions';
 import LogoutConfirmModal from './LogoutConfirmModal';
 import logo from '../../../images/pp.png';
 import logoutIcon from '../../../images/new side bar/logout icon active.png';
@@ -123,7 +124,7 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
     : displayRoleFull;
 
   return (
-    <header className="bg-white text-[#272220] h-16 sm:h-20 px-4 sm:px-6 lg:px-8 flex items-center lg:items-start lg:pt-7 justify-between shrink-0 sticky top-0 z-40">
+    <header className="bg-[#F6F6F6] text-[#272220] h-16 sm:h-20 px-4 sm:px-6 lg:px-8 flex items-center lg:items-start lg:pt-7 justify-between shrink-0 sticky top-0 z-40">
       <div className="flex items-center gap-2 sm:gap-3 min-w-0">
         <button
           onClick={onToggleMobileMenu}
@@ -141,11 +142,21 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
         </div>
 
         <div className="hidden lg:block min-w-0">
-          <h1 className="text-[32px] font-bold text-[#000000] leading-tight truncate">{title}</h1>
-          {subtitle && (
-            <p className={`text-[20px] font-normal text-[#515151] ${typeof subtitle === 'string' ? 'truncate' : ''}`}>
-              {subtitle}
-            </p>
+          {title ? (
+            <>
+              <h1 className="text-[32px] font-bold text-[#000000] leading-tight truncate">{title}</h1>
+              {subtitle && (
+                <p className={`text-[20px] font-normal text-[#515151] ${typeof subtitle === 'string' ? 'truncate' : ''}`}>
+                  {subtitle}
+                </p>
+              )}
+            </>
+          ) : (
+            subtitle && (
+              <div className={`text-[28px] leading-tight ${typeof subtitle === 'string' ? 'truncate' : ''}`}>
+                {subtitle}
+              </div>
+            )
           )}
         </div>
       </div>
@@ -211,13 +222,13 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
               <p className="font-semibold text-slate-800 truncate">{displayName}</p>
               <p className="text-xs text-slate-400 truncate">{displayRoleFull}</p>
               <div className="flex items-center gap-1.5 mt-1">
-                <span className={`inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${DEPARTMENT_TAG_COLORS[currentUser.department]}`}>
+                <span className={`inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(currentUser.department)}`}>
                   {currentUser.department}
                 </span>
-                {currentUser.isAdmin && (
+                {currentUser.accountType !== 'employee' && (
                   <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase px-2 py-0.5 rounded-full leading-none text-[#FF6537] bg-black border border-[#FF6537]">
                     <Crown size={9} className="fill-current" />
-                    Admin
+                    {ACCOUNT_TYPE_LABELS[currentUser.accountType]}
                   </span>
                 )}
               </div>

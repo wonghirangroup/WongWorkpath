@@ -1,4 +1,5 @@
 import { Employee, CredentialItem } from '../types';
+import type { ProjectRow } from '../components/projectBoard/types';
 
 // Vite only exposes env vars prefixed VITE_ to client code — set in .env,
 // separate from the server-only DB_* vars that server/db.ts reads.
@@ -65,7 +66,7 @@ export async function createEmployee(employee: Employee & { password: string }):
 
 export async function updateEmployeeRemote(
   id: string,
-  updates: Partial<Pick<Employee, 'name' | 'nickname' | 'role' | 'avatar' | 'department' | 'username'>> & { password?: string }
+  updates: Partial<Pick<Employee, 'name' | 'nickname' | 'role' | 'avatar' | 'department' | 'division' | 'username' | 'accountType' | 'restrictedMenuIds' | 'phone' | 'address'>> & { password?: string }
 ): Promise<void> {
   let res: Response;
   try {
@@ -124,4 +125,65 @@ export async function updateCredentialRemote(id: string, item: CredentialItem): 
 export async function deleteCredentialRemote(id: string): Promise<void> {
   const res = await fetch(`${API_BASE_URL}/api/credentials/${encodeURIComponent(id)}`, { method: 'DELETE' });
   if (!res.ok) throw new Error(`Failed to delete credential: ${res.status}`);
+}
+
+export async function fetchProjects(): Promise<ProjectRow[]> {
+  const res = await fetch(`${API_BASE_URL}/api/projects`);
+  if (!res.ok) throw new Error(`Failed to fetch projects: ${res.status}`);
+  return res.json();
+}
+
+export type CreateProjectPayload = Partial<
+  Pick<ProjectRow, 'title' | 'description' | 'department' | 'priority' | 'budget' | 'ownerEmployeeId' | 'progress' | 'status'>
+> & { title: string; startDate?: string | null; endDate?: string | null; createdBy?: string | null };
+
+export async function createProject(payload: CreateProjectPayload): Promise<ProjectRow> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/projects`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(data.message ?? 'สร้างโครงการไม่สำเร็จ', res.status);
+  }
+  return data as ProjectRow;
+}
+
+export async function updateProjectRemote(id: string, updates: Partial<ProjectRow>): Promise<ProjectRow> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/projects/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(data.message ?? 'บันทึกข้อมูลโครงการไม่สำเร็จ', res.status);
+  }
+  return data as ProjectRow;
+}
+
+export async function deleteProjectRemote(id: string): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/projects/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(data.message ?? 'ลบโครงการไม่สำเร็จ', res.status);
+  }
 }

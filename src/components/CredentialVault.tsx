@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect, useId, KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
-import { CredentialItem, AuditLog, Department } from '../types';
+import { CredentialItem, AuditLog } from '../types';
 import { nowTimestamp } from '../lib/datetime';
 import { getAvatarColor } from '../lib/avatarColor';
-import { DEPARTMENT_TAG_COLORS } from '../lib/departmentColors';
+import { getDepartmentTagClass } from '../lib/departmentColors';
 import Dropdown from './Dropdown';
 import {
   Eye,
@@ -185,7 +185,7 @@ interface CredentialVaultProps {
   credentials: CredentialItem[];
   auditLogs: AuditLog[];
   currentUserName: string;
-  currentUserDepartment?: Department;
+  currentUserDepartment?: string;
   onAddCredential: (item: CredentialItem) => void;
   onUpdateCredential: (id: string, updates: Partial<CredentialItem>) => void;
   onDeleteCredential: (id: string) => void;
@@ -656,7 +656,7 @@ export default function CredentialVault({
                 value={searchQuery}
                 onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
                 placeholder="ค้นหารหัสผ่าน (กด / เพื่อโฟกัส)"
-                className="w-full h-10 pl-9 pr-9 bg-[#F6F6F8] border border-transparent rounded-xl text-[13px] font-normal focus:outline-none focus:border-[#FF6537]"
+                className="w-full h-10 pl-9 pr-9 bg-white border border-slate-200 rounded-xl text-[13px] font-normal focus:outline-none focus:border-[#FF6537]"
               />
               {searchQuery && (
                 <button
@@ -672,11 +672,11 @@ export default function CredentialVault({
 
             <div className="flex items-center gap-3 flex-1 min-w-0">
               {/* Grid / list view toggle */}
-              <div className="flex items-center gap-0.5 bg-[#F4F4F5] rounded-xl p-1 shrink-0">
+              <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-xl p-1 shrink-0">
                 <button
                   type="button"
                   onClick={() => { setViewMode('grid'); setCurrentPage(1); }}
-                  className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'grid' ? 'bg-white shadow-sm text-[#272220]' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
+                  className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'grid' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
                   title="มุมมองตาราง"
                 >
                   <LayoutGrid size={15} />
@@ -684,7 +684,7 @@ export default function CredentialVault({
                 <button
                   type="button"
                   onClick={() => { setViewMode('list'); setCurrentPage(1); }}
-                  className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'list' ? 'bg-white shadow-sm text-[#272220]' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
+                  className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'list' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
                   title="มุมมองรายการ"
                 >
                   <List size={15} />
@@ -921,7 +921,7 @@ export default function CredentialVault({
                     <div className="flex items-center gap-1.5 text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-2">
                       <span>ทีม:</span>
                       {currentUserDepartment ? (
-                        <span className={`font-semibold px-1.5 py-0.5 rounded-full text-[10px] ${DEPARTMENT_TAG_COLORS[currentUserDepartment]}`}>
+                        <span className={`font-semibold px-1.5 py-0.5 rounded-full text-[10px] ${getDepartmentTagClass(currentUserDepartment)}`}>
                           {currentUserDepartment}
                         </span>
                       ) : (
@@ -1045,7 +1045,7 @@ export default function CredentialVault({
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap">
                             {item.scope === 'ทีม' && item.team ? (
-                              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${DEPARTMENT_TAG_COLORS[item.team]}`}>
+                              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(item.team)}`}>
                                 {item.team}
                               </span>
                             ) : (
@@ -1152,7 +1152,7 @@ export default function CredentialVault({
                           <h4 className="text-base font-bold text-slate-900 leading-tight flex items-center gap-1.5">
                             {item.label}
                             {item.scope === 'ทีม' && item.team && (
-                              <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${DEPARTMENT_TAG_COLORS[item.team]}`}>
+                              <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(item.team)}`}>
                                 {item.team}
                               </span>
                             )}

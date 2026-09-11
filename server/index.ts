@@ -4,6 +4,7 @@ import cors from 'cors';
 import { authRouter } from './routes/auth.ts';
 import { employeesRouter } from './routes/employees.ts';
 import { credentialsRouter } from './routes/credentials.ts';
+import { projectsRouter } from './routes/projects.ts';
 import { assertDbConnection } from './db.ts';
 
 const app = express();
@@ -27,6 +28,7 @@ app.get('/api/health', async (_req, res) => {
 app.use('/api/auth', authRouter);
 app.use('/api/employees', employeesRouter);
 app.use('/api/credentials', credentialsRouter);
+app.use('/api/projects', projectsRouter);
 
 app.listen(port, () => {
   console.log(`API server listening on http://localhost:${port}`);

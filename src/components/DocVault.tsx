@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
-import { LinkedDoc, Department } from '../types';
+import { LinkedDoc } from '../types';
 import { nowTimestamp } from '../lib/datetime';
+import { getDepartmentTagClass } from '../lib/departmentColors';
+import { useAppData } from '../context/AppDataContext';
 import {
   Plus,
   Copy,
@@ -38,7 +40,7 @@ interface DocVaultProps {
   documents: LinkedDoc[];
   currentUserName: string;
   onAddDocument: (doc: LinkedDoc) => void;
-  onEditDocument: (docId: string, updates: { name: string; url?: string; scope: LinkedDoc['scope']; team?: Department }) => void;
+  onEditDocument: (docId: string, updates: { name: string; url?: string; scope: LinkedDoc['scope']; team?: string }) => void;
   onDeleteDocument: (docId: string) => void;
   onMoveDocument: (docId: string, newParentId: string) => void;
   // Lifted to AppDataContext (not local state) so AppLayout can render the current folder as a
@@ -67,18 +69,7 @@ const SCOPE_FILTER_OPTIONS: { value: LinkedDoc['scope'] | '__all__'; label: stri
   { value: 'ทีม', label: 'ทีม' }
 ];
 
-const TEAM_OPTIONS: Department[] = ['IT', 'HR', 'Marketing', 'Sales', 'Design', 'Finance'];
-
-const DEPARTMENT_TAG_COLORS: Record<Department, string> = {
-  IT: 'text-blue-700 bg-blue-100',
-  HR: 'text-fuchsia-700 bg-fuchsia-100',
-  Marketing: 'text-orange-700 bg-orange-100',
-  Sales: 'text-emerald-700 bg-emerald-100',
-  Design: 'text-purple-700 bg-purple-100',
-  Finance: 'text-slate-700 bg-slate-200'
-};
-
-const getDeptTagClass = (team?: Department) => (team ? DEPARTMENT_TAG_COLORS[team] : 'text-[#FF6537] bg-[#FFF1EC]');
+const getDeptTagClass = (team?: string) => (team ? getDepartmentTagClass(team) : 'text-[#FF6537] bg-[#FFF1EC]');
 
 // 3MB raw-file cap — base64 inflates ~33% on top of that, and everything shares one
 // browser-wide localStorage budget (~5-10MB) with tasks/credentials/audit logs etc.
@@ -275,10 +266,11 @@ export default function DocVault({
   setCurrentFolderId,
   initialSelectedDocId
 }: DocVaultProps) {
+  const { orgSections } = useAppData();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedKind, setSelectedKind] = useState<LinkedDoc['kind'] | 'All'>('All');
   const [scopeFilter, setScopeFilter] = useState<LinkedDoc['scope'] | '__all__'>('__all__');
-  const [teamFilter, setTeamFilter] = useState<Department | '__all__'>('__all__');
+  const [teamFilter, setTeamFilter] = useState<string>('__all__');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [sortBy, setSortBy] = useState<'latest' | 'oldest' | 'az'>('latest');
   const [isSortOpen, setIsSortOpen] = useState(false);
@@ -469,7 +461,7 @@ export default function DocVault({
   const [newName, setNewName] = useState('');
   const [newUrl, setNewUrl] = useState('');
   const [newScope, setNewScope] = useState<LinkedDoc['scope']>('ส่วนตัว');
-  const [newTeam, setNewTeam] = useState<Department | ''>('');
+  const [newTeam, setNewTeam] = useState<string>('');
   const [nameTouched, setNameTouched] = useState(false);
   const [pickedFile, setPickedFile] = useState<globalThis.File | null>(null);
   const [fileError, setFileError] = useState('');
@@ -488,7 +480,7 @@ export default function DocVault({
   const [editName, setEditName] = useState('');
   const [editUrl, setEditUrl] = useState('');
   const [editScope, setEditScope] = useState<LinkedDoc['scope']>('ส่วนตัว');
-  const [editTeam, setEditTeam] = useState<Department | ''>('');
+  const [editTeam, setEditTeam] = useState<string>('');
 
   // Delete confirmation modal
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; hasChildren: boolean } | null>(null);
@@ -667,7 +659,7 @@ export default function DocVault({
   // The open folder itself (if any) — items created inside it inherit its scope/team rather
   // than asking again, since the folder already established "this is a team/personal space".
   const currentFolder = documents.find(d => d.id === currentFolderId);
-  const resolveCreateScope = (): { scope: LinkedDoc['scope']; team?: Department } =>
+  const resolveCreateScope = (): { scope: LinkedDoc['scope']; team?: string } =>
     currentFolderId
       ? { scope: currentFolder?.scope ?? 'ส่วนตัว', team: currentFolder?.team }
       : { scope: newScope, team: newScope === 'ทีม' ? (newTeam || undefined) : undefined };
@@ -883,7 +875,7 @@ export default function DocVault({
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="ค้นหาในโฟลเดอร์นี้ (ชื่อ)"
-            className="w-full h-10 pl-9 pr-9 bg-[#F6F6F8] border border-transparent rounded-xl text-[13px] font-normal focus:outline-none focus:border-[#FF6537]"
+            className="w-full h-10 pl-9 pr-9 bg-white border border-slate-200 rounded-xl text-[13px] font-normal focus:outline-none focus:border-[#FF6537]"
           />
           {searchTerm && (
             <button
@@ -899,11 +891,11 @@ export default function DocVault({
 
         <div className="flex items-center gap-3 flex-1 min-w-0">
           {/* Grid / list view toggle */}
-          <div className="flex items-center gap-0.5 bg-[#F4F4F5] rounded-xl p-1 shrink-0">
+          <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-xl p-1 shrink-0">
             <button
               type="button"
               onClick={() => setViewMode('grid')}
-              className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'grid' ? 'bg-white shadow-sm text-[#272220]' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
+              className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'grid' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
               title="มุมมองตาราง"
             >
               <LayoutGrid size={15} />
@@ -911,7 +903,7 @@ export default function DocVault({
             <button
               type="button"
               onClick={() => setViewMode('list')}
-              className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'list' ? 'bg-white shadow-sm text-[#272220]' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
+              className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'list' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
               title="มุมมองรายการ"
             >
               <List size={15} />
@@ -936,12 +928,12 @@ export default function DocVault({
 
           {scopeFilter === 'ทีม' && (
             <div className="w-33.75 h-10">
-              <Dropdown<Department | '__all__'>
+              <Dropdown<string>
                 value={teamFilter}
                 onChange={setTeamFilter}
                 options={[
                   { value: '__all__', label: 'ทุกทีม' },
-                  ...TEAM_OPTIONS.map((team) => ({ value: team, label: team }))
+                  ...orgSections.map((team) => ({ value: team, label: team }))
                 ]}
               />
             </div>
@@ -1315,14 +1307,14 @@ export default function DocVault({
                         {newScope === 'ทีม' && (
                           <div>
                             <label className="block text-[11px] font-bold text-slate-500 mb-1">เลือกทีม</label>
-                            <Dropdown<Department | '__unset__'>
+                            <Dropdown<string>
                               value={newTeam || '__unset__'}
                               onChange={(value) => setNewTeam(value === '__unset__' ? '' : value)}
                               placeholder="ไม่ระบุทีม"
                               size="compact"
                               options={[
                                 { value: '__unset__', label: 'ไม่ระบุทีม' },
-                                ...TEAM_OPTIONS.map((team) => ({ value: team, label: team }))
+                                ...orgSections.map((team) => ({ value: team, label: team }))
                               ]}
                             />
                           </div>
@@ -1391,14 +1383,14 @@ export default function DocVault({
                         {newScope === 'ทีม' && (
                           <div>
                             <label className="block text-[11px] font-bold text-slate-500 mb-1">เลือกทีม</label>
-                            <Dropdown<Department | '__unset__'>
+                            <Dropdown<string>
                               value={newTeam || '__unset__'}
                               onChange={(value) => setNewTeam(value === '__unset__' ? '' : value)}
                               placeholder="ไม่ระบุทีม"
                               size="compact"
                               options={[
                                 { value: '__unset__', label: 'ไม่ระบุทีม' },
-                                ...TEAM_OPTIONS.map((team) => ({ value: team, label: team }))
+                                ...orgSections.map((team) => ({ value: team, label: team }))
                               ]}
                             />
                           </div>
@@ -1468,14 +1460,14 @@ export default function DocVault({
                         {newScope === 'ทีม' && (
                           <div>
                             <label className="block text-[11px] font-bold text-slate-500 mb-1">เลือกทีม</label>
-                            <Dropdown<Department | '__unset__'>
+                            <Dropdown<string>
                               value={newTeam || '__unset__'}
                               onChange={(value) => setNewTeam(value === '__unset__' ? '' : value)}
                               placeholder="ไม่ระบุทีม"
                               size="compact"
                               options={[
                                 { value: '__unset__', label: 'ไม่ระบุทีม' },
-                                ...TEAM_OPTIONS.map((team) => ({ value: team, label: team }))
+                                ...orgSections.map((team) => ({ value: team, label: team }))
                               ]}
                             />
                           </div>
@@ -1588,14 +1580,14 @@ export default function DocVault({
                   {editScope === 'ทีม' && (
                     <div>
                       <label className="block text-[11px] font-bold text-slate-500 mb-1">เลือกทีม</label>
-                      <Dropdown<Department | '__unset__'>
+                      <Dropdown<string>
                         value={editTeam || '__unset__'}
                         onChange={(value) => setEditTeam(value === '__unset__' ? '' : value)}
                         placeholder="ไม่ระบุทีม"
                         size="compact"
                         options={[
                           { value: '__unset__', label: 'ไม่ระบุทีม' },
-                          ...TEAM_OPTIONS.map((team) => ({ value: team, label: team }))
+                          ...orgSections.map((team) => ({ value: team, label: team }))
                         ]}
                       />
                     </div>

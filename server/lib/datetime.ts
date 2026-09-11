@@ -17,3 +17,15 @@ export function nowBangkokDateTime(): string {
   const get = (type: string) => parts.find((p) => p.type === type)!.value;
   return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`;
 }
+
+const THAI_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+
+// Mirrors the client's own formatThaiDateShort (projectBoard/CreateProjectModal.tsx) exactly, so
+// a project's start/end/created dates keep displaying identically whether they came from the
+// mock data of old or this API — no client rendering code needs to change either way.
+export function formatThaiDateShort(dateOnly: string | null): string | null {
+  if (!dateOnly) return null;
+  const d = new Date(`${dateOnly}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  return `${String(d.getDate()).padStart(2, '0')} ${THAI_MONTHS_SHORT[d.getMonth()]} ${d.getFullYear() + 543}`;
+}

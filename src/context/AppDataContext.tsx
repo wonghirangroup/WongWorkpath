@@ -1,15 +1,16 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
 import {
   Employee,
   Task,
   LinkedDoc,
   CredentialItem,
   LeaveRequest,
+  Meeting,
   Notification,
   AuditLog,
-  HandoverRecord,
-  Department
+  HandoverRecord
 } from '../types';
+import { DEFAULT_ORG_DIVISIONS, OrgDivisionData } from '../data/orgStructure';
 import {
   INITIAL_EMPLOYEES,
   INITIAL_DOCS,
@@ -18,8 +19,9 @@ import {
   INITIAL_LEAVE_REQUESTS,
   INITIAL_NOTIFICATIONS
 } from '../data/mockData';
-import { fetchEmployees, createEmployee, updateEmployeeRemote, deleteEmployeeRemote, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote } from '../lib/api';
+import { fetchEmployees, createEmployee, updateEmployeeRemote, deleteEmployeeRemote, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote, fetchProjects, createProject, updateProjectRemote, deleteProjectRemote, CreateProjectPayload } from '../lib/api';
 import { nowTimestamp } from '../lib/datetime';
+import type { ProjectRow } from '../components/projectBoard/types';
 
 // One-time shape migration for documents saved to localStorage before the Drive redesign added
 // `kind`/`parentId` (folders + file uploads) in place of the old `type` enum — without this,
@@ -45,10 +47,12 @@ interface AppDataContextValue {
 
   // Domain data
   employees: Employee[];
+  projects: ProjectRow[];
   tasks: Task[];
   documents: LinkedDoc[];
   credentials: CredentialItem[];
   leaveRequests: LeaveRequest[];
+  meetings: Meeting[];
   notifications: Notification[];
   auditLogs: AuditLog[];
   unreadCount: number;
@@ -64,15 +68,18 @@ interface AppDataContextValue {
   handleAddEmployee: (employee: Employee & { password: string }) => Promise<void>;
   handleUpdateEmployee: (
     id: string,
-    updates: Partial<Pick<Employee, 'name' | 'nickname' | 'role' | 'avatar' | 'department' | 'username'>> & { password?: string }
+    updates: Partial<Pick<Employee, 'name' | 'nickname' | 'role' | 'avatar' | 'department' | 'division' | 'username' | 'accountType' | 'restrictedMenuIds' | 'phone' | 'address'>> & { password?: string }
   ) => Promise<void>;
   handleDeleteEmployee: (id: string) => Promise<void>;
+  handleAddProject: (payload: CreateProjectPayload) => Promise<ProjectRow>;
+  handleUpdateProject: (id: string, updates: Partial<ProjectRow>) => Promise<void>;
+  handleDeleteProject: (id: string) => Promise<void>;
   handleSaveTask: (taskData: Partial<Task>) => void;
   handleDeleteTask: (id: string) => void;
   handleInitiateHandover: (taskId: string, fromUserId: string, toUserId: string, stageName: string, notes: string) => void;
   handleApproveHandover: (taskId: string, handoverId: string, approved: boolean, notes: string) => void;
   handleAddDocument: (newDoc: LinkedDoc) => void;
-  handleEditDocument: (docId: string, updates: { name: string; url?: string; scope: LinkedDoc['scope']; team?: Department }) => void;
+  handleEditDocument: (docId: string, updates: { name: string; url?: string; scope: LinkedDoc['scope']; team?: string }) => void;
   handleDeleteDocument: (docId: string) => void;
   handleMoveDocument: (docId: string, newParentId: string) => void;
   saveDocuments: (newDocs: LinkedDoc[]) => void;
@@ -80,13 +87,31 @@ interface AppDataContextValue {
   // a breadcrumb title ("เอกสาร Drive > Grow Store") instead of the page's normal static title.
   docCurrentFolderId: string | null;
   setDocCurrentFolderId: (id: string | null) => void;
+  // Which project's detail view is currently open on the Tasks page — shared with AppLayout so
+  // the Header can render it as a breadcrumb subtitle ("จัดการงานและโครงการ > Grow store") instead
+  // of the page's normal static subtitle, same pattern as docCurrentFolderId above.
+  taskSelectedProjectId: string | null;
+  setTaskSelectedProjectId: (id: string | null) => void;
   handleAddLeaveRequest: (newLeave: Omit<LeaveRequest, 'id'>) => void;
   handleApproveLeave: (leaveId: string, approved: boolean) => void;
+  handleAddMeeting: (newMeeting: Omit<Meeting, 'id'>) => void;
   handleAddCredential: (newItem: CredentialItem) => void;
   handleUpdateCredential: (id: string, updates: Partial<CredentialItem>) => void;
   handleDeleteCredential: (id: string) => void;
   handleLogAudit: (action: string, details: string) => void;
   handleMarkAllNotificationsRead: () => void;
+
+  // Org chart structure (โครงสร้างองค์กร) — admin-editable from Employee Management's
+  // โครงสร้างองค์กร tab. `orgSections` is every section flattened, in division order, for the
+  // various department/team pickers throughout the app.
+  orgDivisions: OrgDivisionData[];
+  orgSections: string[];
+  handleAddDivision: (name: string) => void;
+  handleRenameDivision: (oldName: string, newName: string) => void;
+  handleDeleteDivision: (name: string) => void;
+  handleAddSection: (divisionName: string, sectionName: string) => void;
+  handleRenameSection: (divisionName: string, oldName: string, newName: string) => void;
+  handleDeleteSection: (divisionName: string, sectionName: string) => void;
 }
 
 const AppDataContext = createContext<AppDataContextValue | null>(null);
@@ -104,13 +129,18 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   // Persistence States
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [documents, setDocuments] = useState<LinkedDoc[]>([]);
   const [docCurrentFolderId, setDocCurrentFolderId] = useState<string | null>(null);
+  const [taskSelectedProjectId, setTaskSelectedProjectId] = useState<string | null>(null);
   const [credentials, setCredentials] = useState<CredentialItem[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
+  const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [orgDivisions, setOrgDivisions] = useState<OrgDivisionData[]>(DEFAULT_ORG_DIVISIONS);
+  const orgSections = useMemo(() => orgDivisions.flatMap((d) => d.sections), [orgDivisions]);
 
   // Task Modal state
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -165,6 +195,26 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // Projects live in the real `project` table (see server/routes/projects.ts) with no
+  // localStorage layer at all — unlike employees/credentials there's no legacy mock data worth
+  // caching or falling back to, since the user is creating every real project from scratch.
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchProjects()
+      .then((apiProjects) => {
+        if (cancelled) return;
+        setProjects(apiProjects);
+      })
+      .catch((err) => {
+        console.warn('Could not load projects from the API:', err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Initialize remaining domain data on mount (still localStorage/mock-only — no backend yet)
   useEffect(() => {
     const localTasks = localStorage.getItem('unityspace_tasks');
@@ -173,6 +223,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     const localLeaves = localStorage.getItem('unityspace_leaves');
     const localNotifications = localStorage.getItem('unityspace_notifications');
     const localLogs = localStorage.getItem('unityspace_audit_logs');
+    const localOrgDivisions = localStorage.getItem('unityspace_org_divisions');
 
     if (localTasks) setTasks(JSON.parse(localTasks));
     else {
@@ -198,6 +249,10 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('unityspace_leaves', JSON.stringify(INITIAL_LEAVE_REQUESTS));
     }
 
+    // No mock seed — meetings is a brand-new feature with no historical demo data to backfill.
+    const localMeetings = localStorage.getItem('unityspace_meetings');
+    if (localMeetings) setMeetings(JSON.parse(localMeetings));
+
     if (localNotifications) setNotifications(JSON.parse(localNotifications));
     else {
       setNotifications(INITIAL_NOTIFICATIONS);
@@ -220,6 +275,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       setAuditLogs(initialLogs);
       localStorage.setItem('unityspace_audit_logs', JSON.stringify(initialLogs));
     }
+
+    if (localOrgDivisions) setOrgDivisions(JSON.parse(localOrgDivisions));
+    else localStorage.setItem('unityspace_org_divisions', JSON.stringify(DEFAULT_ORG_DIVISIONS));
   }, []);
 
   // Restore login session once the employee directory has loaded
@@ -267,6 +325,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('unityspace_leaves', JSON.stringify(newLeaves));
   };
 
+  const saveMeetings = (newMeetings: Meeting[]) => {
+    setMeetings(newMeetings);
+    localStorage.setItem('unityspace_meetings', JSON.stringify(newMeetings));
+  };
+
   const saveNotifications = (newNotifs: Notification[]) => {
     setNotifications(newNotifs);
     localStorage.setItem('unityspace_notifications', JSON.stringify(newNotifs));
@@ -306,7 +369,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   // by both the self-service "แก้ไขโปรไฟล์" form and the admin-only Employee Management edit form.
   const handleUpdateEmployee = async (
     id: string,
-    updates: Partial<Pick<Employee, 'name' | 'nickname' | 'role' | 'avatar' | 'department' | 'username'>> & { password?: string }
+    updates: Partial<Pick<Employee, 'name' | 'nickname' | 'role' | 'avatar' | 'department' | 'division' | 'username' | 'accountType' | 'restrictedMenuIds' | 'phone' | 'address'>> & { password?: string }
   ) => {
     await updateEmployeeRemote(id, updates);
     // password is a login-only field, never part of the Employee shape kept in state/localStorage
@@ -325,6 +388,94 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     setEmployees(updated);
     localStorage.setItem('unityspace_employees', JSON.stringify(updated));
     if (target) handleLogAudit('DELETE_EMPLOYEE', `ลบบัญชีพนักงาน: "${target.name}" ออกจากระบบถาวร`);
+  };
+
+  // 0a. Project Operations (จัดการงานและโครงการ) — real `project` table, no localStorage layer.
+  // Create awaits the API since the server generates both `id` and the human-facing "PRJ-NNN"
+  // code, unlike credentials' fire-and-forget pattern where the client already owns the id.
+  const handleAddProject = async (payload: CreateProjectPayload) => {
+    const created = await createProject(payload);
+    setProjects((prev) => [created, ...prev]);
+    handleLogAudit('ADD_PROJECT', `สร้างโครงการใหม่: "${created.title}" (${created.code})`);
+    return created;
+  };
+
+  // Awaited (not optimistic) — replaces the local row with the server's freshly re-formatted
+  // version rather than merging raw `updates` straight into state, since an edit may submit raw
+  // ISO dates while ProjectRow.startDate/endDate must stay Thai-formatted display text.
+  const handleUpdateProject = async (id: string, updates: Partial<ProjectRow>) => {
+    const updated = await updateProjectRemote(id, updates);
+    setProjects((prev) => prev.map((p) => (p.id === id ? updated : p)));
+    handleLogAudit('UPDATE_PROJECT', `แก้ไขโครงการ: "${updated.title}" (${updated.code})`);
+  };
+
+  const handleDeleteProject = async (id: string) => {
+    const target = projects.find((p) => p.id === id);
+    await deleteProjectRemote(id);
+    setProjects((prev) => prev.filter((p) => p.id !== id));
+    if (target) handleLogAudit('DELETE_PROJECT', `ลบโครงการ: "${target.title}" (${target.code}) ออกจากระบบถาวร`);
+  };
+
+  // 0b. Org Chart Structure Operations (โครงสร้างองค์กร) — client-side/localStorage only, admin-
+  // editable from Employee Management's โครงสร้างองค์กร tab. Renaming a division or section
+  // cascades to every employee currently pointing at the old name so no one silently falls out of
+  // the chart; deleting one does not — affected employees just show up as "ยังไม่ระบุฝ่าย" until
+  // reassigned.
+  const saveOrgDivisions = (updated: OrgDivisionData[]) => {
+    setOrgDivisions(updated);
+    localStorage.setItem('unityspace_org_divisions', JSON.stringify(updated));
+  };
+
+  const handleAddDivision = (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed || orgDivisions.some((d) => d.name === trimmed)) return;
+    saveOrgDivisions([...orgDivisions, { name: trimmed, sections: [] }]);
+    handleLogAudit('ADD_ORG_DIVISION', `เพิ่มฝ่ายใหม่: "${trimmed}"`);
+  };
+
+  const handleRenameDivision = (oldName: string, newName: string) => {
+    const trimmed = newName.trim();
+    if (!trimmed || trimmed === oldName || orgDivisions.some((d) => d.name === trimmed)) return;
+    saveOrgDivisions(orgDivisions.map((d) => (d.name === oldName ? { ...d, name: trimmed } : d)));
+    employees.filter((emp) => emp.division === oldName).forEach((emp) => {
+      handleUpdateEmployee(emp.id, { division: trimmed });
+    });
+    handleLogAudit('RENAME_ORG_DIVISION', `เปลี่ยนชื่อฝ่าย: "${oldName}" → "${trimmed}"`);
+  };
+
+  const handleDeleteDivision = (name: string) => {
+    saveOrgDivisions(orgDivisions.filter((d) => d.name !== name));
+    handleLogAudit('DELETE_ORG_DIVISION', `ลบฝ่าย: "${name}"`);
+  };
+
+  const handleAddSection = (divisionName: string, sectionName: string) => {
+    const trimmed = sectionName.trim();
+    if (!trimmed) return;
+    saveOrgDivisions(orgDivisions.map((d) =>
+      d.name === divisionName && !d.sections.includes(trimmed) ? { ...d, sections: [...d.sections, trimmed] } : d
+    ));
+    handleLogAudit('ADD_ORG_SECTION', `เพิ่มแผนกใหม่: "${trimmed}" ในฝ่าย "${divisionName}"`);
+  };
+
+  const handleRenameSection = (divisionName: string, oldName: string, newName: string) => {
+    const trimmed = newName.trim();
+    if (!trimmed || trimmed === oldName) return;
+    saveOrgDivisions(orgDivisions.map((d) =>
+      d.name === divisionName
+        ? { ...d, sections: d.sections.map((s) => (s === oldName ? trimmed : s)) }
+        : d
+    ));
+    employees.filter((emp) => emp.department === oldName).forEach((emp) => {
+      handleUpdateEmployee(emp.id, { department: trimmed });
+    });
+    handleLogAudit('RENAME_ORG_SECTION', `เปลี่ยนชื่อแผนก: "${oldName}" → "${trimmed}"`);
+  };
+
+  const handleDeleteSection = (divisionName: string, sectionName: string) => {
+    saveOrgDivisions(orgDivisions.map((d) =>
+      d.name === divisionName ? { ...d, sections: d.sections.filter((s) => s !== sectionName) } : d
+    ));
+    handleLogAudit('DELETE_ORG_SECTION', `ลบแผนก: "${sectionName}" ออกจากฝ่าย "${divisionName}"`);
   };
 
   // 1. Task Operations
@@ -356,7 +507,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         progress: taskData.progress || 0,
         startDate: taskData.startDate || new Date().toISOString().split('T')[0],
         dueDate: taskData.dueDate || new Date().toISOString().split('T')[0],
-        department: taskData.department || 'IT',
+        department: taskData.department || orgSections[0] || '',
         primaryOwnerId: taskData.primaryOwnerId || '',
         secondaryAssigneeIds: taskData.secondaryAssigneeIds || [],
         contributorIds: taskData.contributorIds || [],
@@ -508,7 +659,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     handleLogAudit('ADD_DOCUMENT', `${actionLabel}ใน Drive: "${newDoc.name}"`);
   };
 
-  const handleEditDocument = (docId: string, updates: { name: string; url?: string; scope: LinkedDoc['scope']; team?: Department }) => {
+  const handleEditDocument = (docId: string, updates: { name: string; url?: string; scope: LinkedDoc['scope']; team?: string }) => {
     const doc = documents.find(d => d.id === docId);
     saveDocs(documents.map(d => (d.id === docId ? { ...d, ...updates, team: updates.scope === 'ทีม' ? updates.team : undefined } : d)));
     if (doc) handleLogAudit('EDIT_DOCUMENT', `แก้ไข${doc.kind === 'folder' ? 'โฟลเดอร์' : doc.kind === 'file' ? 'ไฟล์' : 'ลิงก์'}: "${doc.name}"${updates.name !== doc.name ? ` → "${updates.name}"` : ''}`);
@@ -566,6 +717,15 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     const updated = [request, ...leaveRequests];
     saveLeaves(updated);
     handleLogAudit('APPLY_LEAVE', `พนักงาน ${newLeave.employeeName} ยื่นคำขอลาพักผ่อนแบบ ${newLeave.type}`);
+  };
+
+  const handleAddMeeting = (newMeeting: Omit<Meeting, 'id'>) => {
+    const meeting: Meeting = {
+      ...newMeeting,
+      id: 'MEETING_' + Date.now()
+    };
+    saveMeetings([meeting, ...meetings]);
+    handleLogAudit('CREATE_MEETING', `นัดประชุม "${newMeeting.title}" วันที่ ${newMeeting.date} เวลา ${newMeeting.startTime}`);
   };
 
   const handleApproveLeave = (leaveId: string, approved: boolean) => {
@@ -650,10 +810,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     handleLogin,
     handleLogout,
     employees,
+    projects,
     tasks,
     documents,
     credentials,
     leaveRequests,
+    meetings,
     notifications,
     auditLogs,
     unreadCount,
@@ -665,6 +827,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     handleAddEmployee,
     handleUpdateEmployee,
     handleDeleteEmployee,
+    handleAddProject,
+    handleUpdateProject,
+    handleDeleteProject,
     handleSaveTask,
     handleDeleteTask,
     handleInitiateHandover,
@@ -676,13 +841,24 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     saveDocuments: saveDocs,
     docCurrentFolderId,
     setDocCurrentFolderId,
+    taskSelectedProjectId,
+    setTaskSelectedProjectId,
     handleAddLeaveRequest,
     handleApproveLeave,
+    handleAddMeeting,
     handleAddCredential,
     handleUpdateCredential,
     handleDeleteCredential,
     handleLogAudit,
-    handleMarkAllNotificationsRead
+    handleMarkAllNotificationsRead,
+    orgDivisions,
+    orgSections,
+    handleAddDivision,
+    handleRenameDivision,
+    handleDeleteDivision,
+    handleAddSection,
+    handleRenameSection,
+    handleDeleteSection
   };
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;

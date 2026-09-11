@@ -1,33 +1,27 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
-import { Plus, X, Search, Mail, Briefcase, Pencil, Trash2, AtSign, ScrollText, LayoutGrid, List, Crown } from 'lucide-react';
-import { Employee, Department, AuditLog } from '../types';
+import { Plus, X, Search, Mail, Briefcase, Pencil, Trash2, Eye, AtSign, ScrollText, LayoutGrid, List, Crown, Network } from 'lucide-react';
+import { Employee, Division, AccountType, AuditLog } from '../types';
 import { ApiError } from '../lib/api';
 import { getAvatarColor } from '../lib/avatarColor';
-import { DEPARTMENT_TAG_COLORS } from '../lib/departmentColors';
+import { getDepartmentTagClass } from '../lib/departmentColors';
+import { ACCOUNT_TYPE_LABELS, canEditOrDeleteTarget, isNavAllowedByRole } from '../lib/permissions';
+import { useAppData } from '../context/AppDataContext';
 import Dropdown from './Dropdown';
-
-const DEPARTMENT_OPTIONS: Department[] = ['IT', 'HR', 'Marketing', 'Sales', 'Design', 'Finance'];
+import OrgChart from './OrgChart';
+import EmployeeProfileModal from './EmployeeProfileModal';
+import {
+  readFileAsDataUrl,
+  MAX_AVATAR_BYTES,
+  formatFileSize,
+  RoleField,
+  MenuRestrictionChecklist,
+  assignableAccountTypes,
+  restrictableNavItemsFor,
+} from './EmployeeFormShared';
 
 const DEFAULT_PASSWORD = 'Wongwork2026!';
-
-const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
-
-function formatFileSize(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function readFileAsDataUrl(file: globalThis.File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-}
 
 // Continues the seeded E01, E02, ... sequence instead of a Date.now()-based id, so ids stay
 // short and ordered. Ids longer than 4 digits (e.g. a legacy Date.now() id) are ignored when
@@ -40,60 +34,18 @@ function getNextEmployeeId(employees: Employee[]): string {
   return `E${String(maxNum + 1).padStart(2, '0')}`;
 }
 
-const ADD_NEW_ROLE = '__add_new_role__';
-
-// ตำแหน่ง picker: a dropdown built from every role already in use, plus an "add new" entry
-// that swaps in a free-text input — so admins reuse existing job titles by default but can
-// still introduce a brand-new one without leaving the form.
-function RoleField({ value, onChange, roleOptions }: { value: string; onChange: (v: string) => void; roleOptions: string[] }) {
-  const [isCustom, setIsCustom] = useState(() => value !== '' && !roleOptions.includes(value));
-
-  if (isCustom) {
-    return (
-      <div className="flex gap-2">
-        <input
-          type="text"
-          required
-          autoFocus
-          placeholder="พิมพ์ตำแหน่งใหม่"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="flex-1 min-w-0 p-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#FF6537]"
-        />
-        {roleOptions.length > 0 && (
-          <button
-            type="button"
-            onClick={() => { setIsCustom(false); onChange(''); }}
-            className="px-3 border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50 cursor-pointer text-xs font-semibold shrink-0"
-          >
-            เลือกจากรายการ
-          </button>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <Dropdown<string>
-      value={value}
-      placeholder="เลือกตำแหน่ง"
-      onChange={(v) => {
-        if (v === ADD_NEW_ROLE) { setIsCustom(true); onChange(''); }
-        else onChange(v);
-      }}
-      options={[
-        ...roleOptions.map((r) => ({ value: r, label: r })),
-        { value: ADD_NEW_ROLE, label: '+ เพิ่มตำแหน่งใหม่' }
-      ]}
-    />
-  );
-}
-
-// Direct icon buttons instead of a "..." menu — edit/delete are the only two actions here, so
+// Direct icon buttons instead of a "..." menu — view/edit/delete are the only actions here, so
 // hiding them behind an extra click added a step without saving any real space.
-function EmployeeCardMenu({ onEdit, onDelete, deleteDisabled, editDisabled }: { onEdit: () => void; onDelete: () => void; deleteDisabled: boolean; editDisabled: boolean }) {
+function EmployeeCardMenu({ onView, onEdit, onDelete, deleteDisabled, editDisabled }: { onView: () => void; onEdit: () => void; onDelete: () => void; deleteDisabled: boolean; editDisabled: boolean }) {
   return (
     <div className="flex items-center gap-0.5 shrink-0">
+      <button
+        onClick={onView}
+        title="ดูรายละเอียด"
+        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+      >
+        <Eye size={15} />
+      </button>
       <button
         onClick={() => { if (!editDisabled) onEdit(); }}
         disabled={editDisabled}
@@ -124,19 +76,32 @@ interface EmployeeManagementProps {
   onAddEmployee: (employee: Employee & { password: string }) => Promise<void>;
   onUpdateEmployee: (
     id: string,
-    updates: Partial<Pick<Employee, 'name' | 'nickname' | 'role' | 'avatar' | 'department' | 'username'>> & { password?: string }
+    updates: Partial<Pick<Employee, 'name' | 'nickname' | 'role' | 'avatar' | 'department' | 'division' | 'username' | 'accountType' | 'restrictedMenuIds' | 'phone' | 'address'>> & { password?: string }
   ) => Promise<void>;
   onDeleteEmployee: (id: string) => Promise<void>;
 }
 
 export default function EmployeeManagement({ employees, auditLogs, currentUserId, onAddEmployee, onUpdateEmployee, onDeleteEmployee }: EmployeeManagementProps) {
-  const [activeTab, setActiveTab] = useState<'employees' | 'logs'>('employees');
+  const {
+    orgDivisions,
+    orgSections,
+    handleAddDivision,
+    handleRenameDivision,
+    handleDeleteDivision,
+    handleAddSection,
+    handleRenameSection,
+    handleDeleteSection
+  } = useAppData();
+  const getSectionsForDivision = (divisionName: string) =>
+    orgDivisions.find((d) => d.name === divisionName)?.sections ?? [];
+
+  const [activeTab, setActiveTab] = useState<'employees' | 'org' | 'logs'>('employees');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchTerm, setSearchTerm] = useState('');
-  const [departmentFilter, setDepartmentFilter] = useState<Department | '__all__'>('__all__');
+  const [departmentFilter, setDepartmentFilter] = useState<string>('__all__');
   const [logSearchTerm, setLogSearchTerm] = useState('');
   const [logDateFilter, setLogDateFilter] = useState('');
-  const [logDepartmentFilter, setLogDepartmentFilter] = useState<Department | '__all__'>('__all__');
+  const [logDepartmentFilter, setLogDepartmentFilter] = useState<string>('__all__');
   const [logActionFilter, setLogActionFilter] = useState<string>('__all__');
 
   // Click-to-mark a single card/row (purely visual — a persistent "hover-look" pin, not a
@@ -153,94 +118,70 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [markedId]);
 
+  // The employee/log table's max-height used to be a hardcoded `calc(100vh - Npx)` guess at how
+  // much space the header + sticky toolbar above it consume — that number drifts whenever the
+  // toolbar's own height changes (e.g. its filter row wrapping at a narrower width), so it was
+  // consistently either too short (dead gray space below the table) or too tall (table overflows
+  // past the sidebar's bottom edge). Measuring the real gap live removes the guesswork.
+  const [tableMaxHeight, setTableMaxHeight] = useState<number>();
+  const tableWrapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function updateTableMaxHeight() {
+      if (!tableWrapRef.current) return;
+      const top = tableWrapRef.current.getBoundingClientRect().top;
+      setTableMaxHeight(window.innerHeight - top - 18); // 18px matches <main>'s own bottom padding
+    }
+    updateTableMaxHeight();
+    window.addEventListener('resize', updateTableMaxHeight);
+    return () => window.removeEventListener('resize', updateTableMaxHeight);
+  }, [activeTab, viewMode]);
+
+  // The one employee record for whoever is using this page right now — needed to decide which
+  // account types they're allowed to hand out (assignableAccountTypes) and which other accounts
+  // they're allowed to edit/delete (canEditOrDeleteTarget).
+  const actingUser = employees.find((e) => e.id === currentUserId);
+
   const [showAddForm, setShowAddForm] = useState(false);
   const [newName, setNewName] = useState('');
   const [newNickname, setNewNickname] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newUsername, setNewUsername] = useState('');
   const [newRole, setNewRole] = useState('');
-  const [newDepartment, setNewDepartment] = useState<Department>('IT');
-  const [newIsAdmin, setNewIsAdmin] = useState(false);
+  const [newDivision, setNewDivision] = useState<Division>(orgDivisions[0]?.name ?? '');
+  const [newDepartment, setNewDepartment] = useState<string>(getSectionsForDivision(orgDivisions[0]?.name ?? '')[0] ?? '');
+  const [newAccountType, setNewAccountType] = useState<AccountType>('employee');
+  const [newRestrictedMenuIds, setNewRestrictedMenuIds] = useState<string[]>([]);
+  const [newAvatar, setNewAvatar] = useState('');
+  const [newAvatarFileError, setNewAvatarFileError] = useState('');
   const [newPassword, setNewPassword] = useState(DEFAULT_PASSWORD);
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [addSuccessNotice, setAddSuccessNotice] = useState(false);
 
-  // Edit modal — admin can change everything about an account, including resetting its login
-  // (username/password). Password is left blank by default; only sent through if the admin
-  // actually types a new one, so a normal edit doesn't accidentally reset someone's password.
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName] = useState('');
-  const [editNickname, setEditNickname] = useState('');
-  const [editUsername, setEditUsername] = useState('');
-  const [editIsAdmin, setEditIsAdmin] = useState(false);
-  const [editPassword, setEditPassword] = useState('');
-  const [editRole, setEditRole] = useState('');
-  const [editDepartment, setEditDepartment] = useState<Department>('IT');
-  const [editAvatar, setEditAvatar] = useState('');
-  const [avatarFileError, setAvatarFileError] = useState('');
-  const [editFormError, setEditFormError] = useState('');
-  const [isSavingEdit, setIsSavingEdit] = useState(false);
-  const [editSuccessNotice, setEditSuccessNotice] = useState(false);
+  // Profile modal — replaces the old separate "edit" form modal. Both the card's "ดูรายละเอียด"
+  // (view) and "แก้ไข" (edit) icons open the same full-screen EmployeeProfileModal, just starting
+  // in a different mode; the modal itself owns all of its own form state.
+  const [profileModal, setProfileModal] = useState<{ employeeId: string; mode: 'view' | 'edit' } | null>(null);
+  const [profileSaveSuccess, setProfileSaveSuccess] = useState(false);
 
-  // Everyone who can reach this page is already an admin, so the only case to guard against is
-  // one admin editing a *different* admin's account — editing your own record here is still fine.
-  const isEditLockedForAdmin = (emp: Employee) => !!emp.isAdmin && emp.id !== currentUserId;
+  // superadmin can edit/delete anyone; admin can edit/delete anyone except another admin-like
+  // (admin or superadmin) account — see canEditOrDeleteTarget for the exact rule. Viewing (as
+  // opposed to editing) another admin's details is always allowed — it's not destructive.
+  const isEditLockedForAdmin = (emp: Employee) => !actingUser || !canEditOrDeleteTarget(actingUser, emp);
 
-  const openEdit = (emp: Employee) => {
-    if (isEditLockedForAdmin(emp)) return;
-    setEditingId(emp.id);
-    setEditName(emp.name);
-    setEditNickname(emp.nickname || emp.name);
-    setEditUsername(emp.username || '');
-    setEditIsAdmin(!!emp.isAdmin);
-    setEditPassword('');
-    setEditRole(emp.role);
-    setEditDepartment(emp.department);
-    setEditAvatar(emp.avatar || '');
-    setAvatarFileError('');
-    setEditFormError('');
+  const openProfile = (emp: Employee, mode: 'view' | 'edit') => {
+    if (mode === 'edit' && isEditLockedForAdmin(emp)) return;
+    setProfileModal({ employeeId: emp.id, mode });
   };
 
-  const handleAvatarFilePicked = async (file: globalThis.File | null) => {
-    setAvatarFileError('');
+  const handleNewAvatarFilePicked = async (file: globalThis.File | null) => {
+    setNewAvatarFileError('');
     if (!file) return;
     if (file.size > MAX_AVATAR_BYTES) {
-      setAvatarFileError(`ไฟล์ใหญ่เกินไป (${formatFileSize(file.size)}) — อัปโหลดได้ไม่เกิน ${formatFileSize(MAX_AVATAR_BYTES)}`);
+      setNewAvatarFileError(`ไฟล์ใหญ่เกินไป (${formatFileSize(file.size)}) — อัปโหลดได้ไม่เกิน ${formatFileSize(MAX_AVATAR_BYTES)}`);
       return;
     }
-    setEditAvatar(await readFileAsDataUrl(file));
-  };
-
-  const closeEdit = () => setEditingId(null);
-
-  const isEditFormValid = !!(
-    editName.trim() && editNickname.trim() && editUsername.trim() && editRole.trim()
-  );
-
-  const handleSaveEdit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingId || !isEditFormValid || isSavingEdit) return;
-    setEditFormError('');
-    setIsSavingEdit(true);
-    try {
-      await onUpdateEmployee(editingId, {
-        name: editName.trim(),
-        nickname: editNickname.trim(),
-        ...(editIsAdmin ? {} : { username: editUsername.trim() }),
-        ...(editPassword.trim() ? { password: editPassword.trim() } : {}),
-        role: editRole.trim(),
-        department: editDepartment,
-        avatar: editAvatar.trim()
-      });
-      closeEdit();
-      setEditSuccessNotice(true);
-      setTimeout(() => setEditSuccessNotice(false), 3000);
-    } catch (err) {
-      setEditFormError(err instanceof ApiError ? err.message : 'บันทึกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
-    } finally {
-      setIsSavingEdit(false);
-    }
+    setNewAvatar(await readFileAsDataUrl(file));
   };
 
   // Delete confirmation
@@ -268,8 +209,12 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
     setNewEmail('');
     setNewUsername('');
     setNewRole('');
-    setNewDepartment('IT');
-    setNewIsAdmin(false);
+    setNewDivision(orgDivisions[0]?.name ?? '');
+    setNewDepartment(getSectionsForDivision(orgDivisions[0]?.name ?? '')[0] ?? '');
+    setNewAccountType('employee');
+    setNewRestrictedMenuIds([]);
+    setNewAvatar('');
+    setNewAvatarFileError('');
     setNewPassword(DEFAULT_PASSWORD);
     setFormError('');
     setShowAddForm(false);
@@ -293,8 +238,10 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
         username: newUsername.trim(),
         role: newRole.trim(),
         department: newDepartment,
-        avatar: '',
-        isAdmin: newIsAdmin,
+        division: newDivision,
+        avatar: newAvatar.trim(),
+        accountType: newAccountType,
+        ...(newRestrictedMenuIds.length ? { restrictedMenuIds: newRestrictedMenuIds } : {}),
         password: newPassword
       });
       resetForm();
@@ -343,22 +290,31 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
           the viewport, so it lands at (header height + <main>'s own top padding + this value) —
           the negative value here is exactly what cancels <main>'s own padding back out so this
           sits flush against the header with no gap for table rows to show through. */}
-      <div className="sticky -top-4 sm:-top-6 lg:-top-8 z-30 bg-white pt-1 space-y-4">
-      <div className="flex items-center gap-0.5 bg-[#F4F4F5] rounded-xl p-1 w-fit">
+      <div className="sticky -top-4 sm:-top-6 lg:-top-8 z-30 bg-[#F6F6F6] pt-1 space-y-4">
+      <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-xl p-1 w-fit">
         <button
           type="button"
           onClick={() => setActiveTab('employees')}
           className={`flex items-center gap-1.5 px-3.5 h-8 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
-            activeTab === 'employees' ? 'bg-white shadow-sm text-[#272220]' : 'text-[#6F6F6F] hover:text-[#272220]'
+            activeTab === 'employees' ? 'bg-[#F4F4F5] text-[#272220]' : 'text-[#6F6F6F] hover:text-[#272220]'
           }`}
         >
           <Briefcase size={13} /> รายชื่อพนักงาน
         </button>
         <button
           type="button"
+          onClick={() => setActiveTab('org')}
+          className={`flex items-center gap-1.5 px-3.5 h-8 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
+            activeTab === 'org' ? 'bg-[#F4F4F5] text-[#272220]' : 'text-[#6F6F6F] hover:text-[#272220]'
+          }`}
+        >
+          <Network size={13} /> โครงสร้างองค์กร
+        </button>
+        <button
+          type="button"
           onClick={() => setActiveTab('logs')}
           className={`flex items-center gap-1.5 px-3.5 h-8 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
-            activeTab === 'logs' ? 'bg-white shadow-sm text-[#272220]' : 'text-[#6F6F6F] hover:text-[#272220]'
+            activeTab === 'logs' ? 'bg-[#F4F4F5] text-[#272220]' : 'text-[#6F6F6F] hover:text-[#272220]'
           }`}
         >
           <ScrollText size={13} /> บันทึกกิจกรรม (Log)
@@ -374,7 +330,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="ค้นหาพนักงาน (ชื่อ / อีเมล)"
-            className="w-full h-10 pl-9 pr-9 bg-[#F6F6F8] border border-transparent rounded-xl text-[13px] font-normal focus:outline-none focus:border-[#FF6537]"
+            className="w-full h-10 pl-9 pr-9 bg-white border border-slate-200 rounded-xl text-[13px] font-normal focus:outline-none focus:border-[#FF6537]"
           />
           {searchTerm && (
             <button
@@ -389,11 +345,11 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
         </div>
 
         <div className="flex items-center gap-3 flex-1 min-w-0">
-          <div className="flex items-center gap-0.5 bg-[#F4F4F5] rounded-xl p-1 shrink-0">
+          <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-xl p-1 shrink-0">
             <button
               type="button"
               onClick={() => setViewMode('grid')}
-              className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'grid' ? 'bg-white shadow-sm text-[#272220]' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
+              className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'grid' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
               title="มุมมองการ์ด"
             >
               <LayoutGrid size={15} />
@@ -401,7 +357,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
             <button
               type="button"
               onClick={() => setViewMode('list')}
-              className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'list' ? 'bg-white shadow-sm text-[#272220]' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
+              className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'list' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
               title="มุมมองรายการ"
             >
               <List size={15} />
@@ -409,12 +365,12 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
           </div>
 
           <div className="w-36 h-10">
-            <Dropdown<Department | '__all__'>
+            <Dropdown<string>
               value={departmentFilter}
               onChange={setDepartmentFilter}
               options={[
                 { value: '__all__', label: 'ทุกแผนก' },
-                ...DEPARTMENT_OPTIONS.map((d) => ({ value: d, label: d }))
+                ...orgSections.map((d) => ({ value: d, label: d }))
               ]}
             />
           </div>
@@ -427,7 +383,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
           </button>
         </div>
       </div>
-      ) : (
+      ) : activeTab === 'logs' ? (
         <div className="flex flex-col lg:flex-row gap-3 lg:items-center">
           <div className="relative w-full lg:w-137.5 lg:flex-none">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -436,7 +392,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
               value={logSearchTerm}
               onChange={(e) => setLogSearchTerm(e.target.value)}
               placeholder="ค้นหา Log (ผู้ใช้ / การกระทำ / รายละเอียด)"
-              className="w-full h-10 pl-9 pr-9 bg-[#F6F6F8] border border-transparent rounded-xl text-[13px] font-normal focus:outline-none focus:border-[#FF6537]"
+              className="w-full h-10 pl-9 pr-9 bg-white border border-slate-200 rounded-xl text-[13px] font-normal focus:outline-none focus:border-[#FF6537]"
             />
             {logSearchTerm && (
               <button
@@ -455,16 +411,16 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
               type="date"
               value={logDateFilter}
               onChange={(e) => setLogDateFilter(e.target.value)}
-              className="h-10 px-3 bg-[#F6F6F8] border border-transparent rounded-xl text-[13px] font-normal focus:outline-none focus:border-[#FF6537] cursor-pointer"
+              className="h-10 px-3 bg-white border border-slate-200 rounded-xl text-[13px] font-normal focus:outline-none focus:border-[#FF6537] cursor-pointer"
               title="กรองตามวันที่"
             />
             <div className="w-36 h-10">
-              <Dropdown<Department | '__all__'>
+              <Dropdown<string>
                 value={logDepartmentFilter}
                 onChange={setLogDepartmentFilter}
                 options={[
                   { value: '__all__', label: 'ทุกแผนก' },
-                  ...DEPARTMENT_OPTIONS.map((d) => ({ value: d, label: d }))
+                  ...orgSections.map((d) => ({ value: d, label: d }))
                 ]}
               />
             </div>
@@ -489,7 +445,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
             )}
           </div>
         </div>
-      )}
+      ) : null}
       </div>
 
       {activeTab === 'employees' ? (
@@ -526,22 +482,23 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                 <div className="min-w-0 flex-1">
                   <h4 className="text-[15px] font-bold text-[#272220] truncate flex items-center gap-1.5">
                     <span className="truncate">{emp.nickname || emp.name}</span>
-                    {emp.isAdmin && (
+                    {emp.accountType !== 'employee' && (
                       <span className="shrink-0 inline-flex items-center gap-1 text-[9px] font-bold uppercase px-2 py-0.5 rounded-full leading-none text-[#FF6537] bg-black border border-[#FF6537]">
                         <Crown size={9} className="fill-current" />
-                        Admin
+                        {ACCOUNT_TYPE_LABELS[emp.accountType]}
                       </span>
                     )}
                   </h4>
                   {emp.nickname && emp.nickname !== emp.name && (
                     <p className="text-[11px] text-slate-400 truncate">{emp.name}</p>
                   )}
-                  <span className={`inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${DEPARTMENT_TAG_COLORS[emp.department]}`}>
+                  <span className={`inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(emp.department)}`}>
                     {emp.department}
                   </span>
                 </div>
                 <EmployeeCardMenu
-                  onEdit={() => openEdit(emp)}
+                  onView={() => openProfile(emp, 'view')}
+                  onEdit={() => openProfile(emp, 'edit')}
                   onDelete={() => setDeleteTarget({ id: emp.id, name: emp.name })}
                   deleteDisabled={emp.id === currentUserId}
                   editDisabled={isEditLockedForAdmin(emp)}
@@ -568,7 +525,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
           ))}
         </div>
       ) : (
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
+        <div ref={tableWrapRef} style={{ maxHeight: tableMaxHeight }} className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] overflow-x-auto overflow-y-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               {/* Sticky lives on each <th>, not <thead>/<tr> — position:sticky on a
@@ -612,10 +569,10 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                       <div className="min-w-0">
                         <p className="text-[13px] font-bold text-slate-900 leading-tight flex items-center gap-1.5">
                           <span className="truncate">{emp.nickname || emp.name}</span>
-                          {emp.isAdmin && (
+                          {emp.accountType !== 'employee' && (
                             <span className="shrink-0 inline-flex items-center gap-1 text-[9px] font-bold uppercase px-2 py-0.5 rounded-full leading-none text-[#FF6537] bg-black border border-[#FF6537]">
                               <Crown size={9} className="fill-current" />
-                              Admin
+                              {ACCOUNT_TYPE_LABELS[emp.accountType]}
                             </span>
                           )}
                         </p>
@@ -629,13 +586,14 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                   <td className="px-4 py-3 whitespace-nowrap text-[12px] font-normal text-[#6F6F6F]">{emp.username || '—'}</td>
                   <td className="px-4 py-3 whitespace-nowrap text-[12px] font-normal text-[#6F6F6F]">{emp.email}</td>
                   <td className="px-4 py-3 whitespace-nowrap">
-                    <span className={`inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${DEPARTMENT_TAG_COLORS[emp.department]}`}>
+                    <span className={`inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(emp.department)}`}>
                       {emp.department}
                     </span>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <EmployeeCardMenu
-                      onEdit={() => openEdit(emp)}
+                      onView={() => openProfile(emp, 'view')}
+                      onEdit={() => openProfile(emp, 'edit')}
                       onDelete={() => setDeleteTarget({ id: emp.id, name: emp.name })}
                       deleteDisabled={emp.id === currentUserId}
                       editDisabled={isEditLockedForAdmin(emp)}
@@ -648,6 +606,17 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
         </div>
       )}
       </>
+      ) : activeTab === 'org' ? (
+        <OrgChart
+          employees={employees}
+          orgDivisions={orgDivisions}
+          onAddDivision={handleAddDivision}
+          onRenameDivision={handleRenameDivision}
+          onDeleteDivision={handleDeleteDivision}
+          onAddSection={handleAddSection}
+          onRenameSection={handleRenameSection}
+          onDeleteSection={handleDeleteSection}
+        />
       ) : (
       <>
         {filteredLogs.length === 0 ? (
@@ -655,7 +624,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
             {auditLogs.length === 0 ? 'ยังไม่มีบันทึกกิจกรรม' : 'ไม่พบรายการที่ตรงกับการค้นหา'}
           </div>
         ) : (
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
+          <div ref={tableWrapRef} style={{ maxHeight: tableMaxHeight }} className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] overflow-x-auto overflow-y-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-[#F9F9F9] text-[12px] font-semibold text-[#000000] border-b border-[#EDEEEF]">
@@ -789,27 +758,83 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                   </div>
 
                   <div>
-                    <label className="block text-[#272220] font-bold text-[11px] mb-1">แผนก *</label>
-                    <Dropdown<Department>
-                      value={newDepartment}
-                      onChange={setNewDepartment}
+                    <label className="block text-[#272220] font-bold text-[11px] mb-1">ฝ่าย *</label>
+                    <Dropdown<Division>
+                      value={newDivision}
+                      onChange={(v) => { setNewDivision(v); setNewDepartment(getSectionsForDivision(v)[0] ?? ''); }}
                       size="compact"
-                      options={DEPARTMENT_OPTIONS.map((d) => ({ value: d, label: d }))}
+                      options={orgDivisions.map((d) => ({ value: d.name, label: d.name }))}
                     />
                   </div>
 
-                  <label className="flex items-start gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={newIsAdmin}
-                      onChange={(e) => setNewIsAdmin(e.target.checked)}
-                      className="mt-0.5 w-3.5 h-3.5 accent-[#FF6537] cursor-pointer"
+                  <div>
+                    <label className="block text-[#272220] font-bold text-[11px] mb-1">แผนก *</label>
+                    <Dropdown<string>
+                      value={newDepartment}
+                      onChange={setNewDepartment}
+                      size="compact"
+                      options={getSectionsForDivision(newDivision).map((d) => ({ value: d, label: d }))}
                     />
-                    <span>
-                      <span className="block text-[#272220] font-bold text-[11px]">ตั้งเป็น Admin</span>
-                      <span className="block text-[10px] text-slate-400">เข้าถึงหน้าจัดการพนักงานได้ และเปลี่ยน Username ของบัญชีนี้ในภายหลังไม่ได้</span>
-                    </span>
-                  </label>
+                  </div>
+
+                  <div>
+                    <label className="block text-[#272220] font-bold text-[11px] mb-1">ประเภทผู้ใช้งาน *</label>
+                    <Dropdown<AccountType>
+                      value={newAccountType}
+                      onChange={(v) => {
+                        setNewAccountType(v);
+                        // Drop any restriction that no longer applies to the newly-selected type
+                        // (e.g. "จัดการพนักงาน" stops being a meaningful restriction once the type
+                        // itself can no longer reach that menu at all).
+                        setNewRestrictedMenuIds((prev) => prev.filter((id) => isNavAllowedByRole({ accountType: v }, id)));
+                      }}
+                      size="compact"
+                      options={assignableAccountTypes(actingUser).map((t) => ({ value: t, label: ACCOUNT_TYPE_LABELS[t] }))}
+                    />
+                    {(newAccountType === 'admin' || newAccountType === 'superadmin') && (
+                      <p className="mt-1 text-[10px] text-slate-400">เปลี่ยน Username ของบัญชีนี้ในภายหลังไม่ได้</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-[#272220] font-bold text-[11px] mb-1">จำกัดสิทธิเมนู <span className="font-normal text-slate-400">(ไม่บังคับ)</span></label>
+                    <MenuRestrictionChecklist items={restrictableNavItemsFor(newAccountType)} selectedIds={newRestrictedMenuIds} onChange={setNewRestrictedMenuIds} />
+                  </div>
+
+                  <div>
+                    <label className="block text-[#272220] font-bold text-[11px] mb-1">
+                      รูปโปรไฟล์ <span className="font-normal text-slate-400">(ไม่บังคับ, ไม่เกิน {formatFileSize(MAX_AVATAR_BYTES)})</span>
+                    </label>
+                    <div className="flex items-center gap-2.5">
+                      {newAvatar.trim() ? (
+                        <img src={newAvatar.trim()} alt="" className="w-9 h-9 rounded-full object-cover shrink-0 bg-slate-50 border border-slate-100" />
+                      ) : (
+                        <div
+                          className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0"
+                          style={{ backgroundColor: getAvatarColor(newName || '?') }}
+                        >
+                          {(newName.trim().charAt(0) || '?').toUpperCase()}
+                        </div>
+                      )}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => handleNewAvatarFilePicked(e.target.files?.[0] || null)}
+                        className="flex-1 min-w-0 text-xs file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#FFF1EC] file:text-[#FF6537] file:font-bold file:cursor-pointer cursor-pointer"
+                      />
+                      {newAvatar.trim() && (
+                        <button
+                          type="button"
+                          onClick={() => setNewAvatar('')}
+                          className="text-slate-400 hover:text-slate-600 cursor-pointer shrink-0"
+                          title="ลบรูปโปรไฟล์"
+                        >
+                          <X size={16} />
+                        </button>
+                      )}
+                    </div>
+                    {newAvatarFileError && <p className="text-red-500 mt-1">{newAvatarFileError}</p>}
+                  </div>
 
                   <div className="flex justify-end gap-2 pt-1">
                     <button type="button" onClick={resetForm} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs font-semibold cursor-pointer hover:bg-slate-50">ยกเลิก</button>
@@ -831,158 +856,30 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
         document.body
       )}
 
-      {/* Edit employee modal */}
-      {createPortal(
-        <AnimatePresence>
-          {editingId && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-              <motion.div
-                className="absolute inset-0 bg-black/15 backdrop-blur-sm"
-                onClick={closeEdit}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.2 }}
-              />
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                transition={{ duration: 0.2 }}
-                className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-5 space-y-4"
-              >
-                <div className="flex justify-between items-center pb-2 border-b border-slate-100">
-                  <h3 className="text-sm font-bold text-slate-800">แก้ไขข้อมูลพนักงาน</h3>
-                  <button type="button" onClick={closeEdit} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X size={18} /></button>
-                </div>
-
-                <form onSubmit={handleSaveEdit} className="space-y-3 text-xs">
-                  {editFormError && (
-                    <div className="bg-rose-50 border border-rose-100 text-rose-700 text-xs px-3 py-2 rounded-lg">
-                      {editFormError}
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[#272220] font-bold text-[11px] mb-1">ชื่อ-นามสกุล *</label>
-                      <input
-                        type="text"
-                        required
-                        autoFocus
-                        value={editName}
-                        onChange={(e) => setEditName(e.target.value)}
-                        className="w-full p-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#FF6537]"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[#272220] font-bold text-[11px] mb-1">ชื่อเล่น *</label>
-                      <input
-                        type="text"
-                        required
-                        value={editNickname}
-                        onChange={(e) => setEditNickname(e.target.value)}
-                        className="w-full p-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#FF6537]"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-[#272220] font-bold text-[11px] mb-1">ตำแหน่ง *</label>
-                    <RoleField value={editRole} onChange={setEditRole} roleOptions={roleOptions} />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[#272220] font-bold text-[11px] mb-1">Username *</label>
-                      <input
-                        type="text"
-                        required
-                        disabled={editIsAdmin}
-                        value={editUsername}
-                        onChange={(e) => setEditUsername(e.target.value)}
-                        className={`w-full p-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#FF6537] ${editIsAdmin ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}`}
-                      />
-                      {editIsAdmin && (
-                        <p className="text-[10px] text-slate-400 mt-1">ไม่สามารถเปลี่ยน Username ของบัญชี Admin ได้</p>
-                      )}
-                    </div>
-                    <div>
-                      <label className="block text-[#272220] font-bold text-[11px] mb-1">รหัสผ่านใหม่ <span className="font-normal text-slate-400">(เว้นว่างถ้าไม่เปลี่ยน)</span></label>
-                      <input
-                        type="text"
-                        placeholder="••••••••"
-                        value={editPassword}
-                        onChange={(e) => setEditPassword(e.target.value)}
-                        className="w-full p-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#FF6537]"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-[#272220] font-bold text-[11px] mb-1">แผนก *</label>
-                    <Dropdown<Department>
-                      value={editDepartment}
-                      onChange={setEditDepartment}
-                      size="compact"
-                      options={DEPARTMENT_OPTIONS.map((d) => ({ value: d, label: d }))}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[#272220] font-bold text-[11px] mb-1">
-                      รูปโปรไฟล์ <span className="font-normal text-slate-400">(ไม่บังคับ, ไม่เกิน {formatFileSize(MAX_AVATAR_BYTES)})</span>
-                    </label>
-                    <div className="flex items-center gap-2.5">
-                      {editAvatar.trim() ? (
-                        <img src={editAvatar.trim()} alt="" className="w-9 h-9 rounded-full object-cover shrink-0 bg-slate-50 border border-slate-100" />
-                      ) : (
-                        <div
-                          className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0"
-                          style={{ backgroundColor: getAvatarColor(editName || '?') }}
-                        >
-                          {(editName.trim().charAt(0) || '?').toUpperCase()}
-                        </div>
-                      )}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => handleAvatarFilePicked(e.target.files?.[0] || null)}
-                        className="flex-1 min-w-0 text-xs file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#FFF1EC] file:text-[#FF6537] file:font-bold file:cursor-pointer cursor-pointer"
-                      />
-                      {editAvatar.trim() && (
-                        <button
-                          type="button"
-                          onClick={() => setEditAvatar('')}
-                          className="text-slate-400 hover:text-slate-600 cursor-pointer shrink-0"
-                          title="ลบรูปโปรไฟล์"
-                        >
-                          <X size={16} />
-                        </button>
-                      )}
-                    </div>
-                    {avatarFileError && <p className="text-red-500 mt-1">{avatarFileError}</p>}
-                  </div>
-
-                  <div className="flex justify-end gap-2 pt-1">
-                    <button type="button" onClick={closeEdit} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs font-semibold cursor-pointer hover:bg-slate-50">ยกเลิก</button>
-                    <button
-                      type="submit"
-                      disabled={!isEditFormValid || isSavingEdit}
-                      className={`px-5 py-2 rounded-lg text-xs font-bold transition-colors ${
-                        isEditFormValid && !isSavingEdit ? 'bg-[#FF6537] text-white hover:bg-[#e6572c] cursor-pointer' : 'bg-[#F68C6C] text-white cursor-not-allowed'
-                      }`}
-                    >
-                      {isSavingEdit ? 'กำลังบันทึก...' : 'บันทึก'}
-                    </button>
-                  </div>
-                </form>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>,
-        document.body
-      )}
+      {/* Employee profile modal — both "ดูรายละเอียด" and "แก้ไข" open this, just in a different
+          initial mode; it owns all of its own view/edit form state. */}
+      {profileModal && (() => {
+        const targetEmployee = employees.find((e) => e.id === profileModal.employeeId);
+        if (!targetEmployee) return null;
+        return (
+          <EmployeeProfileModal
+            employee={targetEmployee}
+            actingUser={actingUser}
+            initialMode={profileModal.mode}
+            canEdit={!isEditLockedForAdmin(targetEmployee)}
+            roleOptions={roleOptions}
+            orgDivisions={orgDivisions}
+            getSectionsForDivision={getSectionsForDivision}
+            auditLogs={auditLogs}
+            onClose={() => setProfileModal(null)}
+            onSave={onUpdateEmployee}
+            onSaved={() => {
+              setProfileSaveSuccess(true);
+              setTimeout(() => setProfileSaveSuccess(false), 3000);
+            }}
+          />
+        );
+      })()}
 
       {/* Delete confirmation modal */}
       {createPortal(
@@ -1039,7 +936,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
       {/* Success toasts */}
       {createPortal(
         <AnimatePresence>
-          {(addSuccessNotice || editSuccessNotice) && (
+          {(addSuccessNotice || profileSaveSuccess) && (
             <motion.div
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}

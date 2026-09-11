@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AppDataProvider, useAppData } from './context/AppDataContext';
+import { canAccessNavItem } from './lib/permissions';
 import AppLayout from './components/layout/AppLayout';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
@@ -17,11 +18,13 @@ function ProtectedLayoutRoute() {
   return <AppLayout />;
 }
 
-// Blocks direct URL navigation to admin-only pages for non-admin accounts — the Sidebar already
-// hides the nav link, but that alone wouldn't stop someone typing /employees into the address bar.
-function AdminOnlyRoute({ children }: { children: React.ReactNode }) {
+// Blocks direct URL navigation to a page this account's role/menu-restrictions don't allow — the
+// Sidebar already hides the nav link, but that alone wouldn't stop someone typing the URL in by
+// hand. Shares the exact same `canAccessNavItem` check the Sidebar uses, so a page is reachable
+// if and only if its nav link is actually visible.
+function NavGuardRoute({ navId, children }: { navId: string; children: React.ReactNode }) {
   const { currentUser } = useAppData();
-  if (!currentUser?.isAdmin) return <Navigate to="/dashboard" replace />;
+  if (!currentUser || !canAccessNavItem(currentUser, navId)) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }
 
@@ -37,14 +40,16 @@ function AppRoutes() {
       <Route path="/login" element={currentUser ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
 
       <Route element={<ProtectedLayoutRoute />}>
+        {/* dashboard is deliberately never restrictable — every redirect above falls back to it,
+            so blocking it could dead-end someone in a redirect loop. */}
         <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/tasks" element={<TasksPage />} />
-        <Route path="/gantt" element={<GanttPage />} />
-        <Route path="/calendar" element={<CalendarPage />} />
-        <Route path="/docs" element={<DocsPage />} />
-        <Route path="/vault" element={<VaultPage />} />
-        <Route path="/reports" element={<ReportsPage />} />
-        <Route path="/employees" element={<AdminOnlyRoute><EmployeesPage /></AdminOnlyRoute>} />
+        <Route path="/tasks" element={<NavGuardRoute navId="tasks"><TasksPage /></NavGuardRoute>} />
+        <Route path="/gantt" element={<NavGuardRoute navId="gantt"><GanttPage /></NavGuardRoute>} />
+        <Route path="/calendar" element={<NavGuardRoute navId="calendar"><CalendarPage /></NavGuardRoute>} />
+        <Route path="/docs" element={<NavGuardRoute navId="docs"><DocsPage /></NavGuardRoute>} />
+        <Route path="/vault" element={<NavGuardRoute navId="vault"><VaultPage /></NavGuardRoute>} />
+        <Route path="/reports" element={<NavGuardRoute navId="reports"><ReportsPage /></NavGuardRoute>} />
+        <Route path="/employees" element={<NavGuardRoute navId="employees"><EmployeesPage /></NavGuardRoute>} />
       </Route>
 
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
