@@ -9,7 +9,6 @@ import GanttPage from './pages/GanttPage';
 import CalendarPage from './pages/CalendarPage';
 import DocsPage from './pages/DocsPage';
 import VaultPage from './pages/VaultPage';
-import ReportsPage from './pages/ReportsPage';
 import EmployeesPage from './pages/EmployeesPage';
 
 function ProtectedLayoutRoute() {
@@ -48,7 +47,6 @@ function AppRoutes() {
         <Route path="/calendar" element={<NavGuardRoute navId="calendar"><CalendarPage /></NavGuardRoute>} />
         <Route path="/docs" element={<NavGuardRoute navId="docs"><DocsPage /></NavGuardRoute>} />
         <Route path="/vault" element={<NavGuardRoute navId="vault"><VaultPage /></NavGuardRoute>} />
-        <Route path="/reports" element={<NavGuardRoute navId="reports"><ReportsPage /></NavGuardRoute>} />
         <Route path="/employees" element={<NavGuardRoute navId="employees"><EmployeesPage /></NavGuardRoute>} />
       </Route>
 

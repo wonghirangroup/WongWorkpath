@@ -1,9 +1,16 @@
 import { Eye, Trash2 } from 'lucide-react';
 import { Employee } from '../../types';
-import { ProjectRow } from './types';
-import { STATUS_DOT, STATUS_LABEL, STATUS_PILL, STATUS_ICON } from './statusMeta';
+import { ProjectRow, ProjectPriority } from './types';
+import { STATUS_DOT, STATUS_LABEL, STATUS_PILL, STATUS_ICON, PROJECT_PRIORITY_META } from './statusMeta';
 import { getAvatarColor } from '../../lib/avatarColor';
 import { displayName } from './CreateProjectModal';
+import Dropdown from '../Dropdown';
+
+const PRIORITY_DROPDOWN_OPTIONS: { value: ProjectPriority; label: string }[] = [
+  { value: 'High', label: PROJECT_PRIORITY_META.High.label },
+  { value: 'Medium', label: PROJECT_PRIORITY_META.Medium.label },
+  { value: 'Low', label: PROJECT_PRIORITY_META.Low.label },
+];
 
 function formatBudget(budget: number | null): string {
   if (budget === null) return 'ยังไม่มี';
@@ -25,27 +32,29 @@ interface ProjectTableProps {
   // delete icon renders at all (a plain employee sees no icon there, not just a disabled one).
   canDelete: boolean;
   onDelete: (row: ProjectRow) => void;
+  onUpdatePriority: (row: ProjectRow, priority: ProjectPriority) => void;
 }
 
-export default function ProjectTable({ rows, employees, onViewDetail, canDelete, onDelete }: ProjectTableProps) {
+export default function ProjectTable({ rows, employees, onViewDetail, canDelete, onDelete, onUpdatePriority }: ProjectTableProps) {
   return (
-    <div className="bg-white rounded-2xl shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] overflow-x-auto">
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] overflow-x-auto">
       <table className="w-full text-sm border-collapse min-w-340">
         <thead>
-          <tr className="text-left text-[#A0A0A0] border-b border-[#F4F4F4] whitespace-nowrap">
+          <tr className="bg-[#F9F9F9] text-[12px] font-semibold text-[#000000] border-b border-[#EDEEEF] whitespace-nowrap">
             <th className="w-4 py-3"></th>
-            <th className="px-4 py-3 font-medium">ลำดับ</th>
-            <th className="px-4 py-3 font-medium">รหัส</th>
-            <th className="px-4 py-3 font-medium">เรื่อง</th>
-            <th className="px-4 py-3 font-medium">รายละเอียด</th>
-            <th className="px-4 py-3 font-medium">งบประมาณ</th>
-            <th className="px-4 py-3 font-medium">ผู้รับผิดชอบหลัก</th>
-            <th className="px-4 py-3 font-medium">ความคืบหน้า</th>
-            <th className="px-4 py-3 font-medium">วันที่เริ่ม</th>
-            <th className="px-4 py-3 font-medium">วันที่สิ้นสุด</th>
-            <th className="px-4 py-3 font-medium">สร้างเมื่อ</th>
-            <th className="px-4 py-3 font-medium">สถานะ</th>
-            <th className="px-4 py-3 font-medium">การกระทำ</th>
+            <th className="px-4 py-3">ลำดับ</th>
+            <th className="px-4 py-3">รหัส</th>
+            <th className="px-4 py-3">เรื่อง</th>
+            <th className="px-4 py-3">รายละเอียด</th>
+            <th className="px-4 py-3">งบประมาณ</th>
+            <th className="px-4 py-3">ระดับความสำคัญ</th>
+            <th className="px-4 py-3">ผู้รับผิดชอบหลัก</th>
+            <th className="px-4 py-3">ความคืบหน้า</th>
+            <th className="px-4 py-3">วันที่เริ่ม</th>
+            <th className="px-4 py-3">วันที่สิ้นสุด</th>
+            <th className="px-4 py-3">สร้างเมื่อ</th>
+            <th className="px-4 py-3">สถานะ</th>
+            <th className="px-4 py-3">การกระทำ</th>
           </tr>
         </thead>
         <tbody>
@@ -57,7 +66,7 @@ export default function ProjectTable({ rows, employees, onViewDetail, canDelete,
             const owner = row.ownerEmployeeId ? employees.find((e) => e.id === row.ownerEmployeeId) : undefined;
             const ownerName = owner ? displayName(owner) : null;
             return (
-              <tr key={row.id} className="border-b border-[#F9F9F9] last:border-b-0 hover:bg-[#FAFAFA]">
+              <tr key={row.id} className="border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50">
                 <td className="py-4">
                   {accentColor && <span className="block w-1.5 h-9 rounded-full" style={{ backgroundColor: accentColor }} />}
                 </td>
@@ -68,6 +77,16 @@ export default function ProjectTable({ rows, employees, onViewDetail, canDelete,
                   {row.description || 'ยังไม่มี'}
                 </td>
                 <td className="px-4 py-4 text-[#272220]">{formatBudget(row.budget)}</td>
+                <td className="px-4 py-4 whitespace-nowrap">
+                  <div className="w-28">
+                    <Dropdown
+                      value={row.priority ?? ('' as ProjectPriority)}
+                      options={PRIORITY_DROPDOWN_OPTIONS}
+                      onChange={(value) => onUpdatePriority(row, value)}
+                      placeholder="ยังไม่มี"
+                    />
+                  </div>
+                </td>
                 <td className="px-4 py-4 whitespace-nowrap">
                   {owner && ownerName ? (
                     <div className="flex items-center gap-2.5">

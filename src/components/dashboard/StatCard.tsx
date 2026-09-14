@@ -2,23 +2,26 @@ import { ReactNode } from 'react';
 
 interface StatCardProps {
   icon: ReactNode;
-  iconBgClass: string;
+  iconColor: string;
   label: string;
   value: ReactNode;
   detail: ReactNode;
   detailClassName?: string;
 }
 
-export default function StatCard({ icon, iconBgClass, label, value, detail, detailClassName = 'text-slate-400' }: StatCardProps) {
+// Matches the Project Board's StatusSummaryCards treatment (plain, solid-colored icon — no
+// tinted background square) rather than the icon-badge style used inside this page's own content
+// cards, so the top stat row reads consistently with the equivalent stat-card row on other pages.
+export default function StatCard({ icon, iconColor, label, value, detail, detailClassName = 'text-[#A0A0A0]' }: StatCardProps) {
   return (
-    <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-xs flex items-center gap-4">
-      <div className={`p-3.5 rounded-xl ${iconBgClass}`}>
-        {icon}
-      </div>
-      <div>
-        <p className="text-xs text-slate-500 font-medium">{label}</p>
-        <h3 className="text-2xl font-bold text-slate-900">{value}</h3>
+    <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] flex items-center justify-between gap-3">
+      <div className="min-w-0">
+        <p className="text-xs text-[#6F6F6F] font-medium truncate">{label}</p>
+        <h3 className="text-2xl font-bold text-[#272220]">{value}</h3>
         <div className={`text-[11px] mt-0.5 ${detailClassName}`}>{detail}</div>
+      </div>
+      <div className="shrink-0" style={{ color: iconColor }}>
+        {icon}
       </div>
     </div>
   );

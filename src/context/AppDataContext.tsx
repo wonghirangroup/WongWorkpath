@@ -14,14 +14,13 @@ import { DEFAULT_ORG_DIVISIONS, OrgDivisionData } from '../data/orgStructure';
 import {
   INITIAL_EMPLOYEES,
   INITIAL_DOCS,
-  INITIAL_TASKS,
   INITIAL_CREDENTIALS,
   INITIAL_LEAVE_REQUESTS,
   INITIAL_NOTIFICATIONS
 } from '../data/mockData';
-import { fetchEmployees, createEmployee, updateEmployeeRemote, deleteEmployeeRemote, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote, fetchProjects, createProject, updateProjectRemote, deleteProjectRemote, CreateProjectPayload } from '../lib/api';
+import { fetchEmployees, createEmployee, updateEmployeeRemote, deleteEmployeeRemote, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote, fetchProjects, createProject, updateProjectRemote, deleteProjectRemote, CreateProjectPayload, fetchMeetings, createMeeting, updateMeetingRemote, deleteMeetingRemote, fetchProjectTasks, createProjectTask, updateProjectTaskRemote, deleteProjectTaskRemote } from '../lib/api';
 import { nowTimestamp } from '../lib/datetime';
-import type { ProjectRow } from '../components/projectBoard/types';
+import type { ProjectRow, ProjectTaskItem } from '../components/projectBoard/types';
 
 // One-time shape migration for documents saved to localStorage before the Drive redesign added
 // `kind`/`parentId` (folders + file uploads) in place of the old `type` enum — without this,
@@ -48,6 +47,7 @@ interface AppDataContextValue {
   // Domain data
   employees: Employee[];
   projects: ProjectRow[];
+  projectTasks: ProjectTaskItem[];
   tasks: Task[];
   documents: LinkedDoc[];
   credentials: CredentialItem[];
@@ -57,11 +57,10 @@ interface AppDataContextValue {
   auditLogs: AuditLog[];
   unreadCount: number;
 
-  // Task Modal
+  // Task Modal — add-only now (see AppLayout.tsx: the Dashboard's "เพิ่มงาน" opens the real
+  // AddTaskModal without a fixed project, not a dedicated old-Task editor).
   isTaskModalOpen: boolean;
-  selectedTaskToEdit: Task | null;
   openAddTaskModal: () => void;
-  openEditTaskModal: (task: Task) => void;
   closeTaskModal: () => void;
 
   // Mutations
@@ -74,7 +73,9 @@ interface AppDataContextValue {
   handleAddProject: (payload: CreateProjectPayload) => Promise<ProjectRow>;
   handleUpdateProject: (id: string, updates: Partial<ProjectRow>) => Promise<void>;
   handleDeleteProject: (id: string) => Promise<void>;
-  handleSaveTask: (taskData: Partial<Task>) => void;
+  handleAddProjectTask: (task: Omit<ProjectTaskItem, 'id'>) => Promise<ProjectTaskItem>;
+  handleUpdateProjectTask: (id: string, updates: Partial<ProjectTaskItem>) => Promise<void>;
+  handleDeleteProjectTask: (id: string) => Promise<void>;
   handleDeleteTask: (id: string) => void;
   handleInitiateHandover: (taskId: string, fromUserId: string, toUserId: string, stageName: string, notes: string) => void;
   handleApproveHandover: (taskId: string, handoverId: string, approved: boolean, notes: string) => void;
@@ -94,7 +95,9 @@ interface AppDataContextValue {
   setTaskSelectedProjectId: (id: string | null) => void;
   handleAddLeaveRequest: (newLeave: Omit<LeaveRequest, 'id'>) => void;
   handleApproveLeave: (leaveId: string, approved: boolean) => void;
-  handleAddMeeting: (newMeeting: Omit<Meeting, 'id'>) => void;
+  handleAddMeeting: (newMeeting: Omit<Meeting, 'id'>) => Promise<void>;
+  handleUpdateMeeting: (id: string, updates: Partial<Meeting>) => Promise<void>;
+  handleDeleteMeeting: (id: string) => Promise<void>;
   handleAddCredential: (newItem: CredentialItem) => void;
   handleUpdateCredential: (id: string, updates: Partial<CredentialItem>) => void;
   handleDeleteCredential: (id: string) => void;
@@ -130,6 +133,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   // Persistence States
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [projects, setProjects] = useState<ProjectRow[]>([]);
+  const [projectTasks, setProjectTasks] = useState<ProjectTaskItem[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [documents, setDocuments] = useState<LinkedDoc[]>([]);
   const [docCurrentFolderId, setDocCurrentFolderId] = useState<string | null>(null);
@@ -144,7 +148,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   // Task Modal state
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
-  const [selectedTaskToEdit, setSelectedTaskToEdit] = useState<Task | null>(null);
 
   // Employees now live in the real `employee` table (see server/routes/employees.ts) instead of
   // localStorage-only mock data. Show the cached/mock list immediately so the UI isn't blocked on
@@ -215,6 +218,46 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // Meetings live in the real `meeting` table (see server/routes/meetings.ts) — same no-
+  // localStorage-layer treatment as projects. Old localStorage meetings from before this migration
+  // are not carried over (they referenced the old mock project ids, which no longer exist anyway).
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchMeetings()
+      .then((apiMeetings) => {
+        if (cancelled) return;
+        setMeetings(apiMeetings);
+      })
+      .catch((err) => {
+        console.warn('Could not load meetings from the API:', err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Project tasks live in the real `project_task` table (see server/routes/project-tasks.ts) —
+  // same no-localStorage-layer treatment as projects/meetings. Replaces the session-only
+  // extraTasks state ProjectBoard.tsx used to hold, plus the old INITIAL_PROJECT_TASKS mock seed.
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchProjectTasks()
+      .then((apiProjectTasks) => {
+        if (cancelled) return;
+        setProjectTasks(apiProjectTasks);
+      })
+      .catch((err) => {
+        console.warn('Could not load project tasks from the API:', err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Initialize remaining domain data on mount (still localStorage/mock-only — no backend yet)
   useEffect(() => {
     const localTasks = localStorage.getItem('unityspace_tasks');
@@ -225,10 +268,26 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     const localLogs = localStorage.getItem('unityspace_audit_logs');
     const localOrgDivisions = localStorage.getItem('unityspace_org_divisions');
 
-    if (localTasks) setTasks(JSON.parse(localTasks));
-    else {
-      setTasks(INITIAL_TASKS);
-      localStorage.setItem('unityspace_tasks', JSON.stringify(INITIAL_TASKS));
+    // No longer seeding INITIAL_TASKS — the Gantt/Dashboard/Calendar pages should start empty
+    // until real work is entered, not populated with demo data. A browser that already has the
+    // old mock seed saved (from before this change) gets it cleared out here too, but only when
+    // every single stored task is still one of the 5 known mock ids — the moment even one task
+    // isn't (a real one the user added), nothing here is touched, erring on the side of never
+    // deleting real work.
+    const MOCK_TASK_IDS = new Set(['TASK01', 'TASK02', 'TASK03', 'TASK04', 'TASK05']);
+    if (localTasks) {
+      const parsedTasks = JSON.parse(localTasks);
+      const isPureMockSeed = Array.isArray(parsedTasks) && parsedTasks.length > 0
+        && parsedTasks.every((t: Task) => MOCK_TASK_IDS.has(t.id));
+      if (isPureMockSeed) {
+        setTasks([]);
+        localStorage.setItem('unityspace_tasks', JSON.stringify([]));
+      } else {
+        setTasks(parsedTasks);
+      }
+    } else {
+      setTasks([]);
+      localStorage.setItem('unityspace_tasks', JSON.stringify([]));
     }
 
     if (localDocs) setDocuments((JSON.parse(localDocs) as any[]).map(normalizeStoredDoc));
@@ -248,10 +307,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       setLeaveRequests(INITIAL_LEAVE_REQUESTS);
       localStorage.setItem('unityspace_leaves', JSON.stringify(INITIAL_LEAVE_REQUESTS));
     }
-
-    // No mock seed — meetings is a brand-new feature with no historical demo data to backfill.
-    const localMeetings = localStorage.getItem('unityspace_meetings');
-    if (localMeetings) setMeetings(JSON.parse(localMeetings));
 
     if (localNotifications) setNotifications(JSON.parse(localNotifications));
     else {
@@ -323,11 +378,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const saveLeaves = (newLeaves: LeaveRequest[]) => {
     setLeaveRequests(newLeaves);
     localStorage.setItem('unityspace_leaves', JSON.stringify(newLeaves));
-  };
-
-  const saveMeetings = (newMeetings: Meeting[]) => {
-    setMeetings(newMeetings);
-    localStorage.setItem('unityspace_meetings', JSON.stringify(newMeetings));
   };
 
   const saveNotifications = (newNotifs: Notification[]) => {
@@ -416,6 +466,24 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     if (target) handleLogAudit('DELETE_PROJECT', `ลบโครงการ: "${target.title}" (${target.code}) ออกจากระบบถาวร`);
   };
 
+  const handleAddProjectTask = async (task: Omit<ProjectTaskItem, 'id'>) => {
+    const created = await createProjectTask(task);
+    setProjectTasks((prev) => [created, ...prev]);
+    return created;
+  };
+
+  // Same awaited-replace pattern as handleUpdateProject — an edit may submit raw ISO dates, which
+  // must never leak into the Thai-formatted startDate/dueDate display fields.
+  const handleUpdateProjectTask = async (id: string, updates: Partial<ProjectTaskItem>) => {
+    const updated = await updateProjectTaskRemote(id, updates);
+    setProjectTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
+  };
+
+  const handleDeleteProjectTask = async (id: string) => {
+    await deleteProjectTaskRemote(id);
+    setProjectTasks((prev) => prev.filter((t) => t.id !== id));
+  };
+
   // 0b. Org Chart Structure Operations (โครงสร้างองค์กร) — client-side/localStorage only, admin-
   // editable from Employee Management's โครงสร้างองค์กร tab. Renaming a division or section
   // cascades to every employee currently pointing at the old name so no one silently falls out of
@@ -479,67 +547,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   };
 
   // 1. Task Operations
-  const handleSaveTask = (taskData: Partial<Task>) => {
-    if (selectedTaskToEdit) {
-      // Editing
-      const updated = tasks.map(t => {
-        if (t.id === selectedTaskToEdit.id) {
-          return {
-            ...t,
-            ...taskData,
-            progress: taskData.status === 'Completed' ? 100 : (taskData.progress ?? t.progress)
-          } as Task;
-        }
-        return t;
-      });
-      saveTasks(updated);
-      handleLogAudit('UPDATE_TASK', `แก้ไขงาน "${selectedTaskToEdit.title}" ของแผนงานโครงการเรียบร้อย`);
-      setSelectedTaskToEdit(null);
-    } else {
-      // Creating
-      const newTask: Task = {
-        id: 'TASK_' + Date.now(),
-        title: taskData.title || '',
-        description: taskData.description || '',
-        project: taskData.project || '',
-        priority: taskData.priority || 'Medium',
-        status: taskData.status || 'Not Started',
-        progress: taskData.progress || 0,
-        startDate: taskData.startDate || new Date().toISOString().split('T')[0],
-        dueDate: taskData.dueDate || new Date().toISOString().split('T')[0],
-        department: taskData.department || orgSections[0] || '',
-        primaryOwnerId: taskData.primaryOwnerId || '',
-        secondaryAssigneeIds: taskData.secondaryAssigneeIds || [],
-        contributorIds: taskData.contributorIds || [],
-        dependencies: taskData.dependencies || [],
-        approvalStatus: 'None',
-        recurringPattern: taskData.recurringPattern || 'None',
-        linkedDocIds: taskData.linkedDocIds || [],
-        handovers: []
-      };
-
-      const updated = [newTask, ...tasks];
-      saveTasks(updated);
-
-      // Trigger automatic notification for assigned owner
-      const assignedEmp = employees.find(e => e.id === newTask.primaryOwnerId);
-      if (assignedEmp) {
-        const newNotif: Notification = {
-          id: 'NOTIF_' + Date.now(),
-          title: 'ได้รับมอบหมายงานใหม่ 📝',
-          message: `คุณได้รับมอบหมายงาน "${newTask.title}" ในโครงการ "${newTask.project}"`,
-          timestamp: nowTimestamp(),
-          read: false,
-          type: 'info'
-        };
-        saveNotifications([newNotif, ...notifications]);
-      }
-
-      handleLogAudit('CREATE_TASK', `สร้างหัวข้องานใหม่: "${newTask.title}" มอบหมายให้ ${assignedEmp?.name || 'ไม่ระบุ'}`);
-    }
-    setIsTaskModalOpen(false);
-  };
-
   const handleDeleteTask = (id: string) => {
     const taskToDelete = tasks.find(t => t.id === id);
     if (window.confirm(`ยืนยันที่จะลบงาน "${taskToDelete?.title}" หรือไม่?`)) {
@@ -719,13 +726,20 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     handleLogAudit('APPLY_LEAVE', `พนักงาน ${newLeave.employeeName} ยื่นคำขอลาพักผ่อนแบบ ${newLeave.type}`);
   };
 
-  const handleAddMeeting = (newMeeting: Omit<Meeting, 'id'>) => {
-    const meeting: Meeting = {
-      ...newMeeting,
-      id: 'MEETING_' + Date.now()
-    };
-    saveMeetings([meeting, ...meetings]);
-    handleLogAudit('CREATE_MEETING', `นัดประชุม "${newMeeting.title}" วันที่ ${newMeeting.date} เวลา ${newMeeting.startTime}`);
+  const handleAddMeeting = async (newMeeting: Omit<Meeting, 'id'>) => {
+    const created = await createMeeting(newMeeting);
+    setMeetings((prev) => [created, ...prev]);
+    handleLogAudit('CREATE_MEETING', `นัดประชุม "${created.title}" วันที่ ${created.date} เวลา ${created.startTime}`);
+  };
+
+  const handleUpdateMeeting = async (id: string, updates: Partial<Meeting>) => {
+    const updated = await updateMeetingRemote(id, updates);
+    setMeetings((prev) => prev.map((m) => (m.id === id ? updated : m)));
+  };
+
+  const handleDeleteMeeting = async (id: string) => {
+    await deleteMeetingRemote(id);
+    setMeetings((prev) => prev.filter((m) => m.id !== id));
   };
 
   const handleApproveLeave = (leaveId: string, approved: boolean) => {
@@ -790,18 +804,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   };
 
   const openAddTaskModal = () => {
-    setSelectedTaskToEdit(null);
-    setIsTaskModalOpen(true);
-  };
-
-  const openEditTaskModal = (task: Task) => {
-    setSelectedTaskToEdit(task);
     setIsTaskModalOpen(true);
   };
 
   const closeTaskModal = () => {
     setIsTaskModalOpen(false);
-    setSelectedTaskToEdit(null);
   };
 
   const value: AppDataContextValue = {
@@ -811,6 +818,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     handleLogout,
     employees,
     projects,
+    projectTasks,
     tasks,
     documents,
     credentials,
@@ -820,9 +828,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     auditLogs,
     unreadCount,
     isTaskModalOpen,
-    selectedTaskToEdit,
     openAddTaskModal,
-    openEditTaskModal,
     closeTaskModal,
     handleAddEmployee,
     handleUpdateEmployee,
@@ -830,7 +836,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     handleAddProject,
     handleUpdateProject,
     handleDeleteProject,
-    handleSaveTask,
+    handleAddProjectTask,
+    handleUpdateProjectTask,
+    handleDeleteProjectTask,
     handleDeleteTask,
     handleInitiateHandover,
     handleApproveHandover,
@@ -846,6 +854,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     handleAddLeaveRequest,
     handleApproveLeave,
     handleAddMeeting,
+    handleUpdateMeeting,
+    handleDeleteMeeting,
     handleAddCredential,
     handleUpdateCredential,
     handleDeleteCredential,

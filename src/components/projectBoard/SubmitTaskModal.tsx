@@ -1,0 +1,251 @@
+import { useState, useEffect, FormEvent } from 'react';
+import { createPortal } from 'react-dom';
+import { AnimatePresence, motion } from 'motion/react';
+import { X, Paperclip, FileText, Trash2 } from 'lucide-react';
+import { Employee, LinkedDoc } from '../../types';
+import { ProjectTaskItem } from './types';
+import { EmployeeMultiSelect } from './CreateProjectModal';
+import { readFileAsDataUrl, MAX_FILE_BYTES, formatFileSize } from '../DocVault';
+import { nowTimestamp } from '../../lib/datetime';
+
+interface SubmitTaskModalProps {
+  task: ProjectTaskItem | null;
+  employees: Employee[];
+  documents: LinkedDoc[];
+  projectDocFolderId?: string | null;
+  currentUserName: string;
+  onAddDocument: (doc: LinkedDoc) => void;
+  onSubmit: (taskId: string, updates: Partial<ProjectTaskItem>) => Promise<void>;
+  onClose: () => void;
+}
+
+// Single-step "ส่งงาน" — the assignee picks/confirms a reviewer, writes a note, and optionally
+// attaches files (each becomes a real Doc Vault file tagged with this task's LinkedDoc.taskId, so
+// it shows up in "เอกสาร Drive" too, filed alongside the task's own folder when it has one). This
+// moves the task to 'review'; ReviewTaskModal is the other half of the loop.
+export default function SubmitTaskModal({ task, employees, documents, projectDocFolderId, currentUserName, onAddDocument, onSubmit, onClose }: SubmitTaskModalProps) {
+  const [reviewerIds, setReviewerIds] = useState<string[]>([]);
+  const [note, setNote] = useState('');
+  const [pickedFiles, setPickedFiles] = useState<globalThis.File[]>([]);
+  const [fileError, setFileError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState('');
+
+  useEffect(() => {
+    if (!task) return;
+    setReviewerIds(task.reviewerEmployeeIds ?? []);
+    setNote('');
+    setPickedFiles([]);
+    setFileError('');
+    setFormError('');
+  }, [task]);
+
+  if (!task) return null;
+
+  const existingFiles = (task.submissionFileIds ?? [])
+    .map((id) => documents.find((d) => d.id === id))
+    .filter((d): d is LinkedDoc => Boolean(d));
+
+  const handleFilesPicked = (fileList: FileList | null) => {
+    setFileError('');
+    if (!fileList) return;
+    const oversized: string[] = [];
+    const accepted: globalThis.File[] = [];
+    Array.from(fileList).forEach((f) => {
+      if (f.size > MAX_FILE_BYTES) oversized.push(f.name);
+      else accepted.push(f);
+    });
+    if (oversized.length > 0) setFileError(`ไฟล์ใหญ่เกิน ${formatFileSize(MAX_FILE_BYTES)} ถูกข้าม: ${oversized.join(', ')}`);
+    setPickedFiles((prev) => [...prev, ...accepted]);
+  };
+
+  const removePickedFile = (idx: number) => {
+    setPickedFiles((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const isFormValid = reviewerIds.length > 0;
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!isFormValid || isSubmitting) return;
+    setFormError('');
+    setIsSubmitting(true);
+    try {
+      // A task's own folder (created via AddTaskModal's checkbox) is where a submission's files
+      // land when one exists — otherwise they fall back to the project's root Drive folder, same
+      // as any other task-tagged document.
+      const taskFolder = documents.find((d) => d.kind === 'folder' && d.taskId === task.id);
+      const parentId = taskFolder?.id ?? projectDocFolderId ?? null;
+      const date = nowTimestamp();
+
+      const newFileIds: string[] = [];
+      for (const file of pickedFiles) {
+        const dataUrl = await readFileAsDataUrl(file);
+        const id = 'DOC' + Date.now() + Math.random().toString(36).slice(2, 6);
+        const newDoc: LinkedDoc = {
+          id,
+          name: file.name,
+          kind: 'file',
+          parentId,
+          taskId: task.id,
+          fileDataUrl: dataUrl,
+          fileMimeType: file.type || 'application/octet-stream',
+          fileSize: file.size,
+          scope: 'ส่วนตัว',
+          version: 1,
+          lastUpdated: date,
+          updatedBy: currentUserName,
+          history: [{ version: 1, updatedBy: currentUserName, date, note: 'แนบไฟล์ตอนส่งงาน' }],
+        };
+        onAddDocument(newDoc);
+        newFileIds.push(id);
+      }
+
+      await onSubmit(task.id, {
+        status: 'review',
+        reviewerEmployeeIds: reviewerIds,
+        submissionNote: note.trim() || undefined,
+        submissionFileIds: [...(task.submissionFileIds ?? []), ...newFileIds],
+        reviewNote: '',
+      });
+      onClose();
+    } catch {
+      setFormError('ส่งงานไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return createPortal(
+    <AnimatePresence>
+      {task && (
+        <motion.div key="submit-task-modal" className="fixed inset-0 z-50 flex items-center justify-center">
+          <motion.div
+            className="absolute inset-0 bg-black/15 backdrop-blur-sm"
+            onClick={onClose}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 24, mass: 0.9 }}
+            className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-md mx-4 max-h-[85vh] overflow-hidden flex flex-col"
+          >
+            <div className="flex justify-between items-center px-5 pt-5 pb-2 shrink-0">
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold text-slate-800">ส่งงาน</h3>
+                <p className="text-[11px] text-[#6F6F6F] mt-0.5 truncate">{task.title}</p>
+              </div>
+              <button onClick={onClose} className="text-slate-400 hover:text-slate-600 cursor-pointer shrink-0" type="button">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+              <div className="flex-1 min-h-0 overflow-y-auto px-5 pt-4 pb-1 space-y-3">
+                <div>
+                  <label className="block text-[#272220] font-bold text-[11px] mb-1">
+                    ผู้ตรวจงาน <span className="text-[#FF6537]">*</span> <span className="font-normal text-[#A0A0A0]">(เลือกได้มากกว่า 1)</span>
+                  </label>
+                  <EmployeeMultiSelect
+                    employees={employees}
+                    valueIds={reviewerIds}
+                    onChange={setReviewerIds}
+                    placeholder="ค้นหาหรือเลือกพนักงาน..."
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[#272220] font-bold text-[11px] mb-1">บันทึกถึงผู้ตรวจ (ไม่บังคับ)</label>
+                  <textarea
+                    rows={3}
+                    placeholder="สรุปสิ่งที่ทำเสร็จแล้ว หรือสิ่งที่อยากให้ตรวจเป็นพิเศษ..."
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[#272220] font-bold text-[11px] mb-1">
+                    ไฟล์แนบ (ไม่บังคับ) <span className="font-normal text-[#A0A0A0]">— ไม่เกิน {formatFileSize(MAX_FILE_BYTES)} ต่อไฟล์</span>
+                  </label>
+
+                  {existingFiles.length > 0 && (
+                    <div className="space-y-1.5 mb-2">
+                      {existingFiles.map((doc) => (
+                        <div key={doc.id} className="flex items-center gap-2 p-2 rounded-lg bg-slate-50 text-xs">
+                          <FileText size={14} className="text-[#6F6F6F] shrink-0" />
+                          <span className="truncate flex-1 text-[#272220]">{doc.name}</span>
+                          <span className="text-[#A0A0A0] shrink-0">ส่งไปแล้ว</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <label className="flex items-center gap-2 justify-center p-3 border border-dashed border-[#E5E5E5] rounded-lg cursor-pointer hover:bg-slate-50 text-xs text-[#6F6F6F]">
+                    <Paperclip size={14} />
+                    แนบไฟล์เพิ่ม
+                    <input
+                      type="file"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        handleFilesPicked(e.target.files);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                  {fileError && <p className="text-xs text-red-600 mt-1.5">{fileError}</p>}
+
+                  {pickedFiles.length > 0 && (
+                    <div className="space-y-1.5 mt-2">
+                      {pickedFiles.map((f, idx) => (
+                        <div key={idx} className="flex items-center gap-2 p-2 rounded-lg bg-[#FFF1EC] text-xs">
+                          <FileText size={14} className="text-[#FF6537] shrink-0" />
+                          <span className="truncate flex-1 text-[#272220]">{f.name}</span>
+                          <span className="text-[#A0A0A0] shrink-0">{formatFileSize(f.size)}</span>
+                          <button type="button" onClick={() => removePickedFile(idx)} className="text-slate-400 hover:text-red-600 cursor-pointer shrink-0">
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {formError && (
+                  <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{formError}</p>
+                )}
+              </div>
+
+              <div className="shrink-0 px-5 pt-4 pb-5 flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 h-10 text-sm font-semibold text-[#6F6F6F] hover:bg-slate-50 rounded-lg border border-[#E5E5E5] cursor-pointer"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  disabled={!isFormValid || isSubmitting}
+                  className={`flex-1 h-10 text-white font-bold text-sm rounded-lg transition-colors ${
+                    isFormValid && !isSubmitting ? 'bg-[#FF6537] hover:bg-[#e6572c] cursor-pointer' : 'bg-[#F68C6C] cursor-not-allowed'
+                  }`}
+                >
+                  {isSubmitting ? 'กำลังส่งงาน...' : 'ส่งงาน'}
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>,
+    document.body
+  );
+}

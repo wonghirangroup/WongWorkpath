@@ -17,11 +17,19 @@ interface ProjectRowDb extends RowDataPacket {
   priority: string | null;
   budget: string | null; // DECIMAL comes back as a string from mysql2
   owner_employee_id: string | null;
+  member_employee_ids: string | null;
+  doc_folder_id: string | null;
   progress: number | null;
   start_date: string | null;
   end_date: string | null;
   status: string;
   created_at: string;
+}
+
+// Same JSON-array-as-TEXT convention as employee.restricted_menu_ids — filters out anything that
+// isn't a plain string id so a malformed body can't corrupt the stored list.
+function sanitizeMemberIds(raw: unknown): string[] {
+  return Array.isArray(raw) ? raw.filter((id): id is string => typeof id === 'string') : [];
 }
 
 // daysUntilDue is deliberately never stored — it's "days from right now", so it has to be
@@ -48,6 +56,8 @@ function toProjectRow(r: ProjectRowDb) {
     priority: r.priority ?? undefined,
     budget: r.budget !== null ? Number(r.budget) : null,
     ownerEmployeeId: r.owner_employee_id,
+    memberEmployeeIds: r.member_employee_ids ? JSON.parse(r.member_employee_ids) : [],
+    docFolderId: r.doc_folder_id,
     progress: r.progress,
     startDate: formatThaiDateShort(r.start_date),
     endDate: formatThaiDateShort(r.end_date),
@@ -63,7 +73,7 @@ projectsRouter.get('/', async (_req, res) => {
   try {
     const [rows] = await pool.query<ProjectRowDb[]>(
       `SELECT id, code, title, description, department, priority, budget, owner_employee_id,
-              progress, start_date, end_date, status, created_at
+              member_employee_ids, doc_folder_id, progress, start_date, end_date, status, created_at
        FROM project ORDER BY created_at DESC`
     );
     res.json(rows.map(toProjectRow));
@@ -83,28 +93,34 @@ projectsRouter.post('/', async (req, res) => {
   }
   const status = STATUSES.includes(p.status) ? p.status : 'draft';
   const priority = PRIORITIES.includes(p.priority) ? p.priority : null;
+  const memberEmployeeIds = sanitizeMemberIds(p.memberEmployeeIds);
 
   try {
-    const [[{ cnt }]] = await pool.query<RowDataPacket[]>('SELECT COUNT(*) as cnt FROM project');
-    const code = `PRJ-${String((cnt as number) + 1).padStart(3, '0')}`;
+    // Derived from the highest existing numeric suffix, not COUNT(*) — code has a UNIQUE
+    // constraint, and COUNT(*) drifts below the highest-used number as soon as any project is
+    // ever deleted, which collided and 500'd on every subsequent create.
+    const [[{ maxNum }]] = await pool.query<RowDataPacket[]>(
+      `SELECT COALESCE(MAX(CAST(SUBSTRING(code, 5) AS UNSIGNED)), 0) as maxNum FROM project WHERE code LIKE 'PRJ-%'`
+    );
+    const code = `PRJ-${String((maxNum as number) + 1).padStart(3, '0')}`;
     const id = `PROJ_${Date.now()}`;
     const now = nowBangkokDateTime();
 
     await pool.query(
       `INSERT INTO project
          (id, code, title, description, department, priority, budget, owner_employee_id,
-          progress, start_date, end_date, status, created_by, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          member_employee_ids, doc_folder_id, progress, start_date, end_date, status, created_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id, code, p.title.trim(), p.description?.trim() || null, p.department || null, priority,
-        p.budget ?? null, p.ownerEmployeeId || null, p.progress ?? 0, p.startDate || null,
-        p.endDate || null, status, p.createdBy || null, now, now,
+        p.budget ?? null, p.ownerEmployeeId || null, memberEmployeeIds.length ? JSON.stringify(memberEmployeeIds) : null,
+        p.docFolderId || null, p.progress ?? 0, p.startDate || null, p.endDate || null, status, p.createdBy || null, now, now,
       ]
     );
 
     const [[row]] = await pool.query<ProjectRowDb[]>(
       `SELECT id, code, title, description, department, priority, budget, owner_employee_id,
-              progress, start_date, end_date, status, created_at
+              member_employee_ids, doc_folder_id, progress, start_date, end_date, status, created_at
        FROM project WHERE id = ?`,
       [id]
     );
@@ -127,6 +143,12 @@ projectsRouter.put('/:id', async (req, res) => {
   if ('priority' in p) { fields.push('priority = ?'); values.push(PRIORITIES.includes(p.priority) ? p.priority : null); }
   if ('budget' in p) { fields.push('budget = ?'); values.push(p.budget ?? null); }
   if ('ownerEmployeeId' in p) { fields.push('owner_employee_id = ?'); values.push(p.ownerEmployeeId || null); }
+  if ('docFolderId' in p) { fields.push('doc_folder_id = ?'); values.push(p.docFolderId || null); }
+  if ('memberEmployeeIds' in p) {
+    const memberEmployeeIds = sanitizeMemberIds(p.memberEmployeeIds);
+    fields.push('member_employee_ids = ?');
+    values.push(memberEmployeeIds.length ? JSON.stringify(memberEmployeeIds) : null);
+  }
   if (typeof p.progress === 'number') { fields.push('progress = ?'); values.push(p.progress); }
   if ('startDate' in p) { fields.push('start_date = ?'); values.push(p.startDate || null); }
   if ('endDate' in p) { fields.push('end_date = ?'); values.push(p.endDate || null); }
@@ -146,7 +168,7 @@ projectsRouter.put('/:id', async (req, res) => {
     // display fields the rest of the UI reads directly off ProjectRow.
     const [[row]] = await pool.query<ProjectRowDb[]>(
       `SELECT id, code, title, description, department, priority, budget, owner_employee_id,
-              progress, start_date, end_date, status, created_at
+              member_employee_ids, doc_folder_id, progress, start_date, end_date, status, created_at
        FROM project WHERE id = ?`,
       [req.params.id]
     );

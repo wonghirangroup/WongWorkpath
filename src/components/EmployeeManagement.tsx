@@ -220,6 +220,10 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
     setShowAddForm(false);
   };
 
+  // ผู้บริหาร sits over the whole ฝ่าย, not one แผนก under it — this is the one role that doesn't
+  // need a department pinned to it (see server/routes/employees.ts for the matching relaxed check).
+  const isExecutiveRole = newRole.trim() === 'ผู้บริหาร';
+
   const isFormValid = !!(
     newName.trim() && newEmail.trim() && newUsername.trim() && newRole.trim() && newPassword.trim()
   );
@@ -237,7 +241,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
         email: newEmail.trim(),
         username: newUsername.trim(),
         role: newRole.trim(),
-        department: newDepartment,
+        department: isExecutiveRole ? '' : newDepartment,
         division: newDivision,
         avatar: newAvatar.trim(),
         accountType: newAccountType,
@@ -492,9 +496,11 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                   {emp.nickname && emp.nickname !== emp.name && (
                     <p className="text-[11px] text-slate-400 truncate">{emp.name}</p>
                   )}
-                  <span className={`inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(emp.department)}`}>
-                    {emp.department}
-                  </span>
+                  {emp.department && (
+                    <span className={`inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(emp.department)}`}>
+                      {emp.department}
+                    </span>
+                  )}
                 </div>
                 <EmployeeCardMenu
                   onView={() => openProfile(emp, 'view')}
@@ -586,9 +592,13 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                   <td className="px-4 py-3 whitespace-nowrap text-[12px] font-normal text-[#6F6F6F]">{emp.username || '—'}</td>
                   <td className="px-4 py-3 whitespace-nowrap text-[12px] font-normal text-[#6F6F6F]">{emp.email}</td>
                   <td className="px-4 py-3 whitespace-nowrap">
-                    <span className={`inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(emp.department)}`}>
-                      {emp.department}
-                    </span>
+                    {emp.department ? (
+                      <span className={`inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(emp.department)}`}>
+                        {emp.department}
+                      </span>
+                    ) : (
+                      <span className="text-[#A0A0A0]">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <EmployeeCardMenu
@@ -767,6 +777,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                     />
                   </div>
 
+                  {!isExecutiveRole && (
                   <div>
                     <label className="block text-[#272220] font-bold text-[11px] mb-1">แผนก *</label>
                     <Dropdown<string>
@@ -776,6 +787,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                       options={getSectionsForDivision(newDivision).map((d) => ({ value: d, label: d }))}
                     />
                   </div>
+                  )}
 
                   <div>
                     <label className="block text-[#272220] font-bold text-[11px] mb-1">ประเภทผู้ใช้งาน *</label>

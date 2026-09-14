@@ -299,56 +299,93 @@ interface CreateProjectModalProps {
   onClose: () => void;
   onCreate: (payload: Omit<CreateProjectPayload, 'createdBy'>) => Promise<void>;
   onCreated: (title: string, folderCreated: boolean) => void;
-  onCreateFolder: (name: string) => void;
+  onCreateFolder: (name: string, parentId?: string | null, taskId?: string) => string;
   nextCode: string;
   employees: Employee[];
+  existingTitles: string[];
+}
+
+// Same silent auto-rename convention as CredentialVault's getUniqueLabel — a collision never
+// blocks submission, it just gets a numeric suffix appended and the user is told so.
+export function getUniqueTitle(desiredTitle: string, existingTitles: string[]): string {
+  const trimmed = desiredTitle.trim();
+  if (!trimmed) return trimmed;
+  const lowerExisting = existingTitles.map((t) => t.trim().toLowerCase());
+  if (!lowerExisting.includes(trimmed.toLowerCase())) return trimmed;
+  let suffix = 2;
+  while (lowerExisting.includes(`${trimmed}${suffix}`.toLowerCase())) suffix++;
+  return `${trimmed}${suffix}`;
 }
 
 // Persists a real project row via onCreate (see AppDataContext's handleAddProject / the
 // server/routes/projects.ts API) before firing onCreated for the success toast — if the API call
 // fails, the form stays open and shows the error instead of closing, same pattern as
-// EmployeeManagement's add-employee form. "ผู้รับผิดชอบงาน" is single employees only for now (no
-// reusable team builder yet — deferred per user decision) and isn't persisted as part of the
-// project row yet. The optional "create a folder" step writes to the shared document store via
+// EmployeeManagement's add-employee form. "ผู้รับผิดชอบงาน"/assigneeIds (shown as "ผู้รับผิดชอบร่วม"
+// in the step 3 summary) is sent through as memberEmployeeIds and shows up in the project detail
+// page's "ทีม" tab. The optional "create a folder" step writes to the shared document store via
 // onCreateFolder, and only runs after the project itself is confirmed created.
-export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreated, onCreateFolder, nextCode, employees }: CreateProjectModalProps) {
+export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreated, onCreateFolder, nextCode, employees, existingTitles }: CreateProjectModalProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [title, setTitle] = useState('');
+  const [renameNotice, setRenameNotice] = useState('');
   const [description, setDescription] = useState('');
   const [duration, setDuration] = useState<Duration | null>(null);
   const [ownerId, setOwnerId] = useState('');
   const [priority, setPriority] = useState<Priority | null>(null);
   const [status, setStatus] = useState<ProjectStatus>('draft');
+  const [budget, setBudget] = useState('');
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [createFolder, setCreateFolder] = useState(false);
+  const [createFolder, setCreateFolder] = useState(true);
   const [folderName, setFolderName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
+  const submitButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Step 3 is a read-only summary with no input fields — without this, reaching it (by button
+  // click or by Enter) leaves nothing focused at all, so a further Enter press has no element to
+  // bubble a keydown from and silently does nothing. Focusing the submit button gives Enter
+  // somewhere to land, finishing the "Enter advances all the way to the end" behavior for real.
+  useEffect(() => {
+    if (step === 3) submitButtonRef.current?.focus();
+  }, [step]);
+
+  // "สร้างโฟลเดอร์เอกสาร" defaults to checked (see createFolder's initial state) — this seeds the
+  // folder name from the title the first time step 2 is actually reached, the same "only if not
+  // already set" rule the checkbox's own onChange used before it defaulted to checked at all.
+  useEffect(() => {
+    if (step === 2 && createFolder && !folderName.trim()) setFolderName(title.trim());
+  }, [step]);
 
   const resetAndClose = () => {
     setStep(1);
     setTitle('');
+    setRenameNotice('');
     setDescription('');
     setDuration(null);
     setOwnerId('');
     setPriority(null);
     setStatus('draft');
+    setBudget('');
     setAssigneeIds([]);
     setStartDate('');
     setEndDate('');
-    setCreateFolder(false);
+    setCreateFolder(true);
     setFolderName('');
     setFormError('');
     onClose();
   };
 
   const step1Valid = title.trim() !== '';
+  // Only meaningful once both dates are set — an open-ended start or end date has nothing to
+  // compare against yet.
+  const dateOrderValid = !(startDate && endDate && endDate < startDate);
 
   const skipStep2 = () => {
     setOwnerId('');
     setPriority(null);
+    setBudget('');
     setAssigneeIds([]);
     setStartDate('');
     setEndDate('');
@@ -359,22 +396,31 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!step1Valid || isSubmitting) return;
+    if (!step1Valid || !dateOrderValid || isSubmitting) return;
     setFormError('');
     setIsSubmitting(true);
+    // Safety net alongside the title field's own onBlur — Enter-driven step advances don't
+    // reliably fire a native blur first, so a duplicate could otherwise slip through un-renamed.
+    const finalTitle = getUniqueTitle(title, existingTitles);
     try {
+      // Created first (not after) so its id can be saved as the project's own docFolderId in the
+      // same request — a task's own "create folder" checkbox later nests inside this folder
+      // instead of always dropping it at the Drive root.
+      const willCreateFolder = createFolder && folderName.trim() !== '';
+      const newFolderId = willCreateFolder ? onCreateFolder(folderName.trim()) : undefined;
       await onCreate({
-        title: title.trim(),
+        title: finalTitle,
         description: description.trim() || undefined,
         priority: priority ? PRIORITY_TO_ROW[priority] : undefined,
         ownerEmployeeId: ownerId || undefined,
+        memberEmployeeIds: assigneeIds,
+        docFolderId: newFolderId,
         status,
+        budget: budget.trim() !== '' && !isNaN(Number(budget)) ? Number(budget) : undefined,
         startDate: startDate || undefined,
         endDate: endDate || undefined,
       });
-      const willCreateFolder = createFolder && folderName.trim() !== '';
-      if (willCreateFolder) onCreateFolder(folderName.trim());
-      onCreated(title.trim(), willCreateFolder);
+      onCreated(finalTitle, willCreateFolder);
       resetAndClose();
     } catch (err) {
       setFormError(err instanceof ApiError ? err.message : 'สร้างโครงการไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
@@ -386,19 +432,20 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
   const ownerEmp = employees.find((e) => e.id === ownerId);
   const assigneeEmps = employees.filter((e) => assigneeIds.includes(e.id));
 
-  // Enter anywhere in the wizard advances to the next step instead of submitting the form early —
-  // without this, hitting Enter in the title field on step 1 (the form's only single-line text
-  // input at that point) triggers the browser's native implicit form submission, which would call
-  // handleSubmit while still on step 1. Shift+Enter in the "รายละเอียด" textarea still inserts a
-  // newline as usual. Step 3 has no focusable text fields, so Enter there falls through to the
-  // real submit button unaffected.
+  // Enter anywhere in the wizard advances to the next step, all the way through to actually
+  // submitting on the final step — without this, hitting Enter in the title field on step 1 (the
+  // form's only single-line text input at that point) triggers the browser's native implicit form
+  // submission, which would call handleSubmit while still on step 1. Shift+Enter in the
+  // "รายละเอียด" textarea still inserts a newline as usual. Step 3 has no focusable text fields, so
+  // requestSubmit() is what actually lets Enter finish the wizard there (native implicit
+  // submission only fires when a text field is focused, which step 3 never has).
   const handleWizardKeyDown = (e: KeyboardEvent<HTMLFormElement>) => {
     if (e.key !== 'Enter') return;
     if (e.shiftKey && (e.target as HTMLElement).tagName === 'TEXTAREA') return;
-    if (step === 3) return;
     e.preventDefault();
     if (step === 1 && step1Valid) setStep(2);
-    else if (step === 2) setStep(3);
+    else if (step === 2 && dateOrderValid) setStep(3);
+    else if (step === 3) e.currentTarget.requestSubmit();
   };
 
   return createPortal(
@@ -453,8 +500,19 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                         placeholder="เช่น Grow store"
                         value={title}
                         onChange={(e) => setTitle(e.target.value)}
+                        onBlur={() => {
+                          const unique = getUniqueTitle(title, existingTitles);
+                          if (unique && unique !== title.trim()) {
+                            setTitle(unique);
+                            setRenameNotice(`ชื่อนี้ถูกใช้แล้ว เปลี่ยนเป็น "${unique}" ให้อัตโนมัติ`);
+                            setTimeout(() => setRenameNotice(''), 4000);
+                          }
+                        }}
                         className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
                       />
+                      {renameNotice && (
+                        <p className="text-xs font-semibold text-[#FF6537] mt-1.5">ℹ️ {renameNotice}</p>
+                      )}
                     </div>
                     <div>
                       <label className="block text-[#272220] font-bold text-[11px] mb-1">ระยะโครงการ</label>
@@ -532,6 +590,22 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                     </div>
 
                     <div>
+                      <label className="block text-[#272220] font-bold text-[11px] mb-1">งบประมาณ (บาท)</label>
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-[#B0B0B0]">฿</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1000"
+                          placeholder="เช่น 500000"
+                          value={budget}
+                          onChange={(e) => setBudget(e.target.value)}
+                          className="w-full p-2.5 pl-6 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
                       <label className="block text-[#272220] font-bold text-[11px] mb-1">ผู้รับผิดชอบงาน</label>
                       <EmployeeMultiSelect
                         employees={employees}
@@ -556,11 +630,17 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                         <input
                           type="date"
                           value={endDate}
+                          min={startDate || undefined}
                           onChange={(e) => setEndDate(e.target.value)}
-                          className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg focus:outline-none focus:border-[#FF6537]"
+                          className={`w-full p-2.5 text-sm border rounded-lg focus:outline-none focus:border-[#FF6537] ${
+                            dateOrderValid ? 'border-[#E5E5E5]' : 'border-red-400'
+                          }`}
                         />
                       </div>
                     </div>
+                    {!dateOrderValid && (
+                      <p className="text-xs text-red-600 -mt-1.5">วันที่สิ้นสุดต้องไม่อยู่ก่อนวันที่เริ่ม</p>
+                    )}
 
                     <div className="border-t border-slate-100 pt-3">
                       <label className="flex items-center gap-2 cursor-pointer">
@@ -658,6 +738,10 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                         }
                       />
                       <SummaryRow
+                        label="งบประมาณ"
+                        value={budget.trim() !== '' && !isNaN(Number(budget)) ? `฿${Number(budget).toLocaleString('th-TH')}` : 'ไม่ระบุ'}
+                      />
+                      <SummaryRow
                         label="ผู้รับผิดชอบร่วม"
                         value={
                           assigneeEmps.length > 0 ? (
@@ -752,8 +836,11 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                     </button>
                     <button
                       type="button"
+                      disabled={!dateOrderValid}
                       onClick={() => setStep(3)}
-                      className="flex-1 h-10 text-white font-bold text-sm rounded-lg bg-[#FF6537] hover:bg-[#e6572c] cursor-pointer transition-colors"
+                      className={`flex-1 h-10 text-white font-bold text-sm rounded-lg transition-colors ${
+                        dateOrderValid ? 'bg-[#FF6537] hover:bg-[#e6572c] cursor-pointer' : 'bg-[#F68C6C] cursor-not-allowed'
+                      }`}
                     >
                       ถัดไป
                     </button>
@@ -762,6 +849,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
 
                 {step === 3 && (
                   <button
+                    ref={submitButtonRef}
                     type="submit"
                     disabled={isSubmitting}
                     className={`flex-1 h-10 flex items-center justify-center gap-1.5 text-white font-bold text-sm rounded-lg transition-colors ${

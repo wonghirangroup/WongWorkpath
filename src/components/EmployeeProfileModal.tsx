@@ -100,6 +100,9 @@ export default function EmployeeProfileModal({
   // Admin-like accounts (admin/superadmin) keep a fixed username — same rule the server enforces.
   const targetIsAdminLike = accountType === 'admin' || accountType === 'superadmin';
   const isFormValid = !!(name.trim() && nickname.trim() && username.trim() && role.trim());
+  // ผู้บริหาร sits over the whole ฝ่าย, not one แผนก under it — see EmployeeManagement's create
+  // form and server/routes/employees.ts for the same rule.
+  const isExecutiveRole = role.trim() === 'ผู้บริหาร';
 
   const startEdit = () => setMode('edit');
 
@@ -145,7 +148,7 @@ export default function EmployeeProfileModal({
         ...(targetIsAdminLike ? {} : { username: username.trim() }),
         ...(password.trim() ? { password: password.trim() } : {}),
         role: role.trim(),
-        department,
+        department: isExecutiveRole ? '' : department,
         division,
         avatar: avatar.trim(),
         accountType,
@@ -303,6 +306,7 @@ export default function EmployeeProfileModal({
                     </InfoRow>
                   </div>
 
+                  {!isExecutiveRole && (
                   <InfoRow label="แผนก" value={department} editing={mode === 'edit'}>
                     <Dropdown<string>
                       value={department}
@@ -310,6 +314,7 @@ export default function EmployeeProfileModal({
                       options={getSectionsForDivision(division).map((d) => ({ value: d, label: d }))}
                     />
                   </InfoRow>
+                  )}
 
                   <InfoRow label="ที่อยู่" value={address} editing={mode === 'edit'}>
                     <textarea

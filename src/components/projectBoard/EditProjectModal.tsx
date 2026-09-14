@@ -7,11 +7,13 @@ import { ProjectRow, ProjectStatus } from './types';
 import { STATUS_LABEL } from './statusMeta';
 import {
   EmployeeSearchSelect,
+  EmployeeMultiSelect,
   PRIORITY_OPTIONS,
   PRIORITY_TO_ROW,
   ROW_TO_PRIORITY,
   Priority,
   STATUS_OPTIONS,
+  getUniqueTitle,
 } from './CreateProjectModal';
 import { ApiError } from '../../lib/api';
 
@@ -21,37 +23,48 @@ interface EditProjectModalProps {
   row: ProjectRow;
   employees: Employee[];
   onSave: (updates: Partial<ProjectRow>) => Promise<void>;
+  existingTitles: string[];
 }
 
 // Single-screen edit form (not the create wizard's 3 steps) — editing an existing project should
 // show every field at once rather than re-running a step-by-step flow each time. Only fields the
 // create wizard itself collects are editable here (see CreateProjectModal's own note on why
 // "department" has no field yet) — this stays a straight edit of what's already there.
-export default function EditProjectModal({ isOpen, onClose, row, employees, onSave }: EditProjectModalProps) {
+export default function EditProjectModal({ isOpen, onClose, row, employees, onSave, existingTitles }: EditProjectModalProps) {
   const [title, setTitle] = useState(row.title);
+  const [renameNotice, setRenameNotice] = useState('');
+  // Renaming to the project's own current title is never a "collision" with itself.
+  const otherTitles = existingTitles.filter((t) => t.trim().toLowerCase() !== row.title.trim().toLowerCase());
   const [description, setDescription] = useState(row.description ?? '');
   const [ownerId, setOwnerId] = useState(row.ownerEmployeeId ?? '');
+  const [memberIds, setMemberIds] = useState<string[]>(row.memberEmployeeIds ?? []);
   const [priority, setPriority] = useState<Priority | null>(row.priority ? ROW_TO_PRIORITY[row.priority] : null);
   const [status, setStatus] = useState<ProjectStatus>(row.status);
+  const [budget, setBudget] = useState(row.budget !== null ? String(row.budget) : '');
   const [startDate, setStartDate] = useState(row.startDateISO ?? '');
   const [endDate, setEndDate] = useState(row.endDateISO ?? '');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
 
   const titleValid = title.trim() !== '';
+  const dateOrderValid = !(startDate && endDate && endDate < startDate);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!titleValid || isSubmitting) return;
+    if (!titleValid || !dateOrderValid || isSubmitting) return;
     setFormError('');
     setIsSubmitting(true);
+    // Safety net alongside the title field's own onBlur (see CreateProjectModal's identical note).
+    const finalTitle = getUniqueTitle(title, otherTitles);
     try {
       await onSave({
-        title: title.trim(),
+        title: finalTitle,
         description: description.trim() || undefined,
         priority: priority ? PRIORITY_TO_ROW[priority] : undefined,
         ownerEmployeeId: ownerId || null,
+        memberEmployeeIds: memberIds,
         status,
+        budget: budget.trim() !== '' && !isNaN(Number(budget)) ? Number(budget) : null,
         startDate: startDate || null,
         endDate: endDate || null,
       });
@@ -120,8 +133,19 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
                     autoFocus
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
+                    onBlur={() => {
+                      const unique = getUniqueTitle(title, otherTitles);
+                      if (unique && unique !== title.trim()) {
+                        setTitle(unique);
+                        setRenameNotice(`ชื่อนี้ถูกใช้แล้ว เปลี่ยนเป็น "${unique}" ให้อัตโนมัติ`);
+                        setTimeout(() => setRenameNotice(''), 4000);
+                      }
+                    }}
                     className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
                   />
+                  {renameNotice && (
+                    <p className="text-xs font-semibold text-[#FF6537] mt-1.5">ℹ️ {renameNotice}</p>
+                  )}
                 </div>
 
                 <div>
@@ -141,6 +165,16 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
                     valueId={ownerId}
                     onChange={setOwnerId}
                     placeholder="ค้นหาหรือเลือกพนักงาน..."
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[#272220] font-bold text-[11px] mb-1">ผู้รับผิดชอบร่วม</label>
+                  <EmployeeMultiSelect
+                    employees={employees}
+                    valueIds={memberIds}
+                    onChange={setMemberIds}
+                    placeholder="ค้นหาแล้วเลือกเพิ่มได้หลายคน..."
                   />
                 </div>
 
@@ -175,6 +209,22 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
                   </select>
                 </div>
 
+                <div>
+                  <label className="block text-[#272220] font-bold text-[11px] mb-1">งบประมาณ (บาท)</label>
+                  <div className="relative">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-[#B0B0B0]">฿</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1000"
+                      placeholder="เช่น 500000"
+                      value={budget}
+                      onChange={(e) => setBudget(e.target.value)}
+                      className="w-full p-2.5 pl-6 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                    />
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[#272220] font-bold text-[11px] mb-1">วันที่เริ่ม</label>
@@ -190,11 +240,17 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
                     <input
                       type="date"
                       value={endDate}
+                      min={startDate || undefined}
                       onChange={(e) => setEndDate(e.target.value)}
-                      className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg focus:outline-none focus:border-[#FF6537]"
+                      className={`w-full p-2.5 text-sm border rounded-lg focus:outline-none focus:border-[#FF6537] ${
+                        dateOrderValid ? 'border-[#E5E5E5]' : 'border-red-400'
+                      }`}
                     />
                   </div>
                 </div>
+                {!dateOrderValid && (
+                  <p className="text-xs text-red-600 -mt-1.5">วันที่สิ้นสุดต้องไม่อยู่ก่อนวันที่เริ่ม</p>
+                )}
 
                 {formError && (
                   <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{formError}</p>
@@ -211,9 +267,9 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
                 </button>
                 <button
                   type="submit"
-                  disabled={!titleValid || isSubmitting}
+                  disabled={!titleValid || !dateOrderValid || isSubmitting}
                   className={`flex-1 h-10 flex items-center justify-center gap-1.5 text-white font-bold text-sm rounded-lg transition-colors ${
-                    titleValid && !isSubmitting ? 'bg-[#FF6537] hover:bg-[#e6572c] cursor-pointer' : 'bg-[#F68C6C] cursor-not-allowed'
+                    titleValid && dateOrderValid && !isSubmitting ? 'bg-[#FF6537] hover:bg-[#e6572c] cursor-pointer' : 'bg-[#F68C6C] cursor-not-allowed'
                   }`}
                 >
                   {isSubmitting ? 'กำลังบันทึก...' : 'บันทึกการแก้ไข'}

@@ -32,6 +32,37 @@ function PersonRow({ label, employee }: { label: string; employee: Employee | un
   );
 }
 
+// Same shape as PersonRow, but for a field that can now hold more than one person (assignee(s),
+// reviewer(s)) — stacks one avatar+name row per person instead of collapsing to a single value.
+function PeopleRow({ label, employees }: { label: string; employees: Employee[] }) {
+  return (
+    <div>
+      <p className="text-[#A0A0A0] text-[11px] mb-1">{label}</p>
+      {employees.length > 0 ? (
+        <div className="space-y-1.5">
+          {employees.map((employee) => (
+            <span key={employee.id} className="flex items-center gap-2">
+              {employee.avatar ? (
+                <img src={employee.avatar} alt="" className="w-6 h-6 rounded-full object-cover shrink-0" />
+              ) : (
+                <span
+                  className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0"
+                  style={{ backgroundColor: getAvatarColor(displayName(employee)) }}
+                >
+                  {displayName(employee).trim().charAt(0).toUpperCase()}
+                </span>
+              )}
+              <span className="text-sm text-[#272220]">{displayName(employee)}</span>
+            </span>
+          ))}
+        </div>
+      ) : (
+        <span className="text-sm text-[#A0A0A0]">ยังไม่มี</span>
+      )}
+    </div>
+  );
+}
+
 interface TaskDetailModalProps {
   task: ProjectTaskItem | null;
   employees: Employee[];
@@ -41,8 +72,9 @@ interface TaskDetailModalProps {
 // Read-only — opened from the "การกระทำ" column's "ดูรายละเอียด" button so a truncated row
 // (long description, etc.) can still be read in full without leaving the table.
 export default function TaskDetailModal({ task, employees, onClose }: TaskDetailModalProps) {
-  const assignee = task ? employees.find((e) => e.id === task.assigneeEmployeeId) : undefined;
+  const assignees = task ? employees.filter((e) => task.assigneeEmployeeIds.includes(e.id)) : [];
   const creator = task?.creatorEmployeeId ? employees.find((e) => e.id === task.creatorEmployeeId) : undefined;
+  const reviewers = task ? employees.filter((e) => (task.reviewerEmployeeIds ?? []).includes(e.id)) : [];
   const priorityMeta = task?.priority ? PRIORITY_OPTIONS.find((p) => p.value === task.priority) : undefined;
   const isUrgent = task?.daysUntilDue !== undefined && task.daysUntilDue <= 2;
 
@@ -107,9 +139,22 @@ export default function TaskDetailModal({ task, employees, onClose }: TaskDetail
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <PersonRow label="ใครรับผิดชอบ" employee={assignee} />
+                <PeopleRow label="ใครรับผิดชอบ" employees={assignees} />
                 <PersonRow label="ใครเป็นคนสร้าง" employee={creator} />
               </div>
+
+              {reviewers.length > 0 && (
+                <div className="grid grid-cols-2 gap-4">
+                  <PeopleRow label="ผู้ตรวจงาน" employees={reviewers} />
+                </div>
+              )}
+
+              {task.status === 'in_progress' && task.reviewNote && (
+                <div>
+                  <p className="text-[#A0A0A0] text-[11px] mb-1">เหตุผลที่ถูกตีกลับ</p>
+                  <p className="text-sm text-red-600 whitespace-pre-wrap break-words bg-red-50 border border-red-100 rounded-lg px-3 py-2">{task.reviewNote}</p>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div>

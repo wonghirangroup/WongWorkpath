@@ -7,8 +7,7 @@ import { useAppData } from '../../context/AppDataContext';
 import { Employee } from '../../types';
 import { canDeleteProject } from '../../lib/permissions';
 import { ApiError } from '../../lib/api';
-import { INITIAL_PROJECT_TASKS } from './mockData';
-import { ProjectRow, ProjectStatus, ProjectTaskItem } from './types';
+import { ProjectRow, ProjectStatus } from './types';
 import StatusSummaryCards from './StatusSummaryCards';
 import ProjectFilterTabs, { ProjectFilter } from './ProjectFilterTabs';
 import ProjectTable from './ProjectTable';
@@ -90,7 +89,7 @@ function SortMenu({ value, onChange }: { value: SortBy; onChange: (v: SortBy) =>
 
 interface ProjectBoardProps {
   employees: Employee[];
-  onCreateFolder: (name: string) => void;
+  onCreateFolder: (name: string, parentId?: string | null, taskId?: string) => string;
   currentUserId: string;
 }
 
@@ -108,6 +107,7 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
   // title as a breadcrumb subtitle — same pattern as the Docs page's docCurrentFolderId.
   const {
     projects,
+    projectTasks,
     taskSelectedProjectId,
     setTaskSelectedProjectId,
     meetings,
@@ -115,28 +115,13 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
     handleAddProject,
     handleUpdateProject,
     handleDeleteProject,
+    handleAddProjectTask,
+    handleUpdateProjectTask,
+    handleDeleteProjectTask,
     currentUser,
   } = useAppData();
   const selectedProject = projects.find((p) => p.id === taskSelectedProjectId) ?? null;
   const setSelectedProject = (row: ProjectRow | null) => setTaskSelectedProjectId(row?.id ?? null);
-
-  // INITIAL_PROJECT_TASKS' assigneeEmployeeId values ('E01', 'E02', 'E03') are placeholder slots,
-  // not real ids — the actual employee roster comes from a real backend now and won't contain
-  // them. Remap the busiest slot ('E01') onto whoever is actually logged in, so the "งาน" tab's
-  // "only my tasks" view always has something to show, and the next two slots onto two other
-  // real employees so the "ทีม" tab reads as more than one person.
-  const projectTasks = useMemo(() => {
-    const others = employees.filter((e) => e.id !== currentUserId);
-    const slotToRealId: Record<string, string> = {
-      E01: currentUserId || employees[0]?.id || 'E01',
-      E02: others[0]?.id ?? currentUserId,
-      E03: others[1]?.id ?? currentUserId,
-    };
-    return INITIAL_PROJECT_TASKS.map((t) => ({
-      ...t,
-      assigneeEmployeeId: slotToRealId[t.assigneeEmployeeId] ?? t.assigneeEmployeeId,
-    }));
-  }, [employees, currentUserId]);
 
   const canDelete = currentUser ? canDeleteProject(currentUser) : false;
 
@@ -153,12 +138,6 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
       setIsDeleting(false);
     }
   };
-
-  // Tasks added via the "เพิ่มงาน" modal in ProjectDetail — kept here (not inside ProjectDetail
-  // itself) so they survive closing and reopening a project's detail view within the same visit,
-  // same UI-only/mock-data convention as everything else in this module.
-  const [extraTasks, setExtraTasks] = useState<ProjectTaskItem[]>([]);
-  const allTasks = useMemo(() => [...projectTasks, ...extraTasks], [projectTasks, extraTasks]);
 
   const showActionToast = (message: string) => {
     setActionToast(message);
@@ -203,14 +182,17 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
     return (
       <ProjectDetail
         row={selectedProject}
-        tasks={allTasks.filter((t) => t.projectId === selectedProject.id)}
+        tasks={projectTasks.filter((t) => t.projectId === selectedProject.id)}
         meetings={meetings}
         employees={employees}
         currentUserId={currentUserId}
-        onAddTask={(task) => setExtraTasks((prev) => [...prev, task])}
+        onAddTask={handleAddProjectTask}
+        onUpdateTask={handleUpdateProjectTask}
+        onDeleteTask={handleDeleteProjectTask}
         onAddMeeting={handleAddMeeting}
         onCreateFolder={onCreateFolder}
         onUpdateProject={(updates) => handleUpdateProject(selectedProject.id, updates)}
+        existingProjectTitles={projects.map((p) => p.title)}
       />
     );
   }
@@ -302,6 +284,7 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
               onViewDetail={setSelectedProject}
               canDelete={canDelete}
               onDelete={(row) => setDeleteTarget({ id: row.id, title: row.title })}
+              onUpdatePriority={(row, priority) => handleUpdateProject(row.id, { priority })}
             />
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -329,6 +312,7 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
         }
         employees={employees}
         onCreateFolder={onCreateFolder}
+        existingTitles={projects.map((p) => p.title)}
       />
 
       {actionToast && (

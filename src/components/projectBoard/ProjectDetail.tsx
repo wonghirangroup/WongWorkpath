@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
-import { Clock, ListChecks, Users2, Plus, Eye, MapPin, CalendarClock, Pencil } from 'lucide-react';
+import { Clock, ListChecks, Users2, Plus, Eye, CalendarClock, Pencil, Trash2, X } from 'lucide-react';
 import { Employee, Meeting } from '../../types';
-import { ProjectRow, ProjectTaskItem, ProjectPriority, ProjectTaskStatus } from './types';
-import { STATUS_DOT, TASK_STATUS_LABEL, TASK_STATUS_COLOR } from './statusMeta';
+import { ProjectRow, ProjectTaskItem, ProjectTaskStatus } from './types';
+import { STATUS_DOT, TASK_STATUS_LABEL, TASK_STATUS_COLOR, PROJECT_PRIORITY_META } from './statusMeta';
 import { getAvatarColor } from '../../lib/avatarColor';
 import { displayName, PRIORITY_OPTIONS } from './CreateProjectModal';
 import Dropdown from '../Dropdown';
@@ -10,6 +10,39 @@ import AddTaskModal from './AddTaskModal';
 import EditProjectModal from './EditProjectModal';
 import ProjectGantt from './ProjectGantt';
 import TaskDetailModal from './TaskDetailModal';
+import { ForkRow } from '../OrgChart';
+
+// Two-step inline confirm (click once to arm, click again to confirm) — same idea as OrgChart's
+// own DeleteButton, just laid out inline for a table cell instead of pinned to a card corner.
+function InlineDeleteConfirm({ onConfirm, label }: { onConfirm: () => void; label: string }) {
+  const [armed, setArmed] = useState(false);
+  if (armed) {
+    return (
+      <span className="inline-flex items-center gap-1">
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onConfirm(); setArmed(false); }}
+          className="text-[10px] font-bold text-red-600 hover:text-red-800 cursor-pointer"
+        >
+          {label}?
+        </button>
+        <button type="button" onClick={(e) => { e.stopPropagation(); setArmed(false); }} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+          <X size={12} />
+        </button>
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); setArmed(true); }}
+      title={label}
+      className="text-[#A0A0A0] hover:text-red-600 cursor-pointer transition-colors"
+    >
+      <Trash2 size={14} />
+    </button>
+  );
+}
 
 type DetailTab = 'overview' | 'tasks' | 'team' | 'meetings' | 'timeline';
 type TaskFilter = 'all' | ProjectTaskStatus;
@@ -30,12 +63,6 @@ const TASK_FILTER_OPTIONS: { value: TaskFilter; label: string }[] = [
   { value: 'blocked', label: TASK_STATUS_LABEL.blocked },
   { value: 'done', label: TASK_STATUS_LABEL.done },
 ];
-
-const PRIORITY_META: Record<ProjectPriority, { label: string; className: string }> = {
-  High: { label: 'สูง', className: 'bg-red-50 text-red-600' },
-  Medium: { label: 'กลาง', className: 'bg-[#FFF1EC] text-[#FF6537]' },
-  Low: { label: 'ต่ำ', className: 'bg-slate-100 text-slate-600' },
-};
 
 function formatBudget(budget: number | null): string {
   if (budget === null) return 'ยังไม่มี';
@@ -59,18 +86,26 @@ interface ProjectDetailProps {
   meetings: Meeting[];
   employees: Employee[];
   currentUserId: string;
-  onAddTask: (task: ProjectTaskItem) => void;
-  onAddMeeting: (meeting: Omit<Meeting, 'id'>) => void;
-  onCreateFolder: (name: string) => void;
+  onAddTask: (task: Omit<ProjectTaskItem, 'id'>) => Promise<ProjectTaskItem>;
+  onUpdateTask: (id: string, updates: Partial<ProjectTaskItem>) => Promise<void>;
+  onDeleteTask: (id: string) => Promise<void>;
+  onAddMeeting: (meeting: Omit<Meeting, 'id'>) => Promise<void>;
+  onCreateFolder: (name: string, parentId?: string | null, taskId?: string) => string;
   onUpdateProject: (updates: Partial<ProjectRow>) => Promise<void>;
+  existingProjectTitles: string[];
 }
 
-export default function ProjectDetail({ row, tasks, meetings, employees, currentUserId, onAddTask, onAddMeeting, onCreateFolder, onUpdateProject }: ProjectDetailProps) {
+export default function ProjectDetail({ row, tasks, meetings, employees, currentUserId, onAddTask, onUpdateTask, onDeleteTask, onAddMeeting, onCreateFolder, onUpdateProject, existingProjectTitles }: ProjectDetailProps) {
   const [tab, setTab] = useState<DetailTab>('overview');
   const [isAddTaskOpen, setIsAddTaskOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<ProjectTaskItem | null>(null);
   const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
   const [taskFilter, setTaskFilter] = useState<TaskFilter>('all');
   const [selectedTask, setSelectedTask] = useState<ProjectTaskItem | null>(null);
+
+  const openAddTask = () => { setEditingTask(null); setIsAddTaskOpen(true); };
+  const openEditTask = (task: ProjectTaskItem) => { setEditingTask(task); setIsAddTaskOpen(true); };
+  const closeTaskModal = () => { setIsAddTaskOpen(false); setEditingTask(null); };
 
   const counts = useMemo(() => {
     const base = { total: tasks.length, done: 0, in_progress: 0, review: 0, blocked: 0 };
@@ -109,24 +144,29 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
   );
 
   const myTasks = useMemo(
-    () => filteredTasks.filter((t) => t.assigneeEmployeeId === currentUserId),
+    () => filteredTasks.filter((t) => t.assigneeEmployeeIds.includes(currentUserId)),
     [filteredTasks, currentUserId]
   );
 
   const teamMembers = useMemo(() => {
-    const ids = Array.from(new Set(filteredTasks.map((t) => t.assigneeEmployeeId)));
+    // "ผู้รับผิดชอบร่วม" (row.memberEmployeeIds) are project-level members declared up front at
+    // create/edit time — they belong in this list even with zero tasks assigned yet, not just
+    // whoever happens to already have a task (which used to be the only way anyone showed up here).
+    const explicitMemberIds = row.memberEmployeeIds ?? [];
+    const taskAssigneeIds = filteredTasks.flatMap((t) => t.assigneeEmployeeIds);
+    const ids = Array.from(new Set([...explicitMemberIds, ...taskAssigneeIds]));
     return ids
       .map((id) => {
         const member = employeeById.get(id);
         if (!member) return null;
-        const memberTasks = filteredTasks.filter((t) => t.assigneeEmployeeId === id);
+        const memberTasks = filteredTasks.filter((t) => t.assigneeEmployeeIds.includes(id));
         return { member, tasks: memberTasks };
       })
       .filter((entry): entry is { member: Employee; tasks: ProjectTaskItem[] } => Boolean(entry))
       // "เรียงตามตำแหน่งสำคัญของโปรเจกต์" — no explicit seniority field exists per project, so task
       // count (how much of this project someone is actually carrying) stands in as the ranking.
       .sort((a, b) => b.tasks.length - a.tasks.length);
-  }, [filteredTasks, employeeById]);
+  }, [filteredTasks, employeeById, row.memberEmployeeIds]);
 
   const ownerEmployee = row.ownerEmployeeId ? employeeById.get(row.ownerEmployeeId) : undefined;
 
@@ -152,7 +192,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
         </button>
         <button
           type="button"
-          onClick={() => setIsAddTaskOpen(true)}
+          onClick={openAddTask}
           className="inline-flex items-center gap-1.5 bg-[#FF6537] hover:bg-[#e6572c] text-white text-sm font-bold px-4 h-10 rounded-xl cursor-pointer transition-colors shrink-0"
         >
           <Plus size={16} />
@@ -197,8 +237,8 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
           <div>
             <p className="text-[#A0A0A0] mb-1">ความสำคัญ</p>
             {row.priority ? (
-              <span className={`inline-block px-2 py-0.5 rounded-full font-medium ${PRIORITY_META[row.priority].className}`}>
-                {PRIORITY_META[row.priority].label}
+              <span className={`inline-block px-2 py-0.5 rounded-full font-medium ${PROJECT_PRIORITY_META[row.priority].className}`}>
+                {PROJECT_PRIORITY_META[row.priority].label}
               </span>
             ) : <p className="font-medium text-[#272220]">ยังไม่มี</p>}
           </div>
@@ -255,25 +295,31 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                   squeezed together at the far right instead of spreading out evenly. */}
               <table className="w-full text-sm border-collapse table-fixed">
                 <thead>
-                  <tr className="text-left text-[#A0A0A0] border-b border-[#F4F4F4]">
-                    <th className="px-5 py-2 font-medium w-2/5">ชื่องาน</th>
-                    <th className="px-5 py-2 font-medium w-1/5">ผู้รับผิดชอบ</th>
-                    <th className="px-5 py-2 font-medium w-1/5">วันที่</th>
-                    <th className="px-5 py-2 font-medium w-1/5">สถานะ</th>
+                  <tr className="bg-[#F9F9F9] text-[12px] font-semibold text-[#000000] border-b border-[#EDEEEF]">
+                    <th className="px-5 py-2 w-[28%]">ชื่องาน</th>
+                    <th className="px-5 py-2 w-[22%]">รายละเอียด</th>
+                    <th className="px-5 py-2 w-[15%]">ผู้รับผิดชอบ</th>
+                    <th className="px-5 py-2 w-[13%]">วันที่</th>
+                    <th className="px-5 py-2 w-[12%]">สถานะ</th>
+                    <th className="px-5 py-2 w-[10%]">การกระทำ</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredTasks.map((t) => {
-                    const assignee = employeeById.get(t.assigneeEmployeeId);
+                    const taskAssignees = t.assigneeEmployeeIds.map((id) => employeeById.get(id)).filter((e): e is Employee => Boolean(e));
+                    const assigneeLabel = taskAssignees.length > 0
+                      ? `${displayName(taskAssignees[0])}${taskAssignees.length > 1 ? ` +${taskAssignees.length - 1}` : ''}`
+                      : 'ยังไม่มี';
                     return (
-                      <tr key={t.id} className="border-b border-[#F9F9F9] last:border-b-0 hover:bg-[#FAFAFA]">
+                      <tr key={t.id} className="border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50">
                         <td className="px-5 py-3 font-medium text-[#272220]">
                           <span className="flex items-center gap-2 min-w-0">
                             <ListChecks size={14} className="text-[#A0A0A0] shrink-0" />
                             <span className="truncate">{t.title}</span>
                           </span>
                         </td>
-                        <td className="px-5 py-3 text-[#6F6F6F] whitespace-nowrap">{assignee ? displayName(assignee) : 'ยังไม่มี'}</td>
+                        <td className="px-5 py-3 text-[#6F6F6F] truncate" title={t.description}>{t.description || 'ยังไม่มี'}</td>
+                        <td className="px-5 py-3 text-[#6F6F6F] whitespace-nowrap">{assigneeLabel}</td>
                         <td className="px-5 py-3 text-[#6F6F6F] whitespace-nowrap">{t.dueDate ?? 'ยังไม่มีกำหนด'}</td>
                         <td className="px-5 py-3 whitespace-nowrap">
                           <span
@@ -282,6 +328,27 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                           >
                             {TASK_STATUS_LABEL[t.status]}
                           </span>
+                        </td>
+                        <td className="px-5 py-3 whitespace-nowrap">
+                          <div className="flex items-center gap-2.5">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedTask(t)}
+                              title="ดูรายละเอียด"
+                              className="text-[#A0A0A0] hover:text-[#FF6537] cursor-pointer transition-colors"
+                            >
+                              <Eye size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openEditTask(t)}
+                              title="แก้ไข"
+                              className="text-[#A0A0A0] hover:text-[#FF6537] cursor-pointer transition-colors"
+                            >
+                              <Pencil size={13} />
+                            </button>
+                            <InlineDeleteConfirm label="ลบ" onConfirm={() => onDeleteTask(t.id)} />
+                          </div>
                         </td>
                       </tr>
                     );
@@ -303,13 +370,13 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
             <div className="overflow-x-auto">
               <table className="w-full text-sm border-collapse">
                 <thead>
-                  <tr className="text-left text-[#A0A0A0] border-b border-[#F4F4F4]">
-                    <th className="px-5 py-3 font-medium">สถานะ</th>
-                    <th className="px-5 py-3 font-medium">ชื่องาน</th>
-                    <th className="px-5 py-3 font-medium">ระยะเวลา</th>
-                    <th className="px-5 py-3 font-medium">ความคืบหน้า</th>
-                    <th className="px-5 py-3 font-medium">ความสำคัญ</th>
-                    <th className="px-5 py-3 font-medium">การกระทำ</th>
+                  <tr className="bg-[#F9F9F9] text-[12px] font-semibold text-[#000000] border-b border-[#EDEEEF]">
+                    <th className="px-5 py-3">สถานะ</th>
+                    <th className="px-5 py-3">ชื่องาน</th>
+                    <th className="px-5 py-3">ระยะเวลา</th>
+                    <th className="px-5 py-3">ความคืบหน้า</th>
+                    <th className="px-5 py-3">ความสำคัญ</th>
+                    <th className="px-5 py-3">การกระทำ</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -318,7 +385,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                     const creator = t.creatorEmployeeId ? employeeById.get(t.creatorEmployeeId) : undefined;
                     const priorityMeta = t.priority ? PRIORITY_OPTIONS.find((p) => p.value === t.priority) : undefined;
                     return (
-                      <tr key={t.id} className="border-b border-[#F9F9F9] last:border-b-0 hover:bg-[#FAFAFA] align-top">
+                      <tr key={t.id} className="border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50 align-top">
                         <td className="px-5 py-3 whitespace-nowrap">
                           <div className="flex flex-col gap-1 items-start">
                             <span
@@ -361,14 +428,25 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                           )}
                         </td>
                         <td className="px-5 py-3 whitespace-nowrap">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedTask(t)}
-                            className="inline-flex items-center gap-1.5 text-[#A0A0A0] hover:text-[#FF6537] text-xs font-medium cursor-pointer transition-colors"
-                          >
-                            <Eye size={14} />
-                            ดูรายละเอียด
-                          </button>
+                          <div className="flex items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedTask(t)}
+                              className="inline-flex items-center gap-1.5 text-[#A0A0A0] hover:text-[#FF6537] text-xs font-medium cursor-pointer transition-colors"
+                            >
+                              <Eye size={14} />
+                              ดูรายละเอียด
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openEditTask(t)}
+                              title="แก้ไข"
+                              className="text-[#A0A0A0] hover:text-[#FF6537] cursor-pointer transition-colors"
+                            >
+                              <Pencil size={13} />
+                            </button>
+                            <InlineDeleteConfirm label="ลบ" onConfirm={() => onDeleteTask(t.id)} />
+                          </div>
                         </td>
                       </tr>
                     );
@@ -439,39 +517,39 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
               </p>
             ) : (
               <>
-                <div className="w-px h-8 bg-slate-300" />
-                <div className="flex justify-center gap-8 border-t border-slate-300 pt-8">
-                  {childMembers.map(({ member, tasks: memberTasks }) => (
-                    <div key={member.id} className="relative flex flex-col items-center">
-                      <div className="absolute -top-8 left-1/2 -translate-x-1/2 w-px h-8 bg-slate-300" />
-                      <div className="w-60 bg-white border border-slate-100 rounded-2xl shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] p-4 flex flex-col items-center gap-1">
-                        {member.avatar ? (
-                          <img src={member.avatar} alt="" className="w-11 h-11 rounded-full object-cover shrink-0" />
-                        ) : (
-                          <EmployeeAvatar name={member.nickname || member.name} sizePx={44} />
-                        )}
-                        <div className="text-center">
-                          <p className="font-semibold text-[#272220] text-sm truncate max-w-52">{member.nickname || member.name}</p>
-                          <p className="text-xs text-[#A0A0A0]">{member.role}</p>
-                        </div>
+                <div className="w-px h-6 bg-slate-300" />
+                <ForkRow
+                  items={childMembers}
+                  keyOf={({ member }) => member.id}
+                  gapPx={32}
+                  renderItem={({ member, tasks: memberTasks }) => (
+                    <div className="w-60 bg-white border border-slate-100 rounded-2xl shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] p-4 flex flex-col items-center gap-1">
+                      {member.avatar ? (
+                        <img src={member.avatar} alt="" className="w-11 h-11 rounded-full object-cover shrink-0" />
+                      ) : (
+                        <EmployeeAvatar name={member.nickname || member.name} sizePx={44} />
+                      )}
+                      <div className="text-center">
+                        <p className="font-semibold text-[#272220] text-sm truncate max-w-52">{member.nickname || member.name}</p>
+                        <p className="text-xs text-[#A0A0A0]">{member.role}</p>
+                      </div>
 
-                        <div className="w-full pt-3 mt-1 border-t border-slate-50 space-y-2">
-                          {memberTasks.map((t) => (
-                            <div key={t.id} className="flex items-start gap-1.5 text-left">
-                              <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: TASK_STATUS_COLOR[t.status] }} />
-                              <div className="min-w-0">
-                                <p className="text-xs text-[#272220] truncate">{t.title}</p>
-                                <p className="text-[10px] text-[#A0A0A0]">
-                                  เริ่ม {t.startDate ?? 'ยังไม่มี'} · ส่ง {t.dueDate ?? 'ยังไม่มี'}
-                                </p>
-                              </div>
+                      <div className="w-full pt-3 mt-1 border-t border-slate-50 space-y-2">
+                        {memberTasks.map((t) => (
+                          <div key={t.id} className="flex items-start gap-1.5 text-left">
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: TASK_STATUS_COLOR[t.status] }} />
+                            <div className="min-w-0">
+                              <p className="text-xs text-[#272220] truncate">{t.title}</p>
+                              <p className="text-[10px] text-[#A0A0A0]">
+                                เริ่ม {t.startDate ?? 'ยังไม่มี'} · ส่ง {t.dueDate ?? 'ยังไม่มี'}
+                              </p>
                             </div>
-                          ))}
-                        </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                  ))}
-                </div>
+                  )}
+                />
               </>
             )}
           </div>
@@ -484,38 +562,44 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
           {projectMeetings.length === 0 ? (
             <p className="text-sm text-[#A0A0A0] px-5 pb-5">ยังไม่มีการนัดประชุมในโครงการนี้</p>
           ) : (
-            <div className="px-5 pb-5 space-y-2.5">
-              {projectMeetings.map((meeting) => {
-                const attendees = meeting.attendeeIds.map((id) => employeeById.get(id)).filter((e): e is Employee => Boolean(e));
-                return (
-                  <div key={meeting.id} className="p-3.5 rounded-xl border border-slate-100 bg-[#FAFAFA]">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="font-semibold text-sm text-[#272220] truncate">{meeting.title}</p>
-                        {meeting.description && <p className="text-xs text-[#6F6F6F] mt-0.5">{meeting.description}</p>}
-                      </div>
-                      <span className="shrink-0 flex items-center gap-1.5 text-xs text-[#6F6F6F] whitespace-nowrap">
-                        <CalendarClock size={13} />
-                        {meeting.date} {meeting.startTime}{meeting.endTime ? ` - ${meeting.endTime}` : ''}
-                      </span>
-                    </div>
-                    {(meeting.location || attendees.length > 0) && (
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-2.5 pt-2.5 border-t border-slate-100">
-                        {meeting.location && (
-                          <span className="flex items-center gap-1.5 text-xs text-[#6F6F6F]">
-                            <MapPin size={13} className="shrink-0" /> {meeting.location}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse table-fixed">
+                <thead>
+                  <tr className="bg-[#F9F9F9] text-[12px] font-semibold text-[#000000] border-b border-[#EDEEEF]">
+                    <th className="px-5 py-2 w-[26%]">ชื่อการประชุม</th>
+                    <th className="px-5 py-2 w-[24%]">รายละเอียด</th>
+                    <th className="px-5 py-2 w-[20%]">วัน-เวลา</th>
+                    <th className="px-5 py-2 w-[15%]">สถานที่</th>
+                    <th className="px-5 py-2 w-[15%]">ผู้เข้าร่วม</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {projectMeetings.map((meeting) => {
+                    const attendees = meeting.attendeeIds.map((id) => employeeById.get(id)).filter((e): e is Employee => Boolean(e));
+                    return (
+                      <tr key={meeting.id} className="border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50 align-top">
+                        <td className="px-5 py-3 font-medium text-[#272220]">
+                          <span className="flex items-center gap-2 min-w-0">
+                            <Users2 size={14} className="text-[#A0A0A0] shrink-0" />
+                            <span className="truncate">{meeting.title}</span>
                           </span>
-                        )}
-                        {attendees.length > 0 && (
-                          <span className="flex items-center gap-1.5 text-xs text-[#6F6F6F]">
-                            <Users2 size={13} className="shrink-0" /> {attendees.map((e) => displayName(e)).join(', ')}
+                        </td>
+                        <td className="px-5 py-3 text-[#6F6F6F] truncate" title={meeting.description}>{meeting.description || 'ยังไม่มี'}</td>
+                        <td className="px-5 py-3 text-[#6F6F6F] whitespace-nowrap">
+                          <span className="flex items-center gap-1.5">
+                            <CalendarClock size={13} className="shrink-0" />
+                            {meeting.date} {meeting.startTime}{meeting.endTime ? ` - ${meeting.endTime}` : ''}
                           </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+                        </td>
+                        <td className="px-5 py-3 text-[#6F6F6F] truncate" title={meeting.location}>{meeting.location || 'ยังไม่มี'}</td>
+                        <td className="px-5 py-3 text-[#6F6F6F] truncate" title={attendees.map((e) => displayName(e)).join(', ')}>
+                          {attendees.length > 0 ? attendees.map((e) => displayName(e)).join(', ') : 'ยังไม่มี'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
@@ -525,13 +609,18 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
 
       <AddTaskModal
         isOpen={isAddTaskOpen}
-        onClose={() => setIsAddTaskOpen(false)}
+        onClose={closeTaskModal}
         onSave={onAddTask}
+        onUpdateTask={onUpdateTask}
         onAddMeeting={onAddMeeting}
         onCreateFolder={onCreateFolder}
         projectId={row.id}
+        projectDocFolderId={row.docFolderId}
+        projectStartDate={row.startDateISO}
+        projectEndDate={row.endDateISO}
         employees={employees}
         currentUserId={currentUserId}
+        editingTask={editingTask}
       />
 
       <TaskDetailModal task={selectedTask} employees={employees} onClose={() => setSelectedTask(null)} />
@@ -542,6 +631,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
         row={row}
         employees={employees}
         onSave={onUpdateProject}
+        existingTitles={existingProjectTitles}
       />
     </div>
   );

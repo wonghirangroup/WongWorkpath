@@ -83,6 +83,11 @@ export interface LinkedDoc {
   fileSize?: number; // kind === 'file' — bytes
   scope: 'ส่วนตัว' | 'ทีม';
   team?: string; // scope === 'ทีม' — real org-chart section (แผนก)
+  // Set only on a folder created via a project task's own "create folder" checkbox (see
+  // AddTaskModal.tsx) — lets DocVault show which task (and, via the task's own projectId, which
+  // project) owns this folder. Anything nested inside it inherits the tag by walking up parentId,
+  // so an untagged file dropped inside still resolves to the right project/task.
+  taskId?: string;
   version: number;
   lastUpdated: string;
   updatedBy: string;

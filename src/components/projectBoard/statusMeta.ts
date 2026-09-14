@@ -1,5 +1,5 @@
 import { Ban, CheckCircle2, Clock, FileText, PauseCircle } from 'lucide-react';
-import { ProjectStatus, ProjectTaskStatus } from './types';
+import { ProjectPriority, ProjectStatus, ProjectTaskStatus } from './types';
 
 // Reworked after /impeccable critique: the original Figma-exported hex values put
 // in_progress and cancelled a few RGB steps apart — nearly indistinguishable in a quick scan —
@@ -67,4 +67,13 @@ export const TASK_STATUS_COLOR: Record<ProjectTaskStatus, string> = {
   review: '#0EA5E9',
   blocked: '#F50C0C',
   done: '#197A4B',
+};
+
+// ProjectRow.priority's own scale (High/Medium/Low) — a different, capitalized scale from
+// AddTaskModal/CreateProjectModal's lowercase task-priority options, shown wherever a project's
+// own priority appears (detail meta grid, project table).
+export const PROJECT_PRIORITY_META: Record<ProjectPriority, { label: string; className: string }> = {
+  High: { label: 'สูง', className: 'bg-red-50 text-red-600' },
+  Medium: { label: 'กลาง', className: 'bg-[#FFF1EC] text-[#FF6537]' },
+  Low: { label: 'ต่ำ', className: 'bg-slate-100 text-slate-600' },
 };

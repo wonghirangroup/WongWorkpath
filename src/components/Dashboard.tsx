@@ -1,110 +1,171 @@
-import { Task, Employee, AuditLog, LeaveRequest } from '../types';
-import { CheckCircle, Clock, Briefcase, TrendingUp } from 'lucide-react';
-import WelcomeBanner from './dashboard/WelcomeBanner';
+import { useEffect, useMemo, useState } from 'react';
+import { Employee } from './../types';
+import { ProjectRow, ProjectTaskItem } from './projectBoard/types';
+import { Wallet, Briefcase, AlertCircle, Users } from 'lucide-react';
+import DashboardToolbar from './dashboard/DashboardToolbar';
 import StatCard from './dashboard/StatCard';
-import WorkloadPlanner from './dashboard/WorkloadPlanner';
-import ActionCenter from './dashboard/ActionCenter';
-import DepartmentProgress from './dashboard/DepartmentProgress';
-import KPIRankings from './dashboard/KPIRankings';
-import AuditTrail from './dashboard/AuditTrail';
+import ProjectSummaryTable from './dashboard/ProjectSummaryTable';
+import OverallProgressGauge from './dashboard/OverallProgressGauge';
+import MyUpcomingTasks from './dashboard/MyUpcomingTasks';
+import TeamActivityList from './dashboard/TeamActivityList';
+import { loadWidgetPrefs, saveWidgetPrefs } from './dashboard/widgetPrefs';
+
+function formatBaht(n: number): string {
+  return `฿${Math.round(n).toLocaleString('th-TH')}`;
+}
 
 interface DashboardProps {
-  tasks: Task[];
+  projects: ProjectRow[];
+  projectTasks: ProjectTaskItem[];
   employees: Employee[];
-  auditLogs: AuditLog[];
-  leaveRequests: LeaveRequest[];
-  onApproveHandover: (taskId: string, handoverId: string, approved: boolean, notes: string) => void;
-  onApproveLeave: (leaveId: string, approved: boolean) => void;
+  orgSections: string[];
+  currentUser: Employee | null;
   onAddTask: () => void;
+  onSelectProject: (id: string) => void;
 }
 
 export default function Dashboard({
-  tasks,
+  projects,
+  projectTasks,
   employees,
-  auditLogs,
-  leaveRequests,
-  onApproveHandover,
-  onApproveLeave,
-  onAddTask
+  orgSections,
+  currentUser,
+  onAddTask,
+  onSelectProject
 }: DashboardProps) {
+  const [departmentFilter, setDepartmentFilter] = useState('All');
+  const [widgetPrefs, setWidgetPrefs] = useState(loadWidgetPrefs);
+  useEffect(() => saveWidgetPrefs(widgetPrefs), [widgetPrefs]);
 
-  // Calculations
-  const totalTasks = tasks.length;
-  const completedTasks = tasks.filter(t => t.status === 'Completed').length;
-  const inProgressTasks = tasks.filter(t => t.status === 'In Progress').length;
-  const notStartedTasks = tasks.filter(t => t.status === 'Not Started').length;
-  const onHoldTasks = tasks.filter(t => t.status === 'On Hold').length;
+  const employeeById = useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
+  const projectById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
 
-  const pendingLeaveRequests = leaveRequests.filter(r => r.status === 'Pending');
+  // ProjectRow.department has no input UI anywhere yet (a real, separate gap) — falling back to
+  // the project owner's own department keeps every department-scoped widget on this page
+  // meaningful today instead of every project landing in one "ไม่ระบุ" bucket.
+  const getEffectiveDepartment = (project: ProjectRow): string =>
+    project.department || (project.ownerEmployeeId && employeeById.get(project.ownerEmployeeId)?.department) || 'ไม่ระบุ';
 
-  const averageProgress = totalTasks > 0
-    ? Math.round(tasks.reduce((sum, t) => sum + t.progress, 0) / totalTasks)
-    : 0;
+  const filteredProjects = departmentFilter === 'All'
+    ? projects
+    : projects.filter((p) => getEffectiveDepartment(p) === departmentFilter);
+  const filteredProjectIds = useMemo(() => new Set(filteredProjects.map((p) => p.id)), [filteredProjects]);
+  const filteredProjectTasks = projectTasks.filter((t) => filteredProjectIds.has(t.projectId));
+  const filteredEmployees = departmentFilter === 'All'
+    ? employees
+    : employees.filter((e) => e.department === departmentFilter);
 
-  // Workload analysis: count tasks assigned to each employee (In Progress, Not Started)
-  const getEmployeeActiveTasks = (empId: string) => {
-    return tasks.filter(t => t.primaryOwnerId === empId && (t.status === 'In Progress' || t.status === 'Not Started'));
-  };
+  const activeProjectsCount = filteredProjects.filter((p) => p.status === 'in_progress').length;
+  const blockedCount = filteredProjectTasks.filter((t) => t.status === 'blocked').length;
+  const budgetedProjects = filteredProjects.filter((p) => p.budget !== null);
+  const totalBudget = budgetedProjects.reduce((sum, p) => sum + (p.budget ?? 0), 0);
+
+  const getEmployeeActiveTasks = (empId: string) =>
+    filteredProjectTasks.filter((t) => t.assigneeEmployeeIds.includes(empId) && t.status !== 'done');
+
+  // "จัดกลุ่มตามแผนก" splits the progress gauge below into one card per department instead of a
+  // single combined view, so an executive can watch several projects' status move meaningfully at
+  // the same time without them blending into one aggregate number.
+  const departmentGroupMap = new Map<string, ProjectRow[]>();
+  filteredProjects.forEach((p) => {
+    const dept = getEffectiveDepartment(p);
+    if (!departmentGroupMap.has(dept)) departmentGroupMap.set(dept, []);
+    departmentGroupMap.get(dept)!.push(p);
+  });
+  const departmentGroups = Array.from(departmentGroupMap.entries());
+  const { groupByDepartment } = widgetPrefs;
+  const showSummaryTable = widgetPrefs.visible.summaryTable;
+  const showProgressGauge = widgetPrefs.visible.progressGauge;
+  const showMyTasks = widgetPrefs.visible.myTasks;
+  const showWorkload = widgetPrefs.visible.workload;
+
+  const handleExport = () => window.print();
 
   return (
     <div className="space-y-6" id="dashboard-tab">
-      <WelcomeBanner onAddTask={onAddTask} />
+      <DashboardToolbar
+        onAddTask={onAddTask}
+        onExport={handleExport}
+        departmentFilter={departmentFilter}
+        onDepartmentFilterChange={setDepartmentFilter}
+        orgSections={orgSections}
+        widgetPrefs={widgetPrefs}
+        onWidgetPrefsChange={setWidgetPrefs}
+      />
 
       {/* Overview Stat Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4" id="overview-stats">
         <StatCard
-          icon={<Briefcase size={22} />}
-          iconBgClass="bg-blue-50 text-blue-600"
-          label="งานทั้งหมดในระบบ"
-          value={totalTasks}
-          detail={`กําลังทํา ${inProgressTasks} | รอดําเนินการ ${notStartedTasks}`}
+          icon={<Wallet size={32} strokeWidth={2} />}
+          iconColor="#FF6537"
+          label="งบประมาณรวม"
+          value={formatBaht(totalBudget)}
+          detail={`จาก ${budgetedProjects.length} โครงการที่ตั้งงบไว้`}
         />
         <StatCard
-          icon={<CheckCircle size={22} />}
-          iconBgClass="bg-emerald-50 text-emerald-600"
-          label="เสร็จสมบูรณ์"
-          value={completedTasks}
-          detail={`คิดเป็น ${totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0}% ของทั้งหมด`}
-          detailClassName="text-emerald-600 font-medium"
+          icon={<Briefcase size={32} strokeWidth={2} />}
+          iconColor="#2563EB"
+          label="โครงการ"
+          value={filteredProjects.length}
+          detail={`กำลังดำเนินการ ${activeProjectsCount} โครงการ`}
         />
         <StatCard
-          icon={<TrendingUp size={22} />}
-          iconBgClass="bg-amber-50 text-amber-600"
-          label="ความก้าวหน้าเฉลี่ย"
-          value={`${averageProgress}%`}
-          detail={
-            <div className="w-24 bg-slate-100 h-1.5 rounded-full mt-2 overflow-hidden">
-              <div className="bg-amber-500 h-full rounded-full" style={{ width: `${averageProgress}%` }} />
-            </div>
-          }
-        />
-        <StatCard
-          icon={<Clock size={22} />}
-          iconBgClass="bg-rose-50 text-rose-600"
-          label="การปิดระงับงาน / ลาพัก"
-          value={`${onHoldTasks} งาน`}
-          detail={`มีใบลาที่รออนุมัติ ${pendingLeaveRequests.length} รายการ`}
+          icon={<AlertCircle size={32} strokeWidth={2} />}
+          iconColor="#E11D48"
+          label="งานที่ติดปัญหา"
+          value={blockedCount}
+          detail="จากทุกโครงการที่กรองอยู่"
           detailClassName="text-rose-600 font-medium"
         />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <WorkloadPlanner employees={employees} getEmployeeActiveTasks={getEmployeeActiveTasks} />
-        <ActionCenter
-          tasks={tasks}
-          employees={employees}
-          leaveRequests={leaveRequests}
-          onApproveHandover={onApproveHandover}
-          onApproveLeave={onApproveLeave}
+        <StatCard
+          icon={<Users size={32} strokeWidth={2} />}
+          iconColor="#7C3AED"
+          label="พนักงาน"
+          value={filteredEmployees.length}
+          detail="ทั้งหมดในระบบ"
         />
       </div>
 
-      {/* Production & Productivity KPIs + Recent Audit Trail */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <DepartmentProgress tasks={tasks} />
-        <KPIRankings employees={employees} tasks={tasks} />
-        <AuditTrail auditLogs={auditLogs} />
-      </div>
+      {showSummaryTable && (
+        <div className={groupByDepartment || !showProgressGauge ? '' : 'grid grid-cols-1 lg:grid-cols-3 gap-6'}>
+          <div className={groupByDepartment || !showProgressGauge ? '' : 'lg:col-span-2'}>
+            <ProjectSummaryTable projects={filteredProjects} employees={employees} onSelectProject={onSelectProject} />
+          </div>
+          {!groupByDepartment && showProgressGauge && (
+            <OverallProgressGauge projects={filteredProjects} />
+          )}
+        </div>
+      )}
+
+      {(groupByDepartment || !showSummaryTable) && showProgressGauge && (
+        groupByDepartment ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {departmentGroups.map(([dept, projs]) => (
+              <OverallProgressGauge key={dept} projects={projs} titleOverride={`ความคืบหน้า — ${dept}`} />
+            ))}
+          </div>
+        ) : (
+          <div className="max-w-md">
+            <OverallProgressGauge projects={filteredProjects} />
+          </div>
+        )
+      )}
+
+      {(showMyTasks || showWorkload) && (
+        <div className={`grid grid-cols-1 gap-6 ${showMyTasks && showWorkload ? 'lg:grid-cols-2' : ''}`}>
+          {showMyTasks && (
+            <MyUpcomingTasks
+              projectTasks={projectTasks}
+              projectById={projectById}
+              currentUserId={currentUser?.id ?? ''}
+              onSelectProject={onSelectProject}
+            />
+          )}
+          {showWorkload && (
+            <TeamActivityList employees={employees} getEmployeeActiveTasks={getEmployeeActiveTasks} />
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -24,8 +24,6 @@ import employeeHover from '../../../images/new side bar/employee icon hover.png'
 import fileActive from '../../../images/new side bar/file icon active.png';
 import fileInactive from '../../../images/new side bar/file icon not active.png';
 import fileHover from '../../../images/new side bar/file icon hover.png';
-import exportActive from '../../../images/new side bar/export icon active.png';
-import exportInactive from '../../../images/new side bar/export icon not active.png';
 import passwordActive from '../../../images/new side bar/password icon active.png';
 import passwordInactive from '../../../images/new side bar/password icon not active.png';
 import passwordHold from '../../../images/new side bar/password icon hold.png';
@@ -34,9 +32,8 @@ export const NAV_ITEMS = [
   { id: 'dashboard', label: 'แดชบอร์ด', iconActive: dashboardActive, iconInactive: dashboardInactive, iconHover: undefined as string | undefined, iconComponent: undefined as typeof Users | undefined },
   { id: 'tasks', label: 'จัดการงานและโครงการ', iconActive: projectActive, iconInactive: projectInactive, iconHover: projectHover as string | undefined, iconComponent: undefined as typeof Users | undefined },
   { id: 'calendar', label: 'ปฏิทินและตารางเวลา', iconActive: calendarActive, iconInactive: calendarInactive, iconHover: calendarHover as string | undefined, iconComponent: undefined as typeof Users | undefined },
-  { id: 'gantt', label: 'ตารางภาระงาน', iconActive: employeeActive, iconInactive: employeeInactive, iconHover: employeeHover as string | undefined, iconComponent: undefined as typeof Users | undefined },
+  { id: 'gantt', label: 'งานของฉัน', iconActive: employeeActive, iconInactive: employeeInactive, iconHover: employeeHover as string | undefined, iconComponent: undefined as typeof Users | undefined },
   { id: 'docs', label: 'เอกสาร Drive', iconActive: fileActive, iconInactive: fileInactive, iconHover: fileHover as string | undefined, iconComponent: undefined as typeof Users | undefined },
-  { id: 'reports', label: 'การออกรายงาน', iconActive: exportActive, iconInactive: exportInactive, iconHover: exportActive as string | undefined, iconComponent: undefined as typeof Users | undefined },
   { id: 'vault', label: 'คลังรหัสผ่าน', iconActive: passwordActive, iconInactive: passwordInactive, iconHover: passwordHold as string | undefined, iconComponent: undefined as typeof Users | undefined },
   // No dedicated PNG icon set exists for this page yet — falls back to a lucide icon (colored via
   // the parent Link's text color, same as every other item) until a matching asset is added.

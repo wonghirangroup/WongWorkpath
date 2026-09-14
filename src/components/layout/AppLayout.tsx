@@ -4,18 +4,18 @@ import { ArrowLeft, ChevronRight, Folder, Home } from 'lucide-react';
 import { useAppData } from '../../context/AppDataContext';
 import Header from './Header';
 import Sidebar, { NAV_ITEMS } from './Sidebar';
-import TaskModal from '../TaskModal';
+import AddTaskModal from '../projectBoard/AddTaskModal';
 import { STATUS_LABEL, STATUS_PILL, STATUS_ICON } from '../projectBoard/statusMeta';
+import { createDocFolder } from '../../lib/docFolder';
 
 // Title/subtitle shown in the Header for each route — kept separate from NAV_ITEMS' short
 // sidebar labels since some pages (e.g. docs) use different, longer wording for their page title.
 const PAGE_META: Record<string, { title: string; subtitle?: string }> = {
-  dashboard: { title: 'แดชบอร์ด' },
+  dashboard: { title: 'แดชบอร์ด', subtitle: 'ภาพรวมโครงการ งบประมาณ และภาระงานทั้งองค์กรในหน้าเดียว' },
   tasks: { title: 'จัดการงานและโครงการ', subtitle: 'วางแผนและติดตามความคืบหน้าของโครงการทั้งหมด' },
   calendar: { title: 'ปฏิทินและตารางเวลา', subtitle: 'ดูภาพรวมงานและการประชุมทั้งหมดในปฏิทินเดียว' },
-  gantt: { title: 'ตารางภาระงาน' },
+  gantt: { title: 'งานของฉัน', subtitle: 'งาน โครงการ และ Gantt Chart ของคุณเองในที่เดียว' },
   docs: { title: 'เอกสาร Drive', subtitle: 'จัดการและจัดเก็บเอกสารสำหรับใช้งานในองค์กรอย่างปลอดภัย' },
-  reports: { title: 'การออกรายงาน' },
   vault: { title: 'คลังรหัสผ่าน', subtitle: 'จัดการและจัดเก็บรหัสผ่านสำหรับใช้งานในองค์กร' },
   employees: { title: 'จัดการพนักงาน', subtitle: 'สร้างและจัดการบัญชีพนักงานในองค์กร' },
 };
@@ -37,18 +37,21 @@ export default function AppLayout() {
   const {
     isTaskModalOpen,
     closeTaskModal,
-    handleSaveTask,
-    selectedTaskToEdit,
+    handleAddProjectTask,
+    handleAddMeeting,
     employees,
     projects,
-    tasks,
     documents,
     saveDocuments,
     docCurrentFolderId,
     setDocCurrentFolderId,
     taskSelectedProjectId,
-    setTaskSelectedProjectId
+    setTaskSelectedProjectId,
+    currentUser
   } = useAppData();
+
+  const handleCreateFolder = (name: string, parentId: string | null = null, taskId?: string) =>
+    createDocFolder(name, parentId, taskId, documents, saveDocuments, currentUser?.name || 'ผู้ใช้งานปัจจุบัน');
 
   // On the Tasks page, once a project's detail view is open, the Header swaps to the project's
   // own name as the title (with a back arrow to return to the list) and status+code as the
@@ -190,35 +193,46 @@ export default function AppLayout() {
 
   return (
     <div className="h-dvh overflow-hidden bg-[#F6F6F6] flex gap-1 font-sans text-slate-800 antialiased" id="main-app-container">
-      <Sidebar
-        isMobileMenuOpen={isMobileMenuOpen}
-        onCloseMobileMenu={() => setIsMobileMenuOpen(false)}
-      />
+      {/* contents, not a plain div — Sidebar's <aside> has no height of its own, it relies on
+          being a direct flex child of this row (h-dvh + default align-items:stretch) to fill the
+          viewport; a plain wrapper div here breaks out of that flex context and collapses it to
+          its content's natural height instead. `contents` keeps the child a real flex participant
+          while still letting print:hidden hide it (and everything inside it) when printing. */}
+      <div className="contents print:hidden">
+        <Sidebar
+          isMobileMenuOpen={isMobileMenuOpen}
+          onCloseMobileMenu={() => setIsMobileMenuOpen(false)}
+        />
+      </div>
 
       {/* Header + Scrollable Main Area column */}
       <div className="flex flex-col flex-1 overflow-hidden">
-        <Header
-          title={headerTitle}
-          subtitle={headerSubtitle}
-          isMobileMenuOpen={isMobileMenuOpen}
-          onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-        />
+        <div className="contents print:hidden">
+          <Header
+            title={headerTitle}
+            subtitle={headerSubtitle}
+            isMobileMenuOpen={isMobileMenuOpen}
+            onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          />
+        </div>
 
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:px-8 lg:pt-8 lg:pb-4 bg-[#F6F6F6]" >
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:px-8 lg:pt-8 lg:pb-4 bg-[#F6F6F6] print:overflow-visible print:p-0" >
           <Outlet />
         </main>
       </div>
 
-      {/* Task Creation / Editing Modal */}
-      <TaskModal
+      {/* Dashboard's "เพิ่มงาน" quick-add — same real AddTaskModal every project uses, just opened
+          without a fixed project context, so it shows its own required project picker first. */}
+      <AddTaskModal
         isOpen={isTaskModalOpen}
         onClose={closeTaskModal}
-        onSave={handleSaveTask}
-        task={selectedTaskToEdit}
+        onSave={handleAddProjectTask}
+        onAddMeeting={handleAddMeeting}
+        onCreateFolder={handleCreateFolder}
+        projectId=""
+        projects={projects}
         employees={employees}
-        allTasks={tasks}
-        documents={documents}
-        onAddDocument={(doc) => saveDocuments([...documents, doc])}
+        currentUserId={currentUser?.id ?? ''}
       />
     </div>
   );

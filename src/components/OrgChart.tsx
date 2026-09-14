@@ -77,7 +77,7 @@ function MemberChip({ employee }: { employee: Employee }) {
 // columns from touching, no matter how wide any one column's own content ends up being (this is
 // what a fixed-width slot got wrong before: a division with wider content than its own slot spilled
 // sideways into the next one).
-function ForkRow<T>({
+export function ForkRow<T>({
   items,
   keyOf,
   gapPx,

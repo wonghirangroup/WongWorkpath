@@ -711,8 +711,10 @@ export default function CredentialVault({
             </div>
           </div>
 
-          {/* Result count + sort */}
-          <div className="flex items-center gap-2">
+          {/* Result count + sort, with pagination on the same row (right-aligned) instead of its
+              own row below the table/grid. */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
             <p className="font-normal text-[16px] text-[#6F6F6F] leading-none">ทั้งหมด {filteredCredentials.length} รายการ</p>
             <div className="relative" ref={resultFilterRef}>
               <button
@@ -762,6 +764,39 @@ export default function CredentialVault({
                 )}
               </AnimatePresence>
             </div>
+            </div>
+
+            {filteredCredentials.length > 0 && (
+              <div className="flex justify-center items-center gap-1.5">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="w-9 h-9 lg:w-8 lg:h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-[#FF6537] hover:bg-orange-50 disabled:text-slate-300 disabled:hover:bg-white disabled:cursor-not-allowed cursor-pointer transition-colors"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
+                  <button
+                    key={pageNum}
+                    onClick={() => setCurrentPage(pageNum)}
+                    className={`w-9 h-9 lg:w-8 lg:h-8 rounded-lg text-sm font-bold cursor-pointer transition-colors ${
+                      pageNum === currentPage
+                        ? 'bg-[#FF6537] text-white shadow-sm'
+                        : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="w-9 h-9 lg:w-8 lg:h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-[#FF6537] hover:bg-orange-50 disabled:text-slate-300 disabled:hover:bg-white disabled:cursor-not-allowed cursor-pointer transition-colors"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            )}
           </div>
           </>
           )}
@@ -1289,39 +1324,6 @@ export default function CredentialVault({
                   </>
                 )}
               </div>
-            </div>
-          )}
-
-          {/* Pagination — 4 per page in grid view, 10 per page in list view */}
-          {filteredCredentials.length > 0 && (
-            <div className="flex justify-center items-center gap-1.5 pt-3">
-              <button
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="w-9 h-9 lg:w-8 lg:h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-[#FF6537] hover:bg-orange-50 disabled:text-slate-300 disabled:hover:bg-white disabled:cursor-not-allowed cursor-pointer transition-colors"
-              >
-                <ChevronLeft size={16} />
-              </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
-                <button
-                  key={pageNum}
-                  onClick={() => setCurrentPage(pageNum)}
-                  className={`w-9 h-9 lg:w-8 lg:h-8 rounded-lg text-sm font-bold cursor-pointer transition-colors ${
-                    pageNum === currentPage
-                      ? 'bg-[#FF6537] text-white shadow-sm'
-                      : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  {pageNum}
-                </button>
-              ))}
-              <button
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="w-9 h-9 lg:w-8 lg:h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-[#FF6537] hover:bg-orange-50 disabled:text-slate-300 disabled:hover:bg-white disabled:cursor-not-allowed cursor-pointer transition-colors"
-              >
-                <ChevronRight size={16} />
-              </button>
             </div>
           )}
 

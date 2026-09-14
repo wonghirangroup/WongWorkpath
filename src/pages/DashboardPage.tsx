@@ -1,17 +1,25 @@
+import { useNavigate } from 'react-router-dom';
 import Dashboard from '../components/Dashboard';
 import { useAppData } from '../context/AppDataContext';
 
 export default function DashboardPage() {
-  const { tasks, employees, auditLogs, leaveRequests, handleApproveHandover, handleApproveLeave, openAddTaskModal } = useAppData();
+  const { projects, projectTasks, employees, orgSections, currentUser, openAddTaskModal, setTaskSelectedProjectId } = useAppData();
+  const navigate = useNavigate();
+
+  const goToProject = (projectId: string) => {
+    setTaskSelectedProjectId(projectId);
+    navigate('/tasks');
+  };
+
   return (
     <Dashboard
-      tasks={tasks}
+      projects={projects}
+      projectTasks={projectTasks}
       employees={employees}
-      auditLogs={auditLogs}
-      leaveRequests={leaveRequests}
-      onApproveHandover={handleApproveHandover}
-      onApproveLeave={handleApproveLeave}
+      orgSections={orgSections}
+      currentUser={currentUser}
       onAddTask={openAddTaskModal}
+      onSelectProject={goToProject}
     />
   );
 }

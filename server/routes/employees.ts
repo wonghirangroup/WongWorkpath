@@ -78,9 +78,12 @@ employeesRouter.post('/', async (req, res) => {
   const phone = typeof e.phone === 'string' && e.phone.trim() ? e.phone.trim() : null;
   const address = typeof e.address === 'string' && e.address.trim() ? e.address.trim() : null;
 
+  // ผู้บริหาร sits over the whole ฝ่าย, not one แผนก under it — required everywhere else, but this
+  // one role is exempt so an executive doesn't get pinned to a department they don't belong to.
+  const isExecutiveRole = typeof e.role === 'string' && e.role.trim() === 'ผู้บริหาร';
   const hasDepartment = typeof e.department === 'string' && e.department.trim();
   const hasDivision = typeof e.division === 'string' && e.division.trim();
-  if (!e.id || !e.name || !email || !username || !e.role || !hasDepartment || !hasDivision || !password) {
+  if (!e.id || !e.name || !email || !username || !e.role || !hasDivision || !password || (!isExecutiveRole && !hasDepartment)) {
     return res.status(400).json({ message: 'ข้อมูลไม่ครบถ้วนหรือไม่ถูกต้อง' });
   }
   if (!EMAIL_PATTERN.test(email)) {
@@ -107,7 +110,7 @@ employeesRouter.post('/', async (req, res) => {
     await pool.query(
       `INSERT INTO employee (id, name, nickname, email, role, department, division, avatar, account_type, restricted_menu_ids, phone, address, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [e.id, e.name, nickname, email, e.role, e.department, e.division, e.avatar || null, accountType, restrictedMenuIds.length ? JSON.stringify(restrictedMenuIds) : null, phone, address, now, now]
+      [e.id, e.name, nickname, email, e.role, e.department || '', e.division, e.avatar || null, accountType, restrictedMenuIds.length ? JSON.stringify(restrictedMenuIds) : null, phone, address, now, now]
     );
 
     const passwordHash = await bcrypt.hash(password, 10);
@@ -124,7 +127,7 @@ employeesRouter.post('/', async (req, res) => {
       email,
       username,
       role: e.role,
-      department: e.department,
+      department: e.department || '',
       division: e.division,
       avatar: e.avatar || null,
       accountType,

@@ -1,5 +1,5 @@
-import { Employee, CredentialItem } from '../types';
-import type { ProjectRow } from '../components/projectBoard/types';
+import { Employee, CredentialItem, Meeting } from '../types';
+import type { ProjectRow, ProjectTaskItem } from '../components/projectBoard/types';
 
 // Vite only exposes env vars prefixed VITE_ to client code — set in .env,
 // separate from the server-only DB_* vars that server/db.ts reads.
@@ -134,7 +134,7 @@ export async function fetchProjects(): Promise<ProjectRow[]> {
 }
 
 export type CreateProjectPayload = Partial<
-  Pick<ProjectRow, 'title' | 'description' | 'department' | 'priority' | 'budget' | 'ownerEmployeeId' | 'progress' | 'status'>
+  Pick<ProjectRow, 'title' | 'description' | 'department' | 'priority' | 'budget' | 'ownerEmployeeId' | 'memberEmployeeIds' | 'docFolderId' | 'progress' | 'status'>
 > & { title: string; startDate?: string | null; endDate?: string | null; createdBy?: string | null };
 
 export async function createProject(payload: CreateProjectPayload): Promise<ProjectRow> {
@@ -185,5 +185,119 @@ export async function deleteProjectRemote(id: string): Promise<void> {
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new ApiError(data.message ?? 'ลบโครงการไม่สำเร็จ', res.status);
+  }
+}
+
+export async function fetchMeetings(): Promise<Meeting[]> {
+  const res = await fetch(`${API_BASE_URL}/api/meetings`);
+  if (!res.ok) throw new Error(`Failed to fetch meetings: ${res.status}`);
+  return res.json();
+}
+
+export async function createMeeting(meeting: Omit<Meeting, 'id'>): Promise<Meeting> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/meetings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(meeting),
+    });
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(data.message ?? 'นัดประชุมไม่สำเร็จ', res.status);
+  }
+  return data as Meeting;
+}
+
+export async function updateMeetingRemote(id: string, updates: Partial<Meeting>): Promise<Meeting> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/meetings/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(data.message ?? 'บันทึกข้อมูลการประชุมไม่สำเร็จ', res.status);
+  }
+  return data as Meeting;
+}
+
+export async function deleteMeetingRemote(id: string): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/meetings/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(data.message ?? 'ลบการประชุมไม่สำเร็จ', res.status);
+  }
+}
+
+export async function fetchProjectTasks(): Promise<ProjectTaskItem[]> {
+  const res = await fetch(`${API_BASE_URL}/api/project-tasks`);
+  if (!res.ok) throw new Error(`Failed to fetch project tasks: ${res.status}`);
+  return res.json();
+}
+
+export async function createProjectTask(task: Omit<ProjectTaskItem, 'id'>): Promise<ProjectTaskItem> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/project-tasks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(task),
+    });
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(data.message ?? 'เพิ่มงานไม่สำเร็จ', res.status);
+  }
+  return data as ProjectTaskItem;
+}
+
+export async function updateProjectTaskRemote(id: string, updates: Partial<ProjectTaskItem>): Promise<ProjectTaskItem> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/project-tasks/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(data.message ?? 'บันทึกข้อมูลงานไม่สำเร็จ', res.status);
+  }
+  return data as ProjectTaskItem;
+}
+
+export async function deleteProjectTaskRemote(id: string): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/project-tasks/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(data.message ?? 'ลบงานไม่สำเร็จ', res.status);
   }
 }

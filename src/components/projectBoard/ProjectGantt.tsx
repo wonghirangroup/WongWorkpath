@@ -103,7 +103,8 @@ export default function ProjectGantt({ tasks, employees }: ProjectGanttProps) {
 
           <div className="divide-y divide-[#F9F9F9]">
             {bars.map(({ task: t, start, end }) => {
-              const assignee = employeeById.get(t.assigneeEmployeeId);
+              const assignees = t.assigneeEmployeeIds.map((id) => employeeById.get(id)).filter((e): e is Employee => Boolean(e));
+              const firstAssignee = assignees[0];
               const leftPct = ((start.getTime() - range.min.getTime()) / range.totalMs) * 100;
               const widthPct = Math.max(((end.getTime() - start.getTime()) / range.totalMs) * 100, 3);
               const color = TASK_STATUS_COLOR[t.status];
@@ -113,19 +114,21 @@ export default function ProjectGantt({ tasks, employees }: ProjectGanttProps) {
                   <div className="w-52.5 shrink-0 px-5 py-3 border-r border-[#F4F4F4]">
                     <p className="text-sm font-medium text-[#272220] truncate">{t.title}</p>
                     <div className="flex items-center gap-1.5 mt-1">
-                      {assignee ? (
+                      {firstAssignee ? (
                         <>
-                          {assignee.avatar ? (
-                            <img src={assignee.avatar} alt="" className="w-4.5 h-4.5 rounded-full object-cover shrink-0" />
+                          {firstAssignee.avatar ? (
+                            <img src={firstAssignee.avatar} alt="" className="w-4.5 h-4.5 rounded-full object-cover shrink-0" />
                           ) : (
                             <span
                               className="w-4.5 h-4.5 rounded-full flex items-center justify-center text-white text-[8px] font-bold shrink-0"
-                              style={{ backgroundColor: getAvatarColor(displayName(assignee)) }}
+                              style={{ backgroundColor: getAvatarColor(displayName(firstAssignee)) }}
                             >
-                              {displayName(assignee).trim().charAt(0).toUpperCase()}
+                              {displayName(firstAssignee).trim().charAt(0).toUpperCase()}
                             </span>
                           )}
-                          <span className="text-[11px] text-[#6F6F6F] truncate">{displayName(assignee)}</span>
+                          <span className="text-[11px] text-[#6F6F6F] truncate">
+                            {displayName(firstAssignee)}{assignees.length > 1 ? ` +${assignees.length - 1}` : ''}
+                          </span>
                         </>
                       ) : (
                         <span className="text-[11px] text-[#A0A0A0]">ยังไม่มีผู้รับผิดชอบ</span>

@@ -1,10 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
+import { useNavigate } from 'react-router-dom';
 import { LinkedDoc } from '../types';
 import { nowTimestamp } from '../lib/datetime';
 import { getDepartmentTagClass } from '../lib/departmentColors';
 import { useAppData } from '../context/AppDataContext';
+import { ProjectRow, ProjectTaskItem } from './projectBoard/types';
 import {
   Plus,
   Copy,
@@ -71,14 +73,62 @@ const SCOPE_FILTER_OPTIONS: { value: LinkedDoc['scope'] | '__all__'; label: stri
 
 const getDeptTagClass = (team?: string) => (team ? getDepartmentTagClass(team) : 'text-[#FF6537] bg-[#FFF1EC]');
 
+// A folder/file/link's project (and, if it's specifically a task's own folder or lives inside
+// one, its task) is never stored directly on most docs — it's derived by walking up the
+// parentId chain until either a task-tagged folder (LinkedDoc.taskId, set only by AddTaskModal's
+// "create folder" checkbox) or a project's own root folder (ProjectRow.docFolderId) turns up.
+// This is what lets a plain file dropped inside a project's Drive folder inherit the same tag
+// without ever having to write anything onto that file itself.
+interface DocOwnership {
+  project: ProjectRow;
+  task?: ProjectTaskItem;
+}
+
+function resolveDocOwnership(
+  doc: LinkedDoc,
+  docsById: Map<string, LinkedDoc>,
+  projectByFolderId: Map<string, ProjectRow>,
+  projectById: Map<string, ProjectRow>,
+  taskById: Map<string, ProjectTaskItem>
+): DocOwnership | null {
+  let current: LinkedDoc | undefined = doc;
+  let task: ProjectTaskItem | undefined;
+  const visited = new Set<string>();
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id);
+    if (!task && current.taskId) task = taskById.get(current.taskId);
+    const project = projectByFolderId.get(current.id);
+    if (project) return { project, task };
+    current = current.parentId ? docsById.get(current.parentId) : undefined;
+  }
+  if (task) {
+    const project = projectById.get(task.projectId);
+    if (project) return { project, task };
+  }
+  return null;
+}
+
 // 3MB raw-file cap — base64 inflates ~33% on top of that, and everything shares one
 // browser-wide localStorage budget (~5-10MB) with tasks/credentials/audit logs etc.
-const MAX_FILE_BYTES = 3 * 1024 * 1024;
+export const MAX_FILE_BYTES = 3 * 1024 * 1024;
 
-function formatFileSize(bytes: number) {
+export function formatFileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// Same silent auto-rename convention as CredentialVault's getUniqueLabel (and the project
+// module's getUniqueTitle) — a collision within the same folder never blocks the save, it just
+// gets a numeric suffix appended and the user is told so.
+function getUniqueDocName(desiredName: string, existingNames: string[]): string {
+  const trimmed = desiredName.trim();
+  if (!trimmed) return trimmed;
+  const lowerExisting = existingNames.map((n) => n.trim().toLowerCase());
+  if (!lowerExisting.includes(trimmed.toLowerCase())) return trimmed;
+  let suffix = 2;
+  while (lowerExisting.includes(`${trimmed}${suffix}`.toLowerCase())) suffix++;
+  return `${trimmed}${suffix}`;
 }
 
 // Suggests a starting name from a pasted URL so the field isn't blank — still editable.
@@ -95,7 +145,7 @@ function suggestLinkName(url: string): string {
   }
 }
 
-function readFileAsDataUrl(file: globalThis.File): Promise<string> {
+export function readFileAsDataUrl(file: globalThis.File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
@@ -266,7 +316,22 @@ export default function DocVault({
   setCurrentFolderId,
   initialSelectedDocId
 }: DocVaultProps) {
-  const { orgSections } = useAppData();
+  const { orgSections, projects, projectTasks, setTaskSelectedProjectId } = useAppData();
+  const navigate = useNavigate();
+  const goToProject = (projectId: string) => {
+    setTaskSelectedProjectId(projectId);
+    navigate('/tasks');
+  };
+
+  const docsById = useMemo(() => new Map(documents.map((d) => [d.id, d])), [documents]);
+  const projectByFolderId = useMemo(
+    () => new Map(projects.filter((p) => p.docFolderId).map((p) => [p.docFolderId as string, p])),
+    [projects]
+  );
+  const projectById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
+  const taskById = useMemo(() => new Map(projectTasks.map((t) => [t.id, t])), [projectTasks]);
+  const getOwnership = (doc: LinkedDoc) => resolveDocOwnership(doc, docsById, projectByFolderId, projectById, taskById);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedKind, setSelectedKind] = useState<LinkedDoc['kind'] | 'All'>('All');
   const [scopeFilter, setScopeFilter] = useState<LinkedDoc['scope'] | '__all__'>('__all__');
@@ -463,6 +528,20 @@ export default function DocVault({
   const [newScope, setNewScope] = useState<LinkedDoc['scope']>('ส่วนตัว');
   const [newTeam, setNewTeam] = useState<string>('');
   const [nameTouched, setNameTouched] = useState(false);
+  const [createRenameNotice, setCreateRenameNotice] = useState('');
+  const [editRenameNotice, setEditRenameNotice] = useState('');
+
+  // Duplicate names are only disallowed among siblings in the same folder — the same name in a
+  // different folder is fine, same as a real filesystem.
+  const siblingNames = documents.filter((d) => d.parentId === currentFolderId).map((d) => d.name);
+  const handleNameBlur = () => {
+    const unique = getUniqueDocName(newName, siblingNames);
+    if (unique && unique !== newName.trim()) {
+      setNewName(unique);
+      setCreateRenameNotice(`ชื่อนี้ถูกใช้แล้วในโฟลเดอร์นี้ เปลี่ยนเป็น "${unique}" ให้อัตโนมัติ`);
+      setTimeout(() => setCreateRenameNotice(''), 4000);
+    }
+  };
   const [pickedFile, setPickedFile] = useState<globalThis.File | null>(null);
   const [fileError, setFileError] = useState('');
   const [isSubmittingFile, setIsSubmittingFile] = useState(false);
@@ -588,6 +667,7 @@ export default function DocVault({
     setNameTouched(false);
     setPickedFile(null);
     setFileError('');
+    setCreateRenameNotice('');
   };
 
   const openAddMode = (mode: 'folder' | 'file' | 'link') => {
@@ -597,6 +677,10 @@ export default function DocVault({
   };
 
   const editDoc = documents.find(d => d.id === editDocId);
+  // Renaming to the doc's own current name is never a "collision" with itself.
+  const editSiblingNames = documents
+    .filter((d) => d.parentId === editDoc?.parentId && d.id !== editDocId)
+    .map((d) => d.name);
 
   const closeEdit = () => {
     setEditDocId(null);
@@ -604,6 +688,7 @@ export default function DocVault({
     setEditUrl('');
     setEditScope('ส่วนตัว');
     setEditTeam('');
+    setEditRenameNotice('');
   };
 
   const openEdit = (doc: LinkedDoc) => {
@@ -617,8 +702,9 @@ export default function DocVault({
   const handleSaveEdit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editDocId || !editName.trim()) return;
+    const finalName = getUniqueDocName(editName, editSiblingNames);
     onEditDocument(editDocId, {
-      name: editName.trim(),
+      name: finalName,
       ...(editDoc?.kind === 'link' ? { url: editUrl.trim() } : {}),
       scope: editScope,
       team: editScope === 'ทีม' ? (editTeam || undefined) : undefined
@@ -688,11 +774,13 @@ export default function DocVault({
   const handleCreateFolder = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName.trim()) return;
+    // Safety net alongside the name field's own onBlur (see the project module's identical note).
+    const finalName = getUniqueDocName(newName, siblingNames);
     const date = nowStamp();
     const { scope, team } = resolveCreateScope();
     const newDoc: LinkedDoc = {
       id: 'DOC' + Date.now(),
-      name: newName.trim(),
+      name: finalName,
       kind: 'folder',
       parentId: currentFolderId,
       scope,
@@ -725,6 +813,7 @@ export default function DocVault({
   const handleUploadFile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName.trim() || !pickedFile) return;
+    const finalName = getUniqueDocName(newName, siblingNames);
     setIsSubmittingFile(true);
     try {
       const dataUrl = await readFileAsDataUrl(pickedFile);
@@ -732,7 +821,7 @@ export default function DocVault({
       const { scope, team } = resolveCreateScope();
       const newDoc: LinkedDoc = {
         id: 'DOC' + Date.now(),
-        name: newName.trim(),
+        name: finalName,
         kind: 'file',
         parentId: currentFolderId,
         fileDataUrl: dataUrl,
@@ -758,11 +847,12 @@ export default function DocVault({
   const handleAttachLink = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName.trim() || !newUrl.trim()) return;
+    const finalName = getUniqueDocName(newName, siblingNames);
     const date = nowStamp();
     const { scope, team } = resolveCreateScope();
     const newDoc: LinkedDoc = {
       id: 'DOC' + Date.now(),
-      name: newName.trim(),
+      name: finalName,
       kind: 'link',
       parentId: currentFolderId,
       url: newUrl.trim(),
@@ -1045,6 +1135,7 @@ export default function DocVault({
                   const creatorName = creation?.updatedBy ?? doc.updatedBy;
                   const createdDate = creation?.date ?? doc.lastUpdated;
                   const { Icon, color, fill, isPdf, isImage } = getItemVisual(doc);
+                  const ownership = getOwnership(doc);
 
                   return (
                     <tr
@@ -1062,15 +1153,29 @@ export default function DocVault({
                         markedDocId === doc.id ? 'bg-slate-200' : 'bg-white hover:bg-slate-50'
                       } ${draggedDocId === doc.id ? 'opacity-40' : ''} ${dragOverFolderId === doc.id ? 'bg-orange-50 outline outline-2 outline-[#FF6537] -outline-offset-2' : ''}`}
                     >
-                      <td className="px-4 py-3 whitespace-nowrap">
+                      <td className="px-4 py-3">
                         <div className="flex items-center gap-2.5">
                           <Icon size={22} className={`${color} shrink-0`} fill={fill ? 'currentColor' : 'none'} strokeWidth={fill ? 1 : 1.75} />
-                          <p className="text-[13px] font-bold text-slate-900 leading-tight">{doc.name}</p>
-                          {doc.scope === 'ทีม' && (
-                            <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none shrink-0 ${getDeptTagClass(doc.team)}`}>
-                              {doc.team || 'ทีม'}
-                            </span>
-                          )}
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <p className="text-[13px] font-bold text-slate-900 leading-tight whitespace-nowrap">{doc.name}</p>
+                              {doc.scope === 'ทีม' && (
+                                <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none shrink-0 ${getDeptTagClass(doc.team)}`}>
+                                  {doc.team || 'ทีม'}
+                                </span>
+                              )}
+                            </div>
+                            {ownership && (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); goToProject(ownership.project.id); }}
+                                onDoubleClick={(e) => e.stopPropagation()}
+                                className="text-[10px] text-[#A0A0A0] hover:text-[#FF6537] hover:underline leading-tight truncate max-w-65 text-left cursor-pointer"
+                              >
+                                {ownership.task ? `โครงการ: ${ownership.project.title} · งาน: ${ownership.task.title}` : `โครงการ: ${ownership.project.title}`}
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-[12px] font-normal text-[#6F6F6F]">
@@ -1121,6 +1226,7 @@ export default function DocVault({
               const creatorName = creation?.updatedBy ?? doc.updatedBy;
               const createdDate = creation?.date ?? doc.lastUpdated;
               const { Icon, color, fill, isPdf, isImage } = getItemVisual(doc);
+              const ownership = getOwnership(doc);
 
               const cardMenu = (
                 <DocCardMenu
@@ -1170,18 +1276,40 @@ export default function DocVault({
                             {doc.team || 'ทีม'}
                           </span>
                         )}
+                        {ownership && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); goToProject(ownership.project.id); }}
+                            onDoubleClick={(e) => e.stopPropagation()}
+                            className="text-[10px] text-[#A0A0A0] hover:text-[#FF6537] hover:underline truncate max-w-full px-2 cursor-pointer"
+                          >
+                            {ownership.task ? `${ownership.project.title} · ${ownership.task.title}` : ownership.project.title}
+                          </button>
+                        )}
                       </div>
                     </>
                   ) : (
                     <>
                       <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <Icon size={18} className={`${color} shrink-0`} fill={fill ? 'currentColor' : 'none'} strokeWidth={fill ? 1.5 : 1.75} />
-                          <h4 className="text-[15px] font-bold text-[#272220] truncate">{doc.name}</h4>
-                          {doc.scope === 'ทีม' && (
-                            <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none shrink-0 ${getDeptTagClass(doc.team)}`}>
-                              {doc.team || 'ทีม'}
-                            </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <Icon size={18} className={`${color} shrink-0`} fill={fill ? 'currentColor' : 'none'} strokeWidth={fill ? 1.5 : 1.75} />
+                            <h4 className="text-[15px] font-bold text-[#272220] truncate">{doc.name}</h4>
+                            {doc.scope === 'ทีม' && (
+                              <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none shrink-0 ${getDeptTagClass(doc.team)}`}>
+                                {doc.team || 'ทีม'}
+                              </span>
+                            )}
+                          </div>
+                          {ownership && (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); goToProject(ownership.project.id); }}
+                              onDoubleClick={(e) => e.stopPropagation()}
+                              className="text-[10px] text-[#A0A0A0] hover:text-[#FF6537] hover:underline truncate pl-6 text-left cursor-pointer"
+                            >
+                              {ownership.task ? `${ownership.project.title} · ${ownership.task.title}` : ownership.project.title}
+                            </button>
                           )}
                         </div>
                         {cardMenu}
@@ -1287,8 +1415,12 @@ export default function DocVault({
                         placeholder="เช่น เอกสารฝ่ายการตลาด"
                         value={newName}
                         onChange={(e) => setNewName(e.target.value)}
+                        onBlur={handleNameBlur}
                         className="w-full p-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#FF6537]"
                       />
+                      {createRenameNotice && (
+                        <p className="text-xs font-semibold text-[#FF6537] mt-1.5">ℹ️ {createRenameNotice}</p>
+                      )}
                     </div>
                     {!currentFolderId ? (
                       <>
@@ -1363,8 +1495,12 @@ export default function DocVault({
                         placeholder="เช่น สัญญาว่าจ้างพนักงาน"
                         value={newName}
                         onChange={(e) => { setNewName(e.target.value); setNameTouched(true); }}
+                        onBlur={handleNameBlur}
                         className="w-full p-2.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-[#FF6537]"
                       />
+                      {createRenameNotice && (
+                        <p className="text-xs font-semibold text-[#FF6537] mt-1.5">ℹ️ {createRenameNotice}</p>
+                      )}
                     </div>
                     {!currentFolderId ? (
                       <>
@@ -1440,8 +1576,12 @@ export default function DocVault({
                         placeholder="เช่น ข้อมูลแผนงบการตลาด Q3"
                         value={newName}
                         onChange={(e) => { setNewName(e.target.value); setNameTouched(true); }}
+                        onBlur={handleNameBlur}
                         className="w-full p-2.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-[#FF6537]"
                       />
+                      {createRenameNotice && (
+                        <p className="text-xs font-semibold text-[#FF6537] mt-1.5">ℹ️ {createRenameNotice}</p>
+                      )}
                     </div>
                     {!currentFolderId ? (
                       <>
@@ -1537,8 +1677,19 @@ export default function DocVault({
                       autoFocus
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
+                      onBlur={() => {
+                        const unique = getUniqueDocName(editName, editSiblingNames);
+                        if (unique && unique !== editName.trim()) {
+                          setEditName(unique);
+                          setEditRenameNotice(`ชื่อนี้ถูกใช้แล้วในโฟลเดอร์นี้ เปลี่ยนเป็น "${unique}" ให้อัตโนมัติ`);
+                          setTimeout(() => setEditRenameNotice(''), 4000);
+                        }
+                      }}
                       className="w-full p-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#FF6537]"
                     />
+                    {editRenameNotice && (
+                      <p className="text-xs font-semibold text-[#FF6537] mt-1.5">ℹ️ {editRenameNotice}</p>
+                    )}
                   </div>
 
                   {editDoc.kind === 'link' && (
