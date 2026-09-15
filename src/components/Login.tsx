@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, SyntheticEvent, KeyboardEvent } from 'reac
 import { motion, AnimatePresence, useReducedMotion, useAnimate } from 'motion/react';
 import { Eye, EyeOff, AlertCircle, CheckCircle, ChevronLeft } from 'lucide-react';
 import { Employee } from '../types';
-import { loginRequest, ApiError } from '../lib/api';
+import { loginRequest, requestPasswordResetOtp, verifyPasswordResetOtp, resetPasswordWithOtp, ApiError } from '../lib/api';
 import logo from '../assets/logo.png';
 
 const REMEMBER_USERNAME_KEY = 'unityspace_remembered_username';
@@ -149,6 +149,9 @@ export default function Login({ employees, onLogin }: LoginProps) {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [resetError, setResetError] = useState('');
+  const [isRequestingOtp, setIsRequestingOtp] = useState(false);
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
 
   const isLoginFilled = username.trim() !== '' && password.trim() !== '';
 
@@ -206,20 +209,28 @@ export default function Login({ employees, onLogin }: LoginProps) {
 
   const isForgotEmailValid = EMAIL_PATTERN.test(forgotEmail.trim());
 
-  const handleRequestOtp = (e: SyntheticEvent<HTMLFormElement>) => {
+  const handleRequestOtp = async (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    if (!isForgotEmailValid) {
-      setForgotEmailError('กรุณากรอกอีเมลให้ถูกต้อง');
+    if (!isForgotEmailValid || isRequestingOtp) {
+      if (!isForgotEmailValid) setForgotEmailError('กรุณากรอกอีเมลให้ถูกต้อง');
       return;
     }
     animateForgotSubmit(forgotSubmitScope.current, PRESS_FEEDBACK, PRESS_TRANSITION);
 
     setForgotEmailError('');
-    setOtpDigits(['', '', '', '', '', '']);
-    setOtpError('');
-    setResendCooldown(59);
-    setView('otp');
+    setIsRequestingOtp(true);
+    try {
+      await requestPasswordResetOtp(forgotEmail.trim());
+      setOtpDigits(['', '', '', '', '', '']);
+      setOtpError('');
+      setResendCooldown(59);
+      setView('otp');
+    } catch (err) {
+      setForgotEmailError(err instanceof ApiError ? err.message : 'ส่งรหัส OTP ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+    } finally {
+      setIsRequestingOtp(false);
+    }
   };
 
   const handleBackToLogin = () => {
@@ -258,25 +269,33 @@ export default function Login({ employees, onLogin }: LoginProps) {
     }
   };
 
-  const handleVerifyOtp = (e: SyntheticEvent<HTMLFormElement>) => {
+  const handleVerifyOtp = async (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    if (!isOtpValid) {
-      setOtpError('กรุณากรอกรหัส OTP ให้ครบ 6 หลัก');
+    if (!isOtpValid || isVerifyingOtp) {
+      if (!isOtpValid) setOtpError('กรุณากรอกรหัส OTP ให้ครบ 6 หลัก');
       return;
     }
     animateOtpSubmit(otpSubmitScope.current, PRESS_FEEDBACK, PRESS_TRANSITION);
 
     setOtpError('');
-    setNewPassword('');
-    setConfirmPassword('');
-    setResetError('');
-    setView('reset');
+    setIsVerifyingOtp(true);
+    try {
+      await verifyPasswordResetOtp(forgotEmail.trim(), otpDigits.join(''));
+      setNewPassword('');
+      setConfirmPassword('');
+      setResetError('');
+      setView('reset');
+    } catch (err) {
+      setOtpError(err instanceof ApiError ? err.message : 'ยืนยันรหัส OTP ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+    } finally {
+      setIsVerifyingOtp(false);
+    }
   };
 
   const isResetFilled = newPassword.trim() !== '' && confirmPassword.trim() !== '';
 
-  const handleChangePassword = (e: SyntheticEvent<HTMLFormElement>) => {
+  const handleChangePassword = async (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     if (newPassword.trim().length < 6) {
@@ -288,19 +307,33 @@ export default function Login({ employees, onLogin }: LoginProps) {
       setResetError('รหัสผ่านใหม่ทั้งสองช่องไม่ตรงกัน');
       return;
     }
+    if (isResettingPassword) return;
     animateResetSubmit(resetSubmitScope.current, PRESS_FEEDBACK, PRESS_TRANSITION);
 
     setResetError('');
-    handleBackToLogin();
-    setLoginSuccess('เปลี่ยนรหัสผ่านสำเร็จ กรุณาเข้าสู่ระบบอีกครั้ง');
+    setIsResettingPassword(true);
+    try {
+      await resetPasswordWithOtp(forgotEmail.trim(), newPassword);
+      handleBackToLogin();
+      setLoginSuccess('เปลี่ยนรหัสผ่านสำเร็จ กรุณาเข้าสู่ระบบอีกครั้ง');
+    } catch (err) {
+      setResetError(err instanceof ApiError ? err.message : 'เปลี่ยนรหัสผ่านไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+    } finally {
+      setIsResettingPassword(false);
+    }
   };
 
-  const handleResendOtp = () => {
-    if (resendCooldown > 0) return;
-    setResendCooldown(59);
-    setOtpDigits(['', '', '', '', '', '']);
-    setOtpError('');
-    otpInputRefs.current[0]?.focus();
+  const handleResendOtp = async () => {
+    if (resendCooldown > 0 || isRequestingOtp) return;
+    try {
+      await requestPasswordResetOtp(forgotEmail.trim());
+      setResendCooldown(59);
+      setOtpDigits(['', '', '', '', '', '']);
+      setOtpError('');
+      otpInputRefs.current[0]?.focus();
+    } catch (err) {
+      setOtpError(err instanceof ApiError ? err.message : 'ส่งรหัส OTP ใหม่ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+    }
   };
 
   useEffect(() => {
@@ -557,16 +590,16 @@ export default function Login({ employees, onLogin }: LoginProps) {
           <motion.button
             ref={forgotSubmitScope}
             type="submit"
-            disabled={!isForgotEmailValid}
-            whileHover={isForgotEmailValid ? { scale: 1.02 } : undefined}
-            whileTap={isForgotEmailValid ? { scale: 0.97 } : undefined}
+            disabled={!isForgotEmailValid || isRequestingOtp}
+            whileHover={isForgotEmailValid && !isRequestingOtp ? { scale: 1.02 } : undefined}
+            whileTap={isForgotEmailValid && !isRequestingOtp ? { scale: 0.97 } : undefined}
             transition={{ duration: 0.15, ease: EASE }}
             className={`w-full text-white text-base font-semibold py-3.5 rounded-xl transition-colors mt-auto ${
-              isForgotEmailValid ? 'bg-[#FF6537] hover:opacity-90 cursor-pointer' : 'bg-[#F68C6C] cursor-not-allowed'
+              isForgotEmailValid && !isRequestingOtp ? 'bg-[#FF6537] hover:opacity-90 cursor-pointer' : 'bg-[#F68C6C] cursor-not-allowed'
             }`}
             id="btn-request-otp"
           >
-            รับ OTP
+            {isRequestingOtp ? 'กำลังส่ง...' : 'รับ OTP'}
           </motion.button>
         </form>
         )}
@@ -635,16 +668,16 @@ export default function Login({ employees, onLogin }: LoginProps) {
           <motion.button
             ref={otpSubmitScope}
             type="submit"
-            disabled={!isOtpValid}
-            whileHover={isOtpValid ? { scale: 1.02 } : undefined}
-            whileTap={isOtpValid ? { scale: 0.97 } : undefined}
+            disabled={!isOtpValid || isVerifyingOtp}
+            whileHover={isOtpValid && !isVerifyingOtp ? { scale: 1.02 } : undefined}
+            whileTap={isOtpValid && !isVerifyingOtp ? { scale: 0.97 } : undefined}
             transition={{ duration: 0.15, ease: EASE }}
             className={`w-full text-white text-base font-semibold py-3.5 rounded-xl transition-colors mt-auto ${
-              isOtpValid ? 'bg-[#FF6537] hover:opacity-90 cursor-pointer' : 'bg-[#F68C6C] cursor-not-allowed'
+              isOtpValid && !isVerifyingOtp ? 'bg-[#FF6537] hover:opacity-90 cursor-pointer' : 'bg-[#F68C6C] cursor-not-allowed'
             }`}
             id="btn-verify-otp"
           >
-            ยืนยัน
+            {isVerifyingOtp ? 'กำลังยืนยัน...' : 'ยืนยัน'}
           </motion.button>
         </form>
         )}
@@ -719,15 +752,16 @@ export default function Login({ employees, onLogin }: LoginProps) {
           <motion.button
             ref={resetSubmitScope}
             type="submit"
-            whileHover={isResetFilled ? { scale: 1.02 } : undefined}
-            whileTap={isResetFilled ? { scale: 0.97 } : undefined}
+            disabled={isResettingPassword}
+            whileHover={isResetFilled && !isResettingPassword ? { scale: 1.02 } : undefined}
+            whileTap={isResetFilled && !isResettingPassword ? { scale: 0.97 } : undefined}
             transition={{ duration: 0.15, ease: EASE }}
-            className={`w-full text-white text-base font-semibold py-3.5 rounded-xl transition-colors cursor-pointer mt-[70px] ${
-              isResetFilled ? 'bg-[#FF6537] hover:opacity-90' : 'bg-[#F68C6C]'
+            className={`w-full text-white text-base font-semibold py-3.5 rounded-xl transition-colors mt-[70px] ${
+              isResetFilled && !isResettingPassword ? 'bg-[#FF6537] hover:opacity-90 cursor-pointer' : 'bg-[#F68C6C] cursor-not-allowed'
             }`}
             id="btn-change-password"
           >
-            เปลี่ยนรหัสผ่าน
+            {isResettingPassword ? 'กำลังบันทึก...' : 'เปลี่ยนรหัสผ่าน'}
           </motion.button>
         </form>
         )}

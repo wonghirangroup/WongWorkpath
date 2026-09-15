@@ -3,19 +3,19 @@ import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { X, ArrowRight } from 'lucide-react';
 import { Employee } from '../../types';
-import { ProjectRow, ProjectStatus } from './types';
-import { STATUS_LABEL } from './statusMeta';
+import { ProjectRow, ProjectType, CustomProjectStatus } from './types';
+import { STATUS_LABEL, PROJECT_TYPE_META, PROJECT_TYPE_OPTIONS } from './statusMeta';
 import {
   EmployeeSearchSelect,
   EmployeeMultiSelect,
   PRIORITY_OPTIONS,
-  PRIORITY_TO_ROW,
-  ROW_TO_PRIORITY,
   Priority,
   STATUS_OPTIONS,
   getUniqueTitle,
+  displayName,
 } from './CreateProjectModal';
 import { ApiError } from '../../lib/api';
+import Tooltip from '../Tooltip';
 
 interface EditProjectModalProps {
   isOpen: boolean;
@@ -24,22 +24,26 @@ interface EditProjectModalProps {
   employees: Employee[];
   onSave: (updates: Partial<ProjectRow>) => Promise<void>;
   existingTitles: string[];
+  customStatuses: CustomProjectStatus[];
 }
 
 // Single-screen edit form (not the create wizard's 3 steps) — editing an existing project should
 // show every field at once rather than re-running a step-by-step flow each time. Only fields the
 // create wizard itself collects are editable here (see CreateProjectModal's own note on why
 // "department" has no field yet) — this stays a straight edit of what's already there.
-export default function EditProjectModal({ isOpen, onClose, row, employees, onSave, existingTitles }: EditProjectModalProps) {
+export default function EditProjectModal({ isOpen, onClose, row, employees, onSave, existingTitles, customStatuses }: EditProjectModalProps) {
   const [title, setTitle] = useState(row.title);
   const [renameNotice, setRenameNotice] = useState('');
   // Renaming to the project's own current title is never a "collision" with itself.
   const otherTitles = existingTitles.filter((t) => t.trim().toLowerCase() !== row.title.trim().toLowerCase());
   const [description, setDescription] = useState(row.description ?? '');
+  const [type, setType] = useState<ProjectType | null>(row.type ?? null);
+  const [abbreviation, setAbbreviation] = useState(row.abbreviation ?? '');
   const [ownerId, setOwnerId] = useState(row.ownerEmployeeId ?? '');
   const [memberIds, setMemberIds] = useState<string[]>(row.memberEmployeeIds ?? []);
-  const [priority, setPriority] = useState<Priority | null>(row.priority ? ROW_TO_PRIORITY[row.priority] : null);
-  const [status, setStatus] = useState<ProjectStatus>(row.status);
+  const [memberDuties, setMemberDuties] = useState<Record<string, string>>(row.memberDuties ?? {});
+  const [priority, setPriority] = useState<Priority | null>(row.priority ?? null);
+  const [status, setStatus] = useState<string>(row.status);
   const [budget, setBudget] = useState(row.budget !== null ? String(row.budget) : '');
   const [startDate, setStartDate] = useState(row.startDateISO ?? '');
   const [endDate, setEndDate] = useState(row.endDateISO ?? '');
@@ -60,9 +64,14 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
       await onSave({
         title: finalTitle,
         description: description.trim() || undefined,
-        priority: priority ? PRIORITY_TO_ROW[priority] : undefined,
+        type: type ?? undefined,
+        abbreviation: abbreviation.trim() || undefined,
+        priority: priority ?? undefined,
         ownerEmployeeId: ownerId || null,
         memberEmployeeIds: memberIds,
+        memberDuties: Object.fromEntries(
+          Object.entries(memberDuties).filter(([id, duty]) => memberIds.includes(id) && duty.trim() !== '')
+        ),
         status,
         budget: budget.trim() !== '' && !isNaN(Number(budget)) ? Number(budget) : null,
         startDate: startDate || null,
@@ -158,6 +167,48 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
                   />
                 </div>
 
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[#272220] font-bold text-[11px] mb-1">ประเภทโครงการ</label>
+                    <select
+                      value={type ?? ''}
+                      onChange={(e) => setType((e.target.value || null) as ProjectType | null)}
+                      className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg bg-white focus:outline-none focus:border-[#FF6537]"
+                    >
+                      <option value="">ไม่ระบุ</option>
+                      {PROJECT_TYPE_OPTIONS.map((t) => (
+                        <option key={t} value={t}>{PROJECT_TYPE_META[t].label} ({t})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[#272220] font-bold text-[11px] mb-1">ตัวย่อโครงการ</label>
+                    <input
+                      type="text"
+                      readOnly
+                      tabIndex={-1}
+                      value={type ?? ''}
+                      placeholder="เลือกประเภทก่อน"
+                      className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg bg-slate-50 text-[#6F6F6F] placeholder:text-[#B0B0B0] cursor-default focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-baseline justify-between mb-1">
+                    <label className="block text-[#272220] font-bold text-[11px]">ตัวย่อชื่อโครงการ</label>
+                    <span className="text-[10px] text-[#6F6F6F]">แก้ไขได้ ไม่เปลี่ยนรหัสโครงการเดิม</span>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="เช่น GS"
+                    maxLength={10}
+                    value={abbreviation}
+                    onChange={(e) => setAbbreviation(e.target.value.toUpperCase())}
+                    className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                  />
+                </div>
+
                 <div>
                   <label className="block text-[#272220] font-bold text-[11px] mb-1">ผู้รับผิดชอบหลัก</label>
                   <EmployeeSearchSelect
@@ -176,10 +227,33 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
                     onChange={setMemberIds}
                     placeholder="ค้นหาแล้วเลือกเพิ่มได้หลายคน..."
                   />
+                  {employees.filter((e) => memberIds.includes(e.id)).length > 0 && (
+                    <div className="mt-2 space-y-1.5">
+                      {employees.filter((e) => memberIds.includes(e.id)).map((emp) => (
+                        <div key={emp.id} className="flex items-center gap-2">
+                          <Tooltip content={displayName(emp)}>
+                            <span className="text-[11px] text-[#6F6F6F] w-20 truncate shrink-0">
+                              {displayName(emp)}
+                            </span>
+                          </Tooltip>
+                          <input
+                            type="text"
+                            placeholder="หน้าที่ในโครงการนี้..."
+                            value={memberDuties[emp.id] ?? ''}
+                            onChange={(e) => setMemberDuties((prev) => ({ ...prev, [emp.id]: e.target.value }))}
+                            className="flex-1 p-1.5 text-xs border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div>
-                  <label className="block text-[#272220] font-bold text-[11px] mb-1">ระดับความสำคัญ</label>
+                  <div className="flex items-baseline justify-between mb-1">
+                    <label className="block text-[#272220] font-bold text-[11px]">ระดับความสำคัญ</label>
+                    <span className="text-[10px] text-[#A0A0A0]">1 = สำคัญที่สุด, 5 = สำคัญน้อยที่สุด</span>
+                  </div>
                   <div className="flex gap-2">
                     {PRIORITY_OPTIONS.map((p) => (
                       <button
@@ -200,11 +274,14 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
                   <label className="block text-[#272220] font-bold text-[11px] mb-1">สถานะ</label>
                   <select
                     value={status}
-                    onChange={(e) => setStatus(e.target.value as ProjectStatus)}
+                    onChange={(e) => setStatus(e.target.value)}
                     className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg bg-white focus:outline-none focus:border-[#FF6537]"
                   >
                     {STATUS_OPTIONS.map((s) => (
                       <option key={s} value={s}>{STATUS_LABEL[s]}</option>
+                    ))}
+                    {customStatuses.map((s) => (
+                      <option key={s.id} value={s.id}>{s.label}</option>
                     ))}
                   </select>
                 </div>

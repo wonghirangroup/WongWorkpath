@@ -1,11 +1,11 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
-import { X, Paperclip, FileText, Trash2 } from 'lucide-react';
+import { X, Paperclip, Link2, Trash2 } from 'lucide-react';
 import { Employee, LinkedDoc } from '../../types';
 import { ProjectTaskItem } from './types';
 import { EmployeeMultiSelect } from './CreateProjectModal';
-import { readFileAsDataUrl, MAX_FILE_BYTES, formatFileSize } from '../DocVault';
+import { readFileAsDataUrl, MAX_FILE_BYTES, formatFileSize, getItemVisual, suggestLinkName } from '../DocVault';
 import { nowTimestamp } from '../../lib/datetime';
 
 interface SubmitTaskModalProps {
@@ -27,6 +27,8 @@ export default function SubmitTaskModal({ task, employees, documents, projectDoc
   const [reviewerIds, setReviewerIds] = useState<string[]>([]);
   const [note, setNote] = useState('');
   const [pickedFiles, setPickedFiles] = useState<globalThis.File[]>([]);
+  const [pickedLinks, setPickedLinks] = useState<{ name: string; url: string }[]>([]);
+  const [linkUrl, setLinkUrl] = useState('');
   const [fileError, setFileError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
@@ -36,6 +38,8 @@ export default function SubmitTaskModal({ task, employees, documents, projectDoc
     setReviewerIds(task.reviewerEmployeeIds ?? []);
     setNote('');
     setPickedFiles([]);
+    setPickedLinks([]);
+    setLinkUrl('');
     setFileError('');
     setFormError('');
   }, [task]);
@@ -61,6 +65,17 @@ export default function SubmitTaskModal({ task, employees, documents, projectDoc
 
   const removePickedFile = (idx: number) => {
     setPickedFiles((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const addPickedLink = () => {
+    const url = linkUrl.trim();
+    if (!url) return;
+    setPickedLinks((prev) => [...prev, { name: suggestLinkName(url) || url, url }]);
+    setLinkUrl('');
+  };
+
+  const removePickedLink = (idx: number) => {
+    setPickedLinks((prev) => prev.filter((_, i) => i !== idx));
   };
 
   const isFormValid = reviewerIds.length > 0;
@@ -96,6 +111,28 @@ export default function SubmitTaskModal({ task, employees, documents, projectDoc
           lastUpdated: date,
           updatedBy: currentUserName,
           history: [{ version: 1, updatedBy: currentUserName, date, note: 'แนบไฟล์ตอนส่งงาน' }],
+        };
+        onAddDocument(newDoc);
+        newFileIds.push(id);
+      }
+
+      // A link attaches the same way a file does — both are just Doc Vault LinkedDoc ids in
+      // submissionFileIds, which is schema-agnostic about kind — so reviewers/the Doc Vault see
+      // it identically to a real file, no separate "links" field needed on ProjectTaskItem.
+      for (const link of pickedLinks) {
+        const id = 'DOC' + Date.now() + Math.random().toString(36).slice(2, 6);
+        const newDoc: LinkedDoc = {
+          id,
+          name: link.name,
+          kind: 'link',
+          parentId,
+          taskId: task.id,
+          url: link.url,
+          scope: 'ส่วนตัว',
+          version: 1,
+          lastUpdated: date,
+          updatedBy: currentUserName,
+          history: [{ version: 1, updatedBy: currentUserName, date, note: 'แนบลิงก์ตอนส่งงาน' }],
         };
         onAddDocument(newDoc);
         newFileIds.push(id);
@@ -177,43 +214,93 @@ export default function SubmitTaskModal({ task, employees, documents, projectDoc
 
                   {existingFiles.length > 0 && (
                     <div className="space-y-1.5 mb-2">
-                      {existingFiles.map((doc) => (
-                        <div key={doc.id} className="flex items-center gap-2 p-2 rounded-lg bg-slate-50 text-xs">
-                          <FileText size={14} className="text-[#6F6F6F] shrink-0" />
-                          <span className="truncate flex-1 text-[#272220]">{doc.name}</span>
-                          <span className="text-[#A0A0A0] shrink-0">ส่งไปแล้ว</span>
-                        </div>
-                      ))}
+                      {existingFiles.map((doc) => {
+                        const { Icon, color } = getItemVisual(doc);
+                        return (
+                          <div key={doc.id} className="flex items-center gap-2.5 p-2.5 border border-slate-200 rounded-xl bg-white">
+                            <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center shrink-0">
+                              <Icon size={16} className={color} />
+                            </div>
+                            <span className="truncate flex-1 text-xs font-medium text-[#272220]">{doc.name}</span>
+                            <span className="text-[11px] text-[#A0A0A0] shrink-0">ส่งไปแล้ว</span>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
 
-                  <label className="flex items-center gap-2 justify-center p-3 border border-dashed border-[#E5E5E5] rounded-lg cursor-pointer hover:bg-slate-50 text-xs text-[#6F6F6F]">
-                    <Paperclip size={14} />
-                    แนบไฟล์เพิ่ม
-                    <input
-                      type="file"
-                      multiple
-                      className="hidden"
-                      onChange={(e) => {
-                        handleFilesPicked(e.target.files);
-                        e.target.value = '';
-                      }}
-                    />
-                  </label>
+                  <div className="flex gap-2">
+                    <label className="flex-1 flex items-center gap-2 justify-center p-3 border border-dashed border-[#E5E5E5] rounded-lg cursor-pointer hover:bg-slate-50 text-xs text-[#6F6F6F]">
+                      <Paperclip size={14} />
+                      แนบไฟล์
+                      <input
+                        type="file"
+                        multiple
+                        className="hidden"
+                        onChange={(e) => {
+                          handleFilesPicked(e.target.files);
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+                  </div>
                   {fileError && <p className="text-xs text-red-600 mt-1.5">{fileError}</p>}
 
-                  {pickedFiles.length > 0 && (
+                  <div className="flex gap-2 mt-2">
+                    <input
+                      type="url"
+                      value={linkUrl}
+                      onChange={(e) => setLinkUrl(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addPickedLink(); } }}
+                      placeholder="แปะลิงก์ที่นี่แล้วกด + เพื่อแนบ..."
+                      className="flex-1 min-w-0 p-2.5 text-xs border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                    />
+                    <button
+                      type="button"
+                      onClick={addPickedLink}
+                      disabled={!linkUrl.trim()}
+                      className="w-10 h-10 shrink-0 rounded-lg border border-[#E5E5E5] text-[#6F6F6F] hover:bg-slate-50 flex items-center justify-center cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <Link2 size={15} />
+                    </button>
+                  </div>
+
+                  {(pickedFiles.length > 0 || pickedLinks.length > 0) && (
                     <div className="space-y-1.5 mt-2">
-                      {pickedFiles.map((f, idx) => (
-                        <div key={idx} className="flex items-center gap-2 p-2 rounded-lg bg-[#FFF1EC] text-xs">
-                          <FileText size={14} className="text-[#FF6537] shrink-0" />
-                          <span className="truncate flex-1 text-[#272220]">{f.name}</span>
-                          <span className="text-[#A0A0A0] shrink-0">{formatFileSize(f.size)}</span>
-                          <button type="button" onClick={() => removePickedFile(idx)} className="text-slate-400 hover:text-red-600 cursor-pointer shrink-0">
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
-                      ))}
+                      {pickedFiles.map((f, idx) => {
+                        const { Icon, color } = getItemVisual({ kind: 'file', name: f.name, fileMimeType: f.type });
+                        return (
+                          <div key={`file-${idx}`} className="flex items-center gap-2.5 p-2.5 border border-[#FFD9C7] rounded-xl bg-[#FFF1EC]">
+                            <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center shrink-0">
+                              <Icon size={16} className={color} />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-xs font-medium text-[#272220]">{f.name}</p>
+                              <p className="text-[11px] text-[#A0A0A0]">{formatFileSize(f.size)}</p>
+                            </div>
+                            <button type="button" onClick={() => removePickedFile(idx)} className="text-slate-400 hover:text-red-600 cursor-pointer shrink-0">
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                      {pickedLinks.map((link, idx) => {
+                        const { Icon, color } = getItemVisual({ kind: 'link', name: link.name });
+                        return (
+                          <div key={`link-${idx}`} className="flex items-center gap-2.5 p-2.5 border border-[#FFD9C7] rounded-xl bg-[#FFF1EC]">
+                            <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center shrink-0">
+                              <Icon size={16} className={color} />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-xs font-medium text-[#272220]">{link.name}</p>
+                              <p className="truncate text-[11px] text-[#A0A0A0]">{link.url}</p>
+                            </div>
+                            <button type="button" onClick={() => removePickedLink(idx)} className="text-slate-400 hover:text-red-600 cursor-pointer shrink-0">
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

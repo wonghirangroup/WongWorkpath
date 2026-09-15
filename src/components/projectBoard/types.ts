@@ -3,20 +3,43 @@
 // Both ProjectRow and ProjectTaskItem are real, DB-backed data now (server/routes/projects.ts and
 // server/routes/project-tasks.ts respectively).
 
-export type ProjectStatus = 'in_progress' | 'completed' | 'on_hold' | 'cancelled' | 'draft';
+// The 7 built-in statuses — used for the create/edit status dropdown's fixed options and as the
+// key set for statusMeta.ts's base label/color/icon lookups. A project's actual `status` field
+// (below) is a plain string since it can also hold a user-created custom status id (see
+// CustomProjectStatus) — statusMeta.ts falls back to a hash-derived color/icon and the custom
+// status's own label for anything outside this union.
+export type ProjectStatus = 'in_progress' | 'completed' | 'on_hold' | 'cancelled' | 'draft' | 'pending_review' | 'idea';
 
-export type ProjectPriority = 'High' | 'Medium' | 'Low';
+// A user-defined status beyond the 7 built-ins (see StatusWidgetSettingsMenu.tsx) — real, DB-backed
+// (server/routes/project-custom-statuses.ts) so it can actually be assigned to a project's own
+// `status` field and filtered on, not just used as a display label.
+export interface CustomProjectStatus {
+  id: string;
+  label: string;
+}
+
+// "ประเภทโครงการ" — feeds both a dedicated filter/label and the project code format
+// ({abbreviation}-{2-digit BE year}-{type}-{sequence}, e.g. "WP-69-P-001").
+export type ProjectType = 'P' | 'SP' | 'I' | 'C' | 'B' | 'FND';
+
+// Numeric priority scale shared by both a project's own priority and a task's priority —
+// 1 = most important, 5 = least — so the two concepts sort/compare/process identically instead
+// of needing separate text scales translated at every boundary.
+export type ProjectPriority = 1 | 2 | 3 | 4 | 5;
 
 export interface ProjectRow {
   id: string;
-  code: string; // e.g. "PRJ-001"
+  code: string; // e.g. "WP-69-P-001" ({abbreviation}-{2-digit BE year}-{type}-{sequence})
   title: string;
   description?: string; // short one-line summary shown under the title in grid/card view
   department?: string; // shown as "ทีม" in the project detail meta grid
+  type?: ProjectType; // "ประเภทโครงการ" — also embedded in the generated code
+  abbreviation?: string; // "ตัวย่อชื่อโครงการ" (e.g. "GS" for Grow store) — derived from the title, user-editable, the code's first segment
   priority?: ProjectPriority; // shown as "ความสำคัญ" in the project detail meta grid
   budget: number | null; // null renders as "ยังไม่มี" (draft projects with no figure yet)
   ownerEmployeeId: string | null; // real Employee.id — name/role/avatar are resolved from the live employee roster
   memberEmployeeIds?: string[]; // "ผู้รับผิดชอบร่วม" — additional team members beyond the primary owner
+  memberDuties?: Record<string, string>; // keyed by employeeId — "หน้าที่ในโครงการนี้" per member, set alongside memberEmployeeIds
   docFolderId?: string | null; // Doc Vault folder created for this project (its own "create folder" step) — tasks with their own "create folder" checkbox nest inside this one instead of the Drive root
   progress: number | null; // 0-100; null renders as "ยังไม่มี"
   startDate: string | null; // pre-formatted Thai date string, or null
@@ -25,7 +48,7 @@ export interface ProjectRow {
   endDateISO?: string | null;
   createdDate: string | null; // pre-formatted Thai date string — when the project record was created
   daysUntilDue?: number; // when set and small, shows the red "อีก N วัน" line above endDate
-  status: ProjectStatus;
+  status: string; // one of the 7 ProjectStatus built-ins, or a CustomProjectStatus.id
 }
 
 // A single work item inside a project's "งาน" tab — a self-contained mock task list scoped to
@@ -45,7 +68,7 @@ export interface ProjectTaskItem {
   title: string;
   description?: string; // optional free-text note, from the "เพิ่มงาน" modal
   status: ProjectTaskStatus;
-  priority?: 'high' | 'medium' | 'low'; // optional, from the "เพิ่มงาน" modal — same 3-level scale as CreateProjectModal's Priority
+  priority?: ProjectPriority; // optional, from the "เพิ่มงาน" modal — same 1-5 scale as a project's own priority
   assigneeEmployeeIds: string[]; // real Employee.ids — a task can have more than one responsible person; "only my tasks" filtering checks membership, not equality
   reviewerEmployeeIds?: string[]; // who can review this task's submission — chosen per task, not inherited from the project owner; any ONE of them passing/rejecting is authoritative, not a consensus vote
   creatorEmployeeId?: string; // who created the task, from the "เพิ่มงาน" modal — optional since the original mock tasks predate this field

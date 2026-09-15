@@ -6,7 +6,7 @@ import { nowBangkokDateTime, formatThaiDateShort } from '../lib/datetime.ts';
 export const projectTasksRouter = Router();
 
 const STATUSES = ['todo', 'in_progress', 'review', 'blocked', 'done'];
-const PRIORITIES = ['high', 'medium', 'low']; // lowercase — a different scale from project.priority
+const PRIORITIES = [1, 2, 3, 4, 5]; // numeric 1-5 scale, 1 = most important — same scale as project.priority
 
 interface ProjectTaskRowDb extends RowDataPacket {
   id: string;
@@ -14,7 +14,7 @@ interface ProjectTaskRowDb extends RowDataPacket {
   title: string;
   description: string | null;
   status: string;
-  priority: string | null;
+  priority: string | null; // VARCHAR column storing '1'-'5' — converted to a number in toProjectTask
   assignee_employee_ids: string | null;
   reviewer_employee_ids: string | null;
   creator_employee_id: string | null;
@@ -59,7 +59,7 @@ function toProjectTask(r: ProjectTaskRowDb) {
     title: r.title,
     description: r.description ?? undefined,
     status: r.status,
-    priority: r.priority ?? undefined,
+    priority: r.priority !== null ? Number(r.priority) : undefined,
     assigneeEmployeeIds: r.assignee_employee_ids ? JSON.parse(r.assignee_employee_ids) : [],
     reviewerEmployeeIds: r.reviewer_employee_ids ? JSON.parse(r.reviewer_employee_ids) : [],
     creatorEmployeeId: r.creator_employee_id ?? undefined,

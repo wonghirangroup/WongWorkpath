@@ -37,6 +37,7 @@ import firstCreateDocIcon from '../../images/frist create doc icon.png';
 import searchIcon from '../../images/icon/Search pass.png';
 import editIcon from '../../images/icon menu/edit.png';
 import deleteIcon from '../../images/icon menu/delete.png';
+import Tooltip from './Tooltip';
 
 interface DocVaultProps {
   documents: LinkedDoc[];
@@ -132,7 +133,7 @@ function getUniqueDocName(desiredName: string, existingNames: string[]): string 
 }
 
 // Suggests a starting name from a pasted URL so the field isn't blank — still editable.
-function suggestLinkName(url: string): string {
+export function suggestLinkName(url: string): string {
   try {
     const { hostname, pathname } = new URL(url);
     if (hostname.includes('docs.google.com') && pathname.includes('/spreadsheets')) return 'ชีตข้อมูล Google Sheets';
@@ -199,14 +200,16 @@ function DocCardMenu({ onOpenFolder, onEdit, onOpenFile, onOpenLink, onCopyLink,
 
   return (
     <div className="relative" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
-      <button
-        ref={buttonRef}
-        onClick={() => (isOpen ? setIsOpen(false) : openMenu())}
-        className="p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer"
-        title="ตัวเลือกเพิ่มเติม"
-      >
-        <MoreHorizontal size={18} className="text-slate-500" />
-      </button>
+      <Tooltip content="ตัวเลือกเพิ่มเติม">
+        <button
+          ref={buttonRef}
+          onClick={() => (isOpen ? setIsOpen(false) : openMenu())}
+          className="p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer"
+          aria-label="ตัวเลือกเพิ่มเติม"
+        >
+          <MoreHorizontal size={18} className="text-slate-500" />
+        </button>
+      </Tooltip>
       {createPortal(
         <AnimatePresence>
           {isOpen && menuPos && (
@@ -275,15 +278,18 @@ function DocCardMenu({ onOpenFolder, onEdit, onOpenFile, onOpenLink, onCopyLink,
   );
 }
 
-function getFileExtension(name: string): string {
+export function getFileExtension(name: string): string {
   const match = name.match(/\.([a-zA-Z0-9]+)$/);
   return match ? match[1].toLowerCase() : '';
 }
 
 // Small icon + accent color per item, shared by grid cards and list rows — for files, matches
 // the actual extension/mime type (PDF, image, Word, Excel, ...) rather than one generic icon,
-// so the card gives a real hint of what's inside before you open it.
-function getItemVisual(doc: LinkedDoc) {
+// so the card gives a real hint of what's inside before you open it. Exported (and typed against
+// just the fields it reads, not the full LinkedDoc) so SubmitTaskModal/ReviewTaskModal's compact
+// attachment cards can reuse the exact same icon logic — including for a picked-but-not-yet-
+// uploaded browser File, adapted to this minimal shape rather than a real LinkedDoc.
+export function getItemVisual(doc: Pick<LinkedDoc, 'kind' | 'name'> & Partial<Pick<LinkedDoc, 'fileMimeType'>>) {
   if (doc.kind === 'folder') return { Icon: Folder, color: 'text-[#FF6537]', fill: true, isPdf: false, isImage: false };
   if (doc.kind === 'link') return { Icon: Link2, color: 'text-emerald-600', fill: false, isPdf: false, isImage: false };
 
@@ -956,6 +962,9 @@ export default function DocVault({
       ) : (
       <>
 
+      {/* Sticky under Header, same pattern as EmployeeManagement/ProjectBoard/Dashboard, so this
+          row stays put while the file grid scrolls under it. */}
+      <div className="sticky -top-4 sm:-top-6 lg:-top-8 z-30 bg-[#F6F6F6] pt-1">
       {/* Search, view toggle, kind filter & create — single controls row, same layout as the Credential Vault */}
       <div className="flex flex-col lg:flex-row gap-3 lg:items-center">
         <div className="relative w-full lg:w-137.5 lg:flex-none">
@@ -968,36 +977,42 @@ export default function DocVault({
             className="w-full h-10 pl-9 pr-9 bg-white border border-slate-200 rounded-xl text-[13px] font-normal focus:outline-none focus:border-[#FF6537]"
           />
           {searchTerm && (
-            <button
-              type="button"
-              onClick={() => setSearchTerm('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-              title="ล้างคำค้นหา"
-            >
-              <X size={15} />
-            </button>
+            <Tooltip content="ล้างคำค้นหา">
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                aria-label="ล้างคำค้นหา"
+              >
+                <X size={15} />
+              </button>
+            </Tooltip>
           )}
         </div>
 
         <div className="flex items-center gap-3 flex-1 min-w-0">
           {/* Grid / list view toggle */}
           <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-xl p-1 shrink-0">
-            <button
-              type="button"
-              onClick={() => setViewMode('grid')}
-              className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'grid' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
-              title="มุมมองตาราง"
-            >
-              <LayoutGrid size={15} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('list')}
-              className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'list' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
-              title="มุมมองรายการ"
-            >
-              <List size={15} />
-            </button>
+            <Tooltip content="มุมมองตาราง">
+              <button
+                type="button"
+                onClick={() => setViewMode('grid')}
+                className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'grid' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
+                aria-label="มุมมองตาราง"
+              >
+                <LayoutGrid size={15} />
+              </button>
+            </Tooltip>
+            <Tooltip content="มุมมองรายการ">
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'list' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
+                aria-label="มุมมองรายการ"
+              >
+                <List size={15} />
+              </button>
+            </Tooltip>
           </div>
 
           <div className="w-27.5 h-10">
@@ -1062,6 +1077,7 @@ export default function DocVault({
           </div>
         </div>
       </div>
+      </div>
 
       {/* Result count + sort */}
       <div className="flex items-center gap-2">
@@ -1071,7 +1087,6 @@ export default function DocVault({
             type="button"
             onClick={() => setIsSortOpen((prev) => !prev)}
             className="flex items-center gap-2 cursor-pointer"
-            title="เรียงตาม"
           >
             <span className="text-sm text-[#6F6F6F] leading-none mt-1">•</span>
             <span className="text-sm text-[#6F6F6F] leading-none mt-0.5">
@@ -1186,22 +1201,26 @@ export default function DocVault({
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); openEdit(doc); }}
-                            onDoubleClick={(e) => e.stopPropagation()}
-                            className="p-1.5 rounded-lg hover:bg-slate-100 cursor-pointer"
-                            title="แก้ไข"
-                          >
-                            <img src={editIcon} alt="" className="w-4.5 h-4.5" />
-                          </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); askDelete(doc); }}
-                            onDoubleClick={(e) => e.stopPropagation()}
-                            className="p-1.5 rounded-lg hover:bg-slate-100 cursor-pointer"
-                            title="ลบ"
-                          >
-                            <img src={deleteIcon} alt="" className="w-4.5 h-4.5" />
-                          </button>
+                          <Tooltip content="แก้ไข">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); openEdit(doc); }}
+                              onDoubleClick={(e) => e.stopPropagation()}
+                              className="p-1.5 rounded-lg hover:bg-slate-100 cursor-pointer"
+                              aria-label="แก้ไข"
+                            >
+                              <img src={editIcon} alt="" className="w-4.5 h-4.5" />
+                            </button>
+                          </Tooltip>
+                          <Tooltip content="ลบ">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); askDelete(doc); }}
+                              onDoubleClick={(e) => e.stopPropagation()}
+                              className="p-1.5 rounded-lg hover:bg-slate-100 cursor-pointer"
+                              aria-label="ลบ"
+                            >
+                              <img src={deleteIcon} alt="" className="w-4.5 h-4.5" />
+                            </button>
+                          </Tooltip>
                         </div>
                       </td>
                     </tr>
@@ -1792,46 +1811,56 @@ export default function DocVault({
                   <div className="flex items-center gap-1.5 shrink-0">
                     {previewIsImage && previewDoc.fileDataUrl && (
                       <>
-                        <button
-                          onClick={zoomOut}
-                          disabled={zoomLevel === ZOOM_STEPS[0]}
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                          title="ย่อ"
-                        >
-                          <ZoomOut size={18} />
-                        </button>
-                        <button
-                          onClick={zoomIn}
-                          disabled={zoomLevel === ZOOM_STEPS[ZOOM_STEPS.length - 1]}
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                          title="ขยาย"
-                        >
-                          <ZoomIn size={18} />
-                        </button>
+                        <Tooltip content="ย่อ">
+                          <button
+                            onClick={zoomOut}
+                            disabled={zoomLevel === ZOOM_STEPS[0]}
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                            aria-label="ย่อ"
+                          >
+                            <ZoomOut size={18} />
+                          </button>
+                        </Tooltip>
+                        <Tooltip content="ขยาย">
+                          <button
+                            onClick={zoomIn}
+                            disabled={zoomLevel === ZOOM_STEPS[ZOOM_STEPS.length - 1]}
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                            aria-label="ขยาย"
+                          >
+                            <ZoomIn size={18} />
+                          </button>
+                        </Tooltip>
                         <div className="w-px h-5 bg-slate-200 mx-0.5" />
-                        <button
-                          onClick={handlePrintPreview}
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
-                          title="พิมพ์"
-                        >
-                          <Printer size={18} />
-                        </button>
-                        <button
-                          onClick={() => openFile(previewDoc)}
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
-                          title="ดาวน์โหลด"
-                        >
-                          <Download size={18} />
-                        </button>
+                        <Tooltip content="พิมพ์">
+                          <button
+                            onClick={handlePrintPreview}
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+                            aria-label="พิมพ์"
+                          >
+                            <Printer size={18} />
+                          </button>
+                        </Tooltip>
+                        <Tooltip content="ดาวน์โหลด">
+                          <button
+                            onClick={() => openFile(previewDoc)}
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+                            aria-label="ดาวน์โหลด"
+                          >
+                            <Download size={18} />
+                          </button>
+                        </Tooltip>
                       </>
                     )}
-                    <button
-                      onClick={() => setPreviewDocId(null)}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
-                      title="ปิด"
-                    >
-                      <X size={18} />
-                    </button>
+                    <Tooltip content="ปิด">
+                      <button
+                        onClick={() => setPreviewDocId(null)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+                        aria-label="ปิด"
+                      >
+                        <X size={18} />
+                      </button>
+                    </Tooltip>
                   </div>
                 </div>
 

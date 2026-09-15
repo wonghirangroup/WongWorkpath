@@ -2,6 +2,7 @@ import { Plus, Download } from 'lucide-react';
 import Dropdown from '../Dropdown';
 import WidgetSettingsMenu from './WidgetSettingsMenu';
 import { DashboardWidgetPrefs } from './widgetPrefs';
+import { ProjectRow } from '../projectBoard/types';
 
 interface DashboardToolbarProps {
   onAddTask: () => void;
@@ -9,6 +10,9 @@ interface DashboardToolbarProps {
   departmentFilter: string;
   onDepartmentFilterChange: (value: string) => void;
   orgSections: string[];
+  projectFilter: string;
+  onProjectFilterChange: (value: string) => void;
+  projects: ProjectRow[];
   widgetPrefs: DashboardWidgetPrefs;
   onWidgetPrefsChange: (next: DashboardWidgetPrefs) => void;
 }
@@ -18,7 +22,7 @@ interface DashboardToolbarProps {
 // background — no separate hero/banner card, since the Header above it already carries the page
 // title. The dashboard used to open with a dark gradient "welcome" hero that nothing else in the
 // app has; that stood out as visually inconsistent rather than as an intentional accent.
-export default function DashboardToolbar({ onAddTask, onExport, departmentFilter, onDepartmentFilterChange, orgSections, widgetPrefs, onWidgetPrefsChange }: DashboardToolbarProps) {
+export default function DashboardToolbar({ onAddTask, onExport, departmentFilter, onDepartmentFilterChange, orgSections, projectFilter, onProjectFilterChange, projects, widgetPrefs, onWidgetPrefsChange }: DashboardToolbarProps) {
   return (
     <div className="flex flex-col lg:flex-row gap-3 lg:items-center">
       <div className="w-full lg:w-52">
@@ -26,6 +30,14 @@ export default function DashboardToolbar({ onAddTask, onExport, departmentFilter
           value={departmentFilter}
           onChange={onDepartmentFilterChange}
           options={[{ value: 'All', label: 'ทุกแผนก' }, ...orgSections.map((s) => ({ value: s, label: s }))]}
+        />
+      </div>
+
+      <div className="w-full lg:w-52">
+        <Dropdown
+          value={projectFilter}
+          onChange={onProjectFilterChange}
+          options={[{ value: 'All', label: 'ทุกโครงการ' }, ...projects.map((p) => ({ value: p.id, label: p.title }))]}
         />
       </div>
 

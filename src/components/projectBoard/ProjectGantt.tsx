@@ -1,10 +1,11 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { CalendarRange } from 'lucide-react';
 import { Employee } from '../../types';
 import { ProjectTaskItem } from './types';
 import { TASK_STATUS_COLOR, TASK_STATUS_LABEL } from './statusMeta';
 import { displayName } from './CreateProjectModal';
 import { getAvatarColor } from '../../lib/avatarColor';
+import Tooltip from '../Tooltip';
 
 const THAI_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 
@@ -21,7 +22,19 @@ function parseThaiDate(value: string | null | undefined): Date | null {
   return new Date(buddhistYear - 543, monthIndex, day);
 }
 
-function formatAxisLabel(d: Date): string {
+// "วัน" shows 5 evenly time-spaced points across the actual task date range; "เดือน"/"ปี" instead
+// tick at real calendar-month/year boundaries within that same range — only the tick granularity
+// changes with zoom, never the bars' own coordinate system (still true percentage-of-range).
+type GanttZoom = 'day' | 'month' | 'year';
+const ZOOM_OPTIONS: { value: GanttZoom; label: string }[] = [
+  { value: 'day', label: 'วัน' },
+  { value: 'month', label: 'เดือน' },
+  { value: 'year', label: 'ปี' },
+];
+
+function formatAxisLabel(d: Date, zoom: GanttZoom): string {
+  if (zoom === 'year') return `${d.getFullYear() + 543}`;
+  if (zoom === 'month') return `${THAI_MONTHS[d.getMonth()]} ${(d.getFullYear() + 543) % 100}`;
   return `${d.getDate()} ${THAI_MONTHS[d.getMonth()]}`;
 }
 
@@ -33,6 +46,8 @@ interface ProjectGanttProps {
 }
 
 export default function ProjectGantt({ tasks, employees }: ProjectGanttProps) {
+  const [zoom, setZoom] = useState<GanttZoom>('day');
+
   const employeeById = useMemo(() => {
     const map = new Map<string, Employee>();
     employees.forEach((e) => map.set(e.id, e));
@@ -78,26 +93,72 @@ export default function ProjectGantt({ tasks, employees }: ProjectGanttProps) {
     );
   }
 
-  const axisTicks = 5;
-  const ticks = Array.from({ length: axisTicks }, (_, i) => {
-    const t = i / (axisTicks - 1);
-    return new Date(range.min.getTime() + t * range.totalMs);
-  });
+  // "วัน": 5 evenly time-spaced points across the range. "เดือน"/"ปี": one tick per real calendar
+  // boundary within the range instead — a natural month/year grid reads better than 5 arbitrary
+  // fractional points once the range spans that long. Positions still use the same
+  // percentage-of-range math as the "วัน" ticks and the bars, just clamped to [0,100] since a
+  // month/year boundary can fall right at (or just outside) the range's own edges.
+  let ticks: Date[];
+  if (zoom === 'day') {
+    const axisTicks = 5;
+    ticks = Array.from({ length: axisTicks }, (_, i) => new Date(range.min.getTime() + (i / (axisTicks - 1)) * range.totalMs));
+  } else {
+    ticks = [];
+    const cursor = zoom === 'month'
+      ? new Date(range.min.getFullYear(), range.min.getMonth(), 1)
+      : new Date(range.min.getFullYear(), 0, 1);
+    while (cursor <= range.max) {
+      ticks.push(new Date(cursor));
+      if (zoom === 'month') cursor.setMonth(cursor.getMonth() + 1);
+      else cursor.setFullYear(cursor.getFullYear() + 1);
+    }
+    if (ticks.length === 0) ticks = [range.min];
+  }
 
   return (
     <div className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-3 border-b border-[#F4F4F4]">
+        <h4 className="font-bold text-[#272220] text-sm">Timeline</h4>
+        <div className="flex items-center gap-0.5 bg-[#F6F6F6] border border-slate-200 rounded-lg p-0.5">
+          {ZOOM_OPTIONS.map((z) => (
+            <button
+              key={z.value}
+              type="button"
+              onClick={() => setZoom(z.value)}
+              className={`px-2.5 h-7 rounded-md text-[11px] font-semibold cursor-pointer transition-colors ${
+                zoom === z.value ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'
+              }`}
+            >
+              {z.label}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="overflow-x-auto">
         <div className="min-w-175">
           <div className="flex border-b border-[#F4F4F4]">
             <div className="w-52.5 shrink-0 px-5 py-3 text-xs font-medium text-[#A0A0A0] border-r border-[#F4F4F4]">
               งาน / ผู้รับผิดชอบ
             </div>
-            <div className="flex-1 relative flex">
-              {ticks.map((d, idx) => (
-                <div key={idx} className="flex-1 text-center py-3 text-[11px] text-[#A0A0A0] border-r border-[#F9F9F9] last:border-r-0">
-                  {formatAxisLabel(d)}
-                </div>
-              ))}
+            {/* Each label sits at its own true leftPct — same coordinate system the bars below use
+                (percentage-of-date-range) — instead of being centered inside an equal-width flex
+                column, which put every label at (idx+0.5)/ticks worth of space regardless of the
+                date it actually represented, visibly misaligning them from the bars underneath. */}
+            <div className="flex-1 relative py-3">
+              {ticks.map((d, idx) => {
+                const rawPct = ((d.getTime() - range.min.getTime()) / range.totalMs) * 100;
+                const pct = Math.max(0, Math.min(100, rawPct));
+                const xShift = pct <= 0 ? '0%' : pct >= 100 ? '-100%' : '-50%';
+                return (
+                  <span
+                    key={idx}
+                    className="absolute top-1/2 text-[11px] text-[#A0A0A0] whitespace-nowrap"
+                    style={{ left: `${pct}%`, transform: `translate(${xShift}, -50%)` }}
+                  >
+                    {formatAxisLabel(d, zoom)}
+                  </span>
+                );
+              })}
             </div>
           </div>
 
@@ -137,14 +198,15 @@ export default function ProjectGantt({ tasks, employees }: ProjectGanttProps) {
                   </div>
 
                   <div className="flex-1 relative min-h-14">
-                    <div
-                      className="absolute top-1/2 -translate-y-1/2 h-6 rounded-md flex items-center px-2 overflow-hidden"
-                      style={{ left: `${leftPct}%`, width: `${widthPct}%`, backgroundColor: color }}
-                      title={`${t.title} · ${TASK_STATUS_LABEL[t.status]} · ${t.progress}%`}
-                    >
-                      <div className="absolute inset-y-0 left-0 bg-white/25" style={{ width: `${t.progress}%` }} />
-                      <span className="relative text-[10px] font-semibold text-white truncate">{t.progress}%</span>
-                    </div>
+                    <Tooltip content={`${t.title} · ${TASK_STATUS_LABEL[t.status]} · ${t.progress}%`}>
+                      <div
+                        className="absolute top-1/2 -translate-y-1/2 h-6 rounded-md flex items-center px-2 overflow-hidden"
+                        style={{ left: `${leftPct}%`, width: `${widthPct}%`, backgroundColor: color }}
+                      >
+                        <div className="absolute inset-y-0 left-0 bg-white/25" style={{ width: `${t.progress}%` }} />
+                        <span className="relative text-[10px] font-semibold text-white truncate">{t.progress}%</span>
+                      </div>
+                    </Tooltip>
                   </div>
                 </div>
               );

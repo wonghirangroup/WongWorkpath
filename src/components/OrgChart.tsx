@@ -6,6 +6,7 @@ import { Employee } from '../types';
 import { COMPANY_NAME, OrgDivisionData, resolveOrgPlacement } from '../data/orgStructure';
 import { getAvatarColor } from '../lib/avatarColor';
 import Dropdown from './Dropdown';
+import Tooltip from './Tooltip';
 
 function displayName(emp: Employee) {
   return emp.nickname || emp.name;
@@ -187,42 +188,48 @@ function DeleteButton({ onConfirm, warning }: { onConfirm: () => void; warning?:
   const [armed, setArmed] = useState(false);
   if (armed) {
     return (
-      <div className="absolute -top-2 -right-2 z-10 flex items-center gap-1 bg-white border border-rose-200 rounded-full shadow-md px-1.5 py-1" title={warning}>
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); onConfirm(); setArmed(false); }}
-          className="text-[9px] font-bold text-rose-600 hover:text-rose-800 cursor-pointer px-1"
-        >
-          ลบ?
-        </button>
-        <button type="button" onClick={(e) => { e.stopPropagation(); setArmed(false); }} className="text-slate-400 hover:text-slate-600 cursor-pointer">
-          <X size={11} />
-        </button>
-      </div>
+      <Tooltip content={warning}>
+        <div className="absolute -top-2 -right-2 z-10 flex items-center gap-1 bg-white border border-rose-200 rounded-full shadow-md px-1.5 py-1">
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onConfirm(); setArmed(false); }}
+            className="text-[9px] font-bold text-rose-600 hover:text-rose-800 cursor-pointer px-1"
+          >
+            ลบ?
+          </button>
+          <button type="button" onClick={(e) => { e.stopPropagation(); setArmed(false); }} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+            <X size={11} />
+          </button>
+        </div>
+      </Tooltip>
     );
   }
   return (
-    <button
-      type="button"
-      onClick={(e) => { e.stopPropagation(); setArmed(true); }}
-      className="absolute -top-2 -right-2 z-10 w-5 h-5 flex items-center justify-center rounded-full bg-white border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-200 shadow-sm cursor-pointer"
-      title="ลบ"
-    >
-      <Trash2 size={10} />
-    </button>
+    <Tooltip content="ลบ">
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setArmed(true); }}
+        className="absolute -top-2 -right-2 z-10 w-5 h-5 flex items-center justify-center rounded-full bg-white border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-200 shadow-sm cursor-pointer"
+        aria-label="ลบ"
+      >
+        <Trash2 size={10} />
+      </button>
+    </Tooltip>
   );
 }
 
 function EditButton({ onClick }: { onClick: () => void }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="absolute -top-2 -left-2 z-10 w-5 h-5 flex items-center justify-center rounded-full bg-white border border-slate-200 text-slate-400 hover:text-[#FF6537] hover:border-[#FF6537] shadow-sm cursor-pointer"
-      title="แก้ไขชื่อ"
-    >
-      <Pencil size={10} />
-    </button>
+    <Tooltip content="แก้ไขชื่อ">
+      <button
+        type="button"
+        onClick={onClick}
+        className="absolute -top-2 -left-2 z-10 w-5 h-5 flex items-center justify-center rounded-full bg-white border border-slate-200 text-slate-400 hover:text-[#FF6537] hover:border-[#FF6537] shadow-sm cursor-pointer"
+        aria-label="แก้ไขชื่อ"
+      >
+        <Pencil size={10} />
+      </button>
+    </Tooltip>
   );
 }
 
@@ -485,9 +492,11 @@ export default function OrgChart({
                         </>
                       )}
                       <div className="bg-white border-2 border-[#FF6537] rounded-2xl shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] px-6 py-4 flex flex-col items-center gap-1 min-w-40">
-                        <p className="font-bold text-[#272220] text-sm text-center whitespace-nowrap" title={col.division.name}>
-                          {col.division.name}
-                        </p>
+                        <Tooltip content={col.division.name}>
+                          <p className="font-bold text-[#272220] text-sm text-center whitespace-nowrap">
+                            {col.division.name}
+                          </p>
+                        </Tooltip>
                         <MemberList members={col.generalMembers} />
                       </div>
                     </div>
@@ -508,9 +517,11 @@ export default function OrgChart({
                               </>
                             )}
                             <div className="w-60 bg-white border border-slate-100 rounded-2xl shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] p-4 flex flex-col items-center gap-1">
-                              <p className="font-semibold text-[#272220] text-sm text-center truncate max-w-52" title={section}>
-                                {section}
-                              </p>
+                              <Tooltip content={section}>
+                                <p className="font-semibold text-[#272220] text-sm text-center truncate max-w-52">
+                                  {section}
+                                </p>
+                              </Tooltip>
                               <MemberList members={membersHere} />
                             </div>
                           </div>
@@ -548,15 +559,21 @@ export default function OrgChart({
         </div>
 
         <div className="absolute bottom-4 right-4 flex flex-col bg-white rounded-xl border border-slate-200 shadow-lg overflow-hidden">
-          <button type="button" onClick={() => handleZoomButton(1.2)} className="w-8 h-8 flex items-center justify-center text-slate-500 hover:bg-slate-50 cursor-pointer border-b border-slate-100" title="ซูมเข้า">
-            <ZoomIn size={14} />
-          </button>
-          <button type="button" onClick={() => handleZoomButton(1 / 1.2)} className="w-8 h-8 flex items-center justify-center text-slate-500 hover:bg-slate-50 cursor-pointer border-b border-slate-100" title="ซูมออก">
-            <ZoomOut size={14} />
-          </button>
-          <button type="button" onClick={resetView} className="w-8 h-8 flex items-center justify-center text-slate-500 hover:bg-slate-50 cursor-pointer" title="รีเซ็ตมุมมอง">
-            <Maximize2 size={13} />
-          </button>
+          <Tooltip content="ซูมเข้า">
+            <button type="button" onClick={() => handleZoomButton(1.2)} className="w-8 h-8 flex items-center justify-center text-slate-500 hover:bg-slate-50 cursor-pointer border-b border-slate-100" aria-label="ซูมเข้า">
+              <ZoomIn size={14} />
+            </button>
+          </Tooltip>
+          <Tooltip content="ซูมออก">
+            <button type="button" onClick={() => handleZoomButton(1 / 1.2)} className="w-8 h-8 flex items-center justify-center text-slate-500 hover:bg-slate-50 cursor-pointer border-b border-slate-100" aria-label="ซูมออก">
+              <ZoomOut size={14} />
+            </button>
+          </Tooltip>
+          <Tooltip content="รีเซ็ตมุมมอง">
+            <button type="button" onClick={resetView} className="w-8 h-8 flex items-center justify-center text-slate-500 hover:bg-slate-50 cursor-pointer" aria-label="รีเซ็ตมุมมอง">
+              <Maximize2 size={13} />
+            </button>
+          </Tooltip>
         </div>
       </div>
 

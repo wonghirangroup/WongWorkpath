@@ -1,6 +1,7 @@
 import { Employee } from '../../types';
 import { ProjectTaskItem } from '../projectBoard/types';
 import { getDepartmentTagClass } from '../../lib/departmentColors';
+import Tooltip from '../Tooltip';
 
 interface TeamActivityItemProps {
   employee: Employee;
@@ -37,13 +38,13 @@ export default function TeamActivityItem({ employee: emp, activeTasks }: TeamAct
         <div className="flex flex-wrap gap-1.5 mt-2.5">
           <span className="text-[10px] text-[#A0A0A0] self-center mr-1">งานปัจจุบัน:</span>
           {activeTasks.map(t => (
-            <span
-              key={t.id}
-              className="text-[10px] bg-white border border-slate-200 text-[#6F6F6F] px-2 py-0.5 rounded-md shadow-2xs truncate max-w-[150px]"
-              title={t.title}
-            >
-              {t.title}
-            </span>
+            <Tooltip key={t.id} content={t.title}>
+              <span
+                className="text-[10px] bg-white border border-slate-200 text-[#6F6F6F] px-2 py-0.5 rounded-md shadow-2xs truncate max-w-[150px]"
+              >
+                {t.title}
+              </span>
+            </Tooltip>
           ))}
         </div>
       )}

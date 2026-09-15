@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
-import { X, FileText, Download, User } from 'lucide-react';
+import { X, Download, ExternalLink, User } from 'lucide-react';
 import { Employee, LinkedDoc } from '../../types';
 import { ProjectTaskItem } from './types';
 import { displayName } from './CreateProjectModal';
 import { getAvatarColor } from '../../lib/avatarColor';
+import { getItemVisual } from '../DocVault';
 
 interface ReviewTaskModalProps {
   task: ProjectTaskItem | null;
@@ -132,18 +133,30 @@ export default function ReviewTaskModal({ task, employees, documents, onReview, 
                 <div>
                   <p className="text-[#A0A0A0] text-[11px] mb-1.5">ไฟล์แนบ ({submissionFiles.length})</p>
                   <div className="space-y-1.5">
-                    {submissionFiles.map((doc) => (
-                      <a
-                        key={doc.id}
-                        href={doc.fileDataUrl}
-                        download={doc.name}
-                        className="flex items-center gap-2 p-2 rounded-lg bg-slate-50 hover:bg-slate-100 text-xs transition-colors"
-                      >
-                        <FileText size={14} className="text-[#6F6F6F] shrink-0" />
-                        <span className="truncate flex-1 text-[#272220]">{doc.name}</span>
-                        <Download size={13} className="text-[#A0A0A0] shrink-0" />
-                      </a>
-                    ))}
+                    {submissionFiles.map((doc) => {
+                      const { Icon, color } = getItemVisual(doc);
+                      const isLink = doc.kind === 'link';
+                      return (
+                        <a
+                          key={doc.id}
+                          href={isLink ? doc.url : doc.fileDataUrl}
+                          download={isLink ? undefined : doc.name}
+                          target={isLink ? '_blank' : undefined}
+                          rel={isLink ? 'noopener noreferrer' : undefined}
+                          className="flex items-center gap-2.5 p-2.5 border border-slate-200 rounded-xl bg-white hover:bg-slate-50 transition-colors"
+                        >
+                          <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center shrink-0">
+                            <Icon size={16} className={color} />
+                          </div>
+                          <span className="truncate flex-1 text-xs font-medium text-[#272220]">{doc.name}</span>
+                          {isLink ? (
+                            <ExternalLink size={13} className="text-[#A0A0A0] shrink-0" />
+                          ) : (
+                            <Download size={13} className="text-[#A0A0A0] shrink-0" />
+                          )}
+                        </a>
+                      );
+                    })}
                   </div>
                 </div>
               )}

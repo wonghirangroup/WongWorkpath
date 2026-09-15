@@ -3,7 +3,7 @@
 // land 7 hours behind Thai wall-clock time. Every timestamp column the app writes is set
 // explicitly from this instead of relying on MySQL defaults, computed via Intl against the
 // Asia/Bangkok zone so it's correct regardless of the Node process's own host timezone too.
-export function nowBangkokDateTime(): string {
+export function bangkokDateTimeFrom(date: Date): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Bangkok',
     year: 'numeric',
@@ -13,9 +13,13 @@ export function nowBangkokDateTime(): string {
     minute: '2-digit',
     second: '2-digit',
     hour12: false,
-  }).formatToParts(new Date());
+  }).formatToParts(date);
   const get = (type: string) => parts.find((p) => p.type === type)!.value;
   return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`;
+}
+
+export function nowBangkokDateTime(): string {
+  return bangkokDateTimeFrom(new Date());
 }
 
 const THAI_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];

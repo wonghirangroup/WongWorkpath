@@ -139,8 +139,8 @@ export default function TaskDetailModal({ task, employees, onClose }: TaskDetail
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <PeopleRow label="ใครรับผิดชอบ" employees={assignees} />
-                <PersonRow label="ใครเป็นคนสร้าง" employee={creator} />
+                <PeopleRow label="ผู้รับผิดชอบ" employees={assignees} />
+                <PersonRow label="ผู้สร้าง" employee={creator} />
               </div>
 
               {reviewers.length > 0 && (

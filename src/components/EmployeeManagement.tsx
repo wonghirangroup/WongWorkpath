@@ -20,6 +20,7 @@ import {
   assignableAccountTypes,
   restrictableNavItemsFor,
 } from './EmployeeFormShared';
+import Tooltip from './Tooltip';
 
 const DEFAULT_PASSWORD = 'Wongwork2026!';
 
@@ -39,31 +40,37 @@ function getNextEmployeeId(employees: Employee[]): string {
 function EmployeeCardMenu({ onView, onEdit, onDelete, deleteDisabled, editDisabled }: { onView: () => void; onEdit: () => void; onDelete: () => void; deleteDisabled: boolean; editDisabled: boolean }) {
   return (
     <div className="flex items-center gap-0.5 shrink-0">
-      <button
-        onClick={onView}
-        title="ดูรายละเอียด"
-        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
-      >
-        <Eye size={15} />
-      </button>
-      <button
-        onClick={() => { if (!editDisabled) onEdit(); }}
-        disabled={editDisabled}
-        title={editDisabled ? 'Admin ไม่สามารถแก้ไขข้อมูลของ Admin คนอื่นได้' : 'แก้ไข'}
-        className={`p-1.5 rounded-lg ${
-          editDisabled ? 'text-slate-300 cursor-not-allowed' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer'
-        }`}
-      >
-        <Pencil size={15} />
-      </button>
-      {!deleteDisabled && (
+      <Tooltip content="ดูรายละเอียด">
         <button
-          onClick={onDelete}
-          title="ลบ"
-          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+          onClick={onView}
+          aria-label="ดูรายละเอียด"
+          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
         >
-          <Trash2 size={15} />
+          <Eye size={15} />
         </button>
+      </Tooltip>
+      <Tooltip content={editDisabled ? 'Admin ไม่สามารถแก้ไขข้อมูลของ Admin คนอื่นได้' : 'แก้ไข'}>
+        <button
+          onClick={() => { if (!editDisabled) onEdit(); }}
+          disabled={editDisabled}
+          aria-label={editDisabled ? 'Admin ไม่สามารถแก้ไขข้อมูลของ Admin คนอื่นได้' : 'แก้ไข'}
+          className={`p-1.5 rounded-lg ${
+            editDisabled ? 'text-slate-300 cursor-not-allowed' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer'
+          }`}
+        >
+          <Pencil size={15} />
+        </button>
+      </Tooltip>
+      {!deleteDisabled && (
+        <Tooltip content="ลบ">
+          <button
+            onClick={onDelete}
+            aria-label="ลบ"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+          >
+            <Trash2 size={15} />
+          </button>
+        </Tooltip>
       )}
     </div>
   );
@@ -295,36 +302,6 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
           the negative value here is exactly what cancels <main>'s own padding back out so this
           sits flush against the header with no gap for table rows to show through. */}
       <div className="sticky -top-4 sm:-top-6 lg:-top-8 z-30 bg-[#F6F6F6] pt-1 space-y-4">
-      <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-xl p-1 w-fit">
-        <button
-          type="button"
-          onClick={() => setActiveTab('employees')}
-          className={`flex items-center gap-1.5 px-3.5 h-8 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
-            activeTab === 'employees' ? 'bg-[#F4F4F5] text-[#272220]' : 'text-[#6F6F6F] hover:text-[#272220]'
-          }`}
-        >
-          <Briefcase size={13} /> รายชื่อพนักงาน
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('org')}
-          className={`flex items-center gap-1.5 px-3.5 h-8 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
-            activeTab === 'org' ? 'bg-[#F4F4F5] text-[#272220]' : 'text-[#6F6F6F] hover:text-[#272220]'
-          }`}
-        >
-          <Network size={13} /> โครงสร้างองค์กร
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('logs')}
-          className={`flex items-center gap-1.5 px-3.5 h-8 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
-            activeTab === 'logs' ? 'bg-[#F4F4F5] text-[#272220]' : 'text-[#6F6F6F] hover:text-[#272220]'
-          }`}
-        >
-          <ScrollText size={13} /> บันทึกกิจกรรม (Log)
-        </button>
-      </div>
-
       {activeTab === 'employees' ? (
       <div className="flex flex-col lg:flex-row gap-3 lg:items-center">
         <div className="relative w-full lg:w-137.5 lg:flex-none">
@@ -337,35 +314,41 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
             className="w-full h-10 pl-9 pr-9 bg-white border border-slate-200 rounded-xl text-[13px] font-normal focus:outline-none focus:border-[#FF6537]"
           />
           {searchTerm && (
-            <button
-              type="button"
-              onClick={() => setSearchTerm('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-              title="ล้างคำค้นหา"
-            >
-              <X size={15} />
-            </button>
+            <Tooltip content="ล้างคำค้นหา">
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                aria-label="ล้างคำค้นหา"
+              >
+                <X size={15} />
+              </button>
+            </Tooltip>
           )}
         </div>
 
         <div className="flex items-center gap-3 flex-1 min-w-0">
           <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-xl p-1 shrink-0">
-            <button
-              type="button"
-              onClick={() => setViewMode('grid')}
-              className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'grid' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
-              title="มุมมองการ์ด"
-            >
-              <LayoutGrid size={15} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('list')}
-              className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'list' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
-              title="มุมมองรายการ"
-            >
-              <List size={15} />
-            </button>
+            <Tooltip content="มุมมองการ์ด">
+              <button
+                type="button"
+                onClick={() => setViewMode('grid')}
+                className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'grid' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
+                aria-label="มุมมองการ์ด"
+              >
+                <LayoutGrid size={15} />
+              </button>
+            </Tooltip>
+            <Tooltip content="มุมมองรายการ">
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'list' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
+                aria-label="มุมมองรายการ"
+              >
+                <List size={15} />
+              </button>
+            </Tooltip>
           </div>
 
           <div className="w-36 h-10">
@@ -399,25 +382,29 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
               className="w-full h-10 pl-9 pr-9 bg-white border border-slate-200 rounded-xl text-[13px] font-normal focus:outline-none focus:border-[#FF6537]"
             />
             {logSearchTerm && (
-              <button
-                type="button"
-                onClick={() => setLogSearchTerm('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                title="ล้างคำค้นหา"
-              >
-                <X size={15} />
-              </button>
+              <Tooltip content="ล้างคำค้นหา">
+                <button
+                  type="button"
+                  onClick={() => setLogSearchTerm('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  aria-label="ล้างคำค้นหา"
+                >
+                  <X size={15} />
+                </button>
+              </Tooltip>
             )}
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <input
-              type="date"
-              value={logDateFilter}
-              onChange={(e) => setLogDateFilter(e.target.value)}
-              className="h-10 px-3 bg-white border border-slate-200 rounded-xl text-[13px] font-normal focus:outline-none focus:border-[#FF6537] cursor-pointer"
-              title="กรองตามวันที่"
-            />
+            <Tooltip content="กรองตามวันที่">
+              <input
+                type="date"
+                value={logDateFilter}
+                onChange={(e) => setLogDateFilter(e.target.value)}
+                className="h-10 px-3 bg-white border border-slate-200 rounded-xl text-[13px] font-normal focus:outline-none focus:border-[#FF6537] cursor-pointer"
+                aria-label="กรองตามวันที่"
+              />
+            </Tooltip>
             <div className="w-36 h-10">
               <Dropdown<string>
                 value={logDepartmentFilter}
@@ -450,6 +437,36 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
           </div>
         </div>
       ) : null}
+
+      <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-xl p-1 w-fit">
+        <button
+          type="button"
+          onClick={() => setActiveTab('employees')}
+          className={`flex items-center gap-1.5 px-3.5 h-8 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
+            activeTab === 'employees' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'
+          }`}
+        >
+          <Briefcase size={13} /> รายชื่อพนักงาน
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('org')}
+          className={`flex items-center gap-1.5 px-3.5 h-8 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
+            activeTab === 'org' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'
+          }`}
+        >
+          <Network size={13} /> โครงสร้างองค์กร
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('logs')}
+          className={`flex items-center gap-1.5 px-3.5 h-8 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
+            activeTab === 'logs' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'
+          }`}
+        >
+          <ScrollText size={13} /> บันทึกกิจกรรม (Log)
+        </button>
+      </div>
       </div>
 
       {activeTab === 'employees' ? (
@@ -835,14 +852,16 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                         className="flex-1 min-w-0 text-xs file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#FFF1EC] file:text-[#FF6537] file:font-bold file:cursor-pointer cursor-pointer"
                       />
                       {newAvatar.trim() && (
-                        <button
-                          type="button"
-                          onClick={() => setNewAvatar('')}
-                          className="text-slate-400 hover:text-slate-600 cursor-pointer shrink-0"
-                          title="ลบรูปโปรไฟล์"
-                        >
-                          <X size={16} />
-                        </button>
+                        <Tooltip content="ลบรูปโปรไฟล์">
+                          <button
+                            type="button"
+                            onClick={() => setNewAvatar('')}
+                            className="text-slate-400 hover:text-slate-600 cursor-pointer shrink-0"
+                            aria-label="ลบรูปโปรไฟล์"
+                          >
+                            <X size={16} />
+                          </button>
+                        </Tooltip>
                       )}
                     </div>
                     {newAvatarFileError && <p className="text-red-500 mt-1">{newAvatarFileError}</p>}

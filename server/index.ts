@@ -7,6 +7,8 @@ import { credentialsRouter } from './routes/credentials.ts';
 import { projectsRouter } from './routes/projects.ts';
 import { meetingsRouter } from './routes/meetings.ts';
 import { projectTasksRouter } from './routes/project-tasks.ts';
+import { projectCustomStatusesRouter } from './routes/project-custom-statuses.ts';
+import { notificationsRouter } from './routes/notifications.ts';
 import { assertDbConnection } from './db.ts';
 
 const app = express();
@@ -33,6 +35,8 @@ app.use('/api/credentials', credentialsRouter);
 app.use('/api/projects', projectsRouter);
 app.use('/api/meetings', meetingsRouter);
 app.use('/api/project-tasks', projectTasksRouter);
+app.use('/api/project-custom-statuses', projectCustomStatusesRouter);
+app.use('/api/notifications', notificationsRouter);
 
 app.listen(port, () => {
   console.log(`API server listening on http://localhost:${port}`);

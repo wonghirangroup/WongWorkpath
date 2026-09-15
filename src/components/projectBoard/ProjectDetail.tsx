@@ -1,13 +1,16 @@
-import { useMemo, useState } from 'react';
-import { Clock, ListChecks, Users2, Plus, Eye, CalendarClock, Pencil, Trash2, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Clock, ListChecks, Users2, Plus, Eye, CalendarClock, Pencil, Trash2, X, Maximize2, Minimize2, Ban } from 'lucide-react';
 import { Employee, Meeting } from '../../types';
-import { ProjectRow, ProjectTaskItem, ProjectTaskStatus } from './types';
-import { STATUS_DOT, TASK_STATUS_LABEL, TASK_STATUS_COLOR, PROJECT_PRIORITY_META } from './statusMeta';
+import { ProjectRow, ProjectTaskItem, ProjectTaskStatus, CustomProjectStatus } from './types';
+import { STATUS_DOT, STATUS_LABEL, STATUS_PILL, STATUS_ICON, TASK_STATUS_LABEL, TASK_STATUS_COLOR, PROJECT_PRIORITY_META } from './statusMeta';
 import { getAvatarColor } from '../../lib/avatarColor';
 import { displayName, PRIORITY_OPTIONS } from './CreateProjectModal';
 import Dropdown from '../Dropdown';
+import Tooltip from '../Tooltip';
 import AddTaskModal from './AddTaskModal';
 import EditProjectModal from './EditProjectModal';
+import ScheduleMeetingModal from './ScheduleMeetingModal';
+import CancelMeetingModal from './CancelMeetingModal';
 import ProjectGantt from './ProjectGantt';
 import TaskDetailModal from './TaskDetailModal';
 import { ForkRow } from '../OrgChart';
@@ -33,14 +36,16 @@ function InlineDeleteConfirm({ onConfirm, label }: { onConfirm: () => void; labe
     );
   }
   return (
-    <button
-      type="button"
-      onClick={(e) => { e.stopPropagation(); setArmed(true); }}
-      title={label}
-      className="text-[#A0A0A0] hover:text-red-600 cursor-pointer transition-colors"
-    >
-      <Trash2 size={14} />
-    </button>
+    <Tooltip content={label}>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setArmed(true); }}
+        aria-label={label}
+        className="text-[#A0A0A0] hover:text-red-600 cursor-pointer transition-colors"
+      >
+        <Trash2 size={14} />
+      </button>
+    </Tooltip>
   );
 }
 
@@ -90,18 +95,34 @@ interface ProjectDetailProps {
   onUpdateTask: (id: string, updates: Partial<ProjectTaskItem>) => Promise<void>;
   onDeleteTask: (id: string) => Promise<void>;
   onAddMeeting: (meeting: Omit<Meeting, 'id'>) => Promise<void>;
+  onUpdateMeeting: (id: string, updates: Partial<Meeting>, reason?: string) => Promise<void>;
   onCreateFolder: (name: string, parentId?: string | null, taskId?: string) => string;
   onUpdateProject: (updates: Partial<ProjectRow>) => Promise<void>;
   existingProjectTitles: string[];
+  customStatuses: CustomProjectStatus[];
 }
 
-export default function ProjectDetail({ row, tasks, meetings, employees, currentUserId, onAddTask, onUpdateTask, onDeleteTask, onAddMeeting, onCreateFolder, onUpdateProject, existingProjectTitles }: ProjectDetailProps) {
+export default function ProjectDetail({ row, tasks, meetings, employees, currentUserId, onAddTask, onUpdateTask, onDeleteTask, onAddMeeting, onUpdateMeeting, onCreateFolder, onUpdateProject, existingProjectTitles, customStatuses }: ProjectDetailProps) {
   const [tab, setTab] = useState<DetailTab>('overview');
   const [isAddTaskOpen, setIsAddTaskOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<ProjectTaskItem | null>(null);
   const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
   const [taskFilter, setTaskFilter] = useState<TaskFilter>('all');
   const [selectedTask, setSelectedTask] = useState<ProjectTaskItem | null>(null);
+  const [editingMeeting, setEditingMeeting] = useState<Meeting | null>(null);
+  const [cancellingMeeting, setCancellingMeeting] = useState<Meeting | null>(null);
+  // "ขยาย" maximizes just the workspace (tabs row + the active tab's content) into a full-viewport
+  // overlay, applying across all 5 tabs. Escape drops back, unless a modal on top is the one open.
+  const [isWorkspaceExpanded, setIsWorkspaceExpanded] = useState(false);
+  const isAnyModalOpen = isAddTaskOpen || isEditProjectOpen || Boolean(selectedTask || editingMeeting || cancellingMeeting);
+  useEffect(() => {
+    if (!isWorkspaceExpanded || isAnyModalOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsWorkspaceExpanded(false);
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isWorkspaceExpanded, isAnyModalOpen]);
 
   const openAddTask = () => { setEditingTask(null); setIsAddTaskOpen(true); };
   const openEditTask = (task: ProjectTaskItem) => { setEditingTask(task); setIsAddTaskOpen(true); };
@@ -177,27 +198,48 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
     : undefined;
   const childMembers = ownerMatch ? teamMembers.filter((t) => t.member.id !== ownerMatch.member.id) : teamMembers;
 
+  const StatusIcon = STATUS_ICON[row.status];
+
   return (
     <div className="space-y-5">
-      {/* Title/status/code used to repeat here — now shown once, up in the Header's breadcrumb
-          (see AppLayout.tsx's selectedProject branch), so this row is just the page action. */}
-      <div className="flex justify-end gap-2.5">
-        <button
-          type="button"
-          onClick={() => setIsEditProjectOpen(true)}
-          className="inline-flex items-center gap-1.5 bg-white hover:bg-slate-50 text-[#272220] text-sm font-bold px-4 h-10 rounded-xl border border-[#E5E5E5] cursor-pointer transition-colors shrink-0"
-        >
-          <Pencil size={15} />
-          แก้ไขโครงการ
-        </button>
-        <button
-          type="button"
-          onClick={openAddTask}
-          className="inline-flex items-center gap-1.5 bg-[#FF6537] hover:bg-[#e6572c] text-white text-sm font-bold px-4 h-10 rounded-xl cursor-pointer transition-colors shrink-0"
-        >
-          <Plus size={16} />
-          เพิ่มงาน/นัดประชุม
-        </button>
+      {/* Title/status/code — moved back down here from the Header's breadcrumb (see
+          AppLayout.tsx's selectedProject branch), which now just shows a generic back-arrow
+          title, so this page reads correctly with its own info block instead of relying on
+          chrome above it that scrolls out of view. */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="min-w-0 flex items-center gap-3 flex-wrap">
+          <h2 className="text-2xl font-bold text-[#272220] truncate">{row.title}</h2>
+          <span
+            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-sm font-medium whitespace-nowrap shrink-0"
+            style={{
+              backgroundColor: STATUS_PILL[row.status].bg,
+              color: STATUS_PILL[row.status].text,
+              borderColor: `${STATUS_PILL[row.status].text}33`,
+            }}
+          >
+            <StatusIcon size={14} strokeWidth={2} />
+            {STATUS_LABEL[row.status]}
+          </span>
+          <span className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-[#6F6F6F] whitespace-nowrap shrink-0">{row.code}</span>
+        </div>
+        <div className="flex gap-2.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => setIsEditProjectOpen(true)}
+            className="inline-flex items-center gap-1.5 bg-white hover:bg-slate-50 text-[#272220] text-sm font-bold px-4 h-10 rounded-xl border border-[#E5E5E5] cursor-pointer transition-colors shrink-0"
+          >
+            <Pencil size={15} />
+            แก้ไขโครงการ
+          </button>
+          <button
+            type="button"
+            onClick={openAddTask}
+            className="inline-flex items-center gap-1.5 bg-[#FF6537] hover:bg-[#e6572c] text-white text-sm font-bold px-4 h-10 rounded-xl cursor-pointer transition-colors shrink-0"
+          >
+            <Plus size={16} />
+            เพิ่มงาน/นัดประชุม
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] p-5 space-y-4">
@@ -257,29 +299,46 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
         </div>
       </div>
 
-      <div className="flex items-center justify-between gap-3 border-b border-slate-200">
-        <div className="flex items-center gap-6">
+      <div className={isWorkspaceExpanded ? 'fixed inset-0 mt-0! z-50 bg-[#F6F6F6] overflow-y-auto p-4 sm:p-6 space-y-4' : 'space-y-5'}>
+      {isWorkspaceExpanded && (
+        <div className="flex items-center gap-2.5 min-w-0">
+          <h2 className="text-lg font-bold text-[#272220] truncate">{row.title}</h2>
+          <span className="text-xs font-semibold text-[#6F6F6F] whitespace-nowrap shrink-0">{row.code}</span>
+        </div>
+      )}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="shrink-0 flex items-center gap-0.5 bg-white border border-slate-200 rounded-xl p-1 w-fit max-w-full overflow-x-auto scrollbar-none">
           {TABS.map((t) => (
             <button
               key={t.value}
               type="button"
               onClick={() => setTab(t.value)}
-              className={`relative pb-3 text-sm font-semibold cursor-pointer transition-colors ${
-                tab === t.value ? 'text-[#FF6537]' : 'text-[#6F6F6F] hover:text-[#272220]'
+              className={`px-3.5 h-8 rounded-lg text-xs font-semibold cursor-pointer transition-colors whitespace-nowrap ${
+                tab === t.value ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'
               }`}
             >
               {t.label}
-              {tab === t.value && <span className="absolute left-0 right-0 -bottom-px h-0.5 bg-[#FF6537] rounded-full" />}
             </button>
           ))}
         </div>
 
-        <div className="w-36 pb-2 shrink-0">
-          <Dropdown<TaskFilter>
-            value={taskFilter}
-            onChange={setTaskFilter}
-            options={TASK_FILTER_OPTIONS}
-          />
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="w-36 shrink-0">
+            <Dropdown<TaskFilter>
+              value={taskFilter}
+              onChange={setTaskFilter}
+              options={TASK_FILTER_OPTIONS}
+            />
+          </div>
+          <Tooltip content={isWorkspaceExpanded ? 'ย่อพื้นที่ทำงาน (Esc)' : 'ขยายพื้นที่ทำงาน'} placement="bottom">
+            <button
+              type="button"
+              onClick={() => setIsWorkspaceExpanded((prev) => !prev)}
+              className="w-10 h-10 flex items-center justify-center rounded-xl border border-slate-200 bg-white text-[#6F6F6F] hover:text-[#FF6537] hover:border-[#FF6537] cursor-pointer transition-colors shrink-0"
+            >
+              {isWorkspaceExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            </button>
+          </Tooltip>
         </div>
       </div>
 
@@ -318,7 +377,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                             <span className="truncate">{t.title}</span>
                           </span>
                         </td>
-                        <td className="px-5 py-3 text-[#6F6F6F] truncate" title={t.description}>{t.description || 'ยังไม่มี'}</td>
+                        <td className="px-5 py-3 text-[#6F6F6F] truncate"><Tooltip content={t.description}><span className="block truncate">{t.description || 'ยังไม่มี'}</span></Tooltip></td>
                         <td className="px-5 py-3 text-[#6F6F6F] whitespace-nowrap">{assigneeLabel}</td>
                         <td className="px-5 py-3 text-[#6F6F6F] whitespace-nowrap">{t.dueDate ?? 'ยังไม่มีกำหนด'}</td>
                         <td className="px-5 py-3 whitespace-nowrap">
@@ -331,22 +390,26 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                         </td>
                         <td className="px-5 py-3 whitespace-nowrap">
                           <div className="flex items-center gap-2.5">
-                            <button
-                              type="button"
-                              onClick={() => setSelectedTask(t)}
-                              title="ดูรายละเอียด"
-                              className="text-[#A0A0A0] hover:text-[#FF6537] cursor-pointer transition-colors"
-                            >
-                              <Eye size={14} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => openEditTask(t)}
-                              title="แก้ไข"
-                              className="text-[#A0A0A0] hover:text-[#FF6537] cursor-pointer transition-colors"
-                            >
-                              <Pencil size={13} />
-                            </button>
+                            <Tooltip content="ดูรายละเอียด">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedTask(t)}
+                                aria-label="ดูรายละเอียด"
+                                className="text-[#A0A0A0] hover:text-[#FF6537] cursor-pointer transition-colors"
+                              >
+                                <Eye size={14} />
+                              </button>
+                            </Tooltip>
+                            <Tooltip content="แก้ไข">
+                              <button
+                                type="button"
+                                onClick={() => openEditTask(t)}
+                                aria-label="แก้ไข"
+                                className="text-[#A0A0A0] hover:text-[#FF6537] cursor-pointer transition-colors"
+                              >
+                                <Pencil size={13} />
+                              </button>
+                            </Tooltip>
                             <InlineDeleteConfirm label="ลบ" onConfirm={() => onDeleteTask(t.id)} />
                           </div>
                         </td>
@@ -404,7 +467,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                         </td>
                         <td className="px-5 py-3 font-medium text-[#272220] max-w-70">
                           {t.title}
-                          {t.description && <p className="text-[11px] font-normal text-[#6F6F6F] mt-0.5 truncate" title={t.description}>{t.description}</p>}
+                          {t.description && <Tooltip content={t.description}><p className="text-[11px] font-normal text-[#6F6F6F] mt-0.5 truncate">{t.description}</p></Tooltip>}
                           {creator && <p className="text-[11px] font-normal text-[#A0A0A0] mt-0.5">สร้างโดย: {displayName(creator)}</p>}
                         </td>
                         <td className="px-5 py-3 text-[#6F6F6F] whitespace-nowrap">
@@ -437,14 +500,16 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                               <Eye size={14} />
                               ดูรายละเอียด
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => openEditTask(t)}
-                              title="แก้ไข"
-                              className="text-[#A0A0A0] hover:text-[#FF6537] cursor-pointer transition-colors"
-                            >
-                              <Pencil size={13} />
-                            </button>
+                            <Tooltip content="แก้ไข">
+                              <button
+                                type="button"
+                                onClick={() => openEditTask(t)}
+                                aria-label="แก้ไข"
+                                className="text-[#A0A0A0] hover:text-[#FF6537] cursor-pointer transition-colors"
+                              >
+                                <Pencil size={13} />
+                              </button>
+                            </Tooltip>
                             <InlineDeleteConfirm label="ลบ" onConfirm={() => onDeleteTask(t.id)} />
                           </div>
                         </td>
@@ -532,6 +597,13 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                       <div className="text-center">
                         <p className="font-semibold text-[#272220] text-sm truncate max-w-52">{member.nickname || member.name}</p>
                         <p className="text-xs text-[#A0A0A0]">{member.role}</p>
+                        {row.memberDuties?.[member.id] && (
+                          <Tooltip content={row.memberDuties[member.id]}>
+                            <p className="text-[11px] text-[#FF6537] mt-0.5 truncate max-w-52">
+                              {row.memberDuties[member.id]}
+                            </p>
+                          </Tooltip>
+                        )}
                       </div>
 
                       <div className="w-full pt-3 mt-1 border-t border-slate-50 space-y-2">
@@ -566,34 +638,76 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
               <table className="w-full text-sm border-collapse table-fixed">
                 <thead>
                   <tr className="bg-[#F9F9F9] text-[12px] font-semibold text-[#000000] border-b border-[#EDEEEF]">
-                    <th className="px-5 py-2 w-[26%]">ชื่อการประชุม</th>
-                    <th className="px-5 py-2 w-[24%]">รายละเอียด</th>
-                    <th className="px-5 py-2 w-[20%]">วัน-เวลา</th>
-                    <th className="px-5 py-2 w-[15%]">สถานที่</th>
-                    <th className="px-5 py-2 w-[15%]">ผู้เข้าร่วม</th>
+                    <th className="px-5 py-2 w-[22%]">ชื่อการประชุม</th>
+                    <th className="px-5 py-2 w-[18%]">รายละเอียด</th>
+                    <th className="px-5 py-2 w-[16%]">วัน-เวลา</th>
+                    <th className="px-5 py-2 w-[12%]">สถานที่</th>
+                    <th className="px-5 py-2 w-[12%]">ผู้เข้าร่วม</th>
+                    <th className="px-5 py-2 w-[10%]">สถานะ</th>
+                    <th className="px-5 py-2 w-[10%]">การกระทำ</th>
                   </tr>
                 </thead>
                 <tbody>
                   {projectMeetings.map((meeting) => {
                     const attendees = meeting.attendeeIds.map((id) => employeeById.get(id)).filter((e): e is Employee => Boolean(e));
+                    const isCancelled = meeting.status === 'cancelled';
                     return (
-                      <tr key={meeting.id} className="border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50 align-top">
+                      <tr key={meeting.id} className={`border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50 align-top ${isCancelled ? 'opacity-60' : ''}`}>
                         <td className="px-5 py-3 font-medium text-[#272220]">
                           <span className="flex items-center gap-2 min-w-0">
                             <Users2 size={14} className="text-[#A0A0A0] shrink-0" />
-                            <span className="truncate">{meeting.title}</span>
+                            <span className={`truncate ${isCancelled ? 'line-through' : ''}`}>{meeting.title}</span>
                           </span>
                         </td>
-                        <td className="px-5 py-3 text-[#6F6F6F] truncate" title={meeting.description}>{meeting.description || 'ยังไม่มี'}</td>
+                        <td className="px-5 py-3 text-[#6F6F6F] truncate"><Tooltip content={meeting.description}><span className="block truncate">{meeting.description || 'ยังไม่มี'}</span></Tooltip></td>
                         <td className="px-5 py-3 text-[#6F6F6F] whitespace-nowrap">
                           <span className="flex items-center gap-1.5">
                             <CalendarClock size={13} className="shrink-0" />
                             {meeting.date} {meeting.startTime}{meeting.endTime ? ` - ${meeting.endTime}` : ''}
                           </span>
                         </td>
-                        <td className="px-5 py-3 text-[#6F6F6F] truncate" title={meeting.location}>{meeting.location || 'ยังไม่มี'}</td>
-                        <td className="px-5 py-3 text-[#6F6F6F] truncate" title={attendees.map((e) => displayName(e)).join(', ')}>
+                        <td className="px-5 py-3 text-[#6F6F6F] truncate"><Tooltip content={meeting.location}><span className="block truncate">{meeting.location || 'ยังไม่มี'}</span></Tooltip></td>
+                        <td className="px-5 py-3 text-[#6F6F6F] truncate"><Tooltip content={attendees.map((e) => displayName(e)).join(', ')}><span className="block truncate">
                           {attendees.length > 0 ? attendees.map((e) => displayName(e)).join(', ') : 'ยังไม่มี'}
+                        </span></Tooltip></td>
+                        <td className="px-5 py-3 whitespace-nowrap">
+                          {isCancelled ? (
+                            <Tooltip content={meeting.cancellationReason ? `เหตุผล: ${meeting.cancellationReason}` : undefined}>
+                              <span
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 text-red-600 text-[11px] font-medium"
+                              >
+                                <Ban size={11} /> ยกเลิกแล้ว
+                              </span>
+                            </Tooltip>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-medium">
+                              นัดหมายแล้ว
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-5 py-3 whitespace-nowrap">
+                          {!isCancelled && (
+                            <div className="flex items-center gap-3">
+                              <Tooltip content="แก้ไขสถานที่/ลิงก์">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingMeeting(meeting)}
+                                  className="text-[#A0A0A0] hover:text-[#FF6537] cursor-pointer transition-colors"
+                                >
+                                  <Pencil size={14} />
+                                </button>
+                              </Tooltip>
+                              <Tooltip content="ยกเลิกประชุม">
+                                <button
+                                  type="button"
+                                  onClick={() => setCancellingMeeting(meeting)}
+                                  className="text-[#A0A0A0] hover:text-red-600 cursor-pointer transition-colors"
+                                >
+                                  <Ban size={14} />
+                                </button>
+                              </Tooltip>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     );
@@ -606,6 +720,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
       )}
 
       {tab === 'timeline' && <ProjectGantt tasks={filteredTasks} employees={employees} />}
+      </div>
 
       <AddTaskModal
         isOpen={isAddTaskOpen}
@@ -632,6 +747,24 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
         employees={employees}
         onSave={onUpdateProject}
         existingTitles={existingProjectTitles}
+        customStatuses={customStatuses}
+      />
+
+      <ScheduleMeetingModal
+        isOpen={Boolean(editingMeeting)}
+        onClose={() => setEditingMeeting(null)}
+        projects={[row]}
+        employees={employees}
+        currentUserId={currentUserId}
+        onAddMeeting={onAddMeeting}
+        meetingToEdit={editingMeeting}
+        onUpdateMeeting={onUpdateMeeting}
+      />
+
+      <CancelMeetingModal
+        meeting={cancellingMeeting}
+        onClose={() => setCancellingMeeting(null)}
+        onConfirm={onUpdateMeeting}
       />
     </div>
   );

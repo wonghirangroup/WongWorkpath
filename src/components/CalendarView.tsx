@@ -15,8 +15,9 @@ import {
 import Dropdown from './Dropdown';
 import ProjectsGanttChart from './projectBoard/ProjectsGanttChart';
 import ScheduleMeetingModal from './projectBoard/ScheduleMeetingModal';
-import { ProjectRow, ProjectTaskStatus } from './projectBoard/types';
-import { STATUS_DOT, STATUS_LABEL, STATUS_ICON } from './projectBoard/statusMeta';
+import { ProjectRow } from './projectBoard/types';
+import { STATUS_DOT, STATUS_LABEL, STATUS_ICON, TASK_STATUS_COLOR, TASK_STATUS_LABEL } from './projectBoard/statusMeta';
+import Tooltip from './Tooltip';
 
 interface CalendarViewProps {
   tasks: Task[];
@@ -41,18 +42,16 @@ interface CalendarTaskItem {
   dueDateISO: string;
   startDateISO: string | null;
   recurringPattern: 'None' | 'Weekly' | 'Monthly';
+  // Real project tasks carry colorHex (from the canonical TASK_STATUS_COLOR in statusMeta.ts, the
+  // same palette ProjectDetail/ProjectGantt/MyWorkspace already color this exact status with) and
+  // render via inline style, same technique as this file's own project-deadline chips below —
+  // colorClasses is only still used for the legacy Task type, whose own status scale
+  // ('Completed'/'In Progress'/'On Hold') has no equivalent in TASK_STATUS_COLOR.
   colorClasses: string;
+  colorHex?: string;
   projectLabel: string;
   projectId?: string;
 }
-
-const PROJECT_TASK_STATUS_CLASSES: Record<ProjectTaskStatus, string> = {
-  todo: 'bg-slate-100 text-slate-700 border-slate-200',
-  in_progress: 'bg-blue-50 text-blue-700 border-blue-200',
-  review: 'bg-amber-50 text-amber-700 border-amber-200',
-  blocked: 'bg-rose-50 text-rose-700 border-rose-200',
-  done: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-};
 
 type UpcomingItem =
   | { kind: 'task'; sortKey: string; task: CalendarTaskItem }
@@ -147,9 +146,12 @@ export default function CalendarView({
       });
     }
 
-    // Next month padding to fill grid (usually 42 cells for 6 rows)
-    const totalCells = cells.length;
-    const remainingCells = 42 - totalCells;
+    // Next month padding to fill out the grid to a whole number of rows — a month only needs 6
+    // rows (42 cells) when firstDayIndex + totalDaysInMonth actually spans that far (e.g. a
+    // 31-day month starting on a Saturday); most months fit in 5 rows (35 cells), and hardcoding
+    // 42 padded every month's last row with 100% next-month filler even when unneeded.
+    const totalRows = Math.ceil(cells.length / 7);
+    const remainingCells = totalRows * 7 - cells.length;
     for (let d = 1; d <= remainingCells; d++) {
       const date = new Date(currentYear, currentMonth + 1, d);
       cells.push({
@@ -159,7 +161,7 @@ export default function CalendarView({
       });
     }
 
-    return cells;
+    return { cells, totalRows };
   }, [currentYear, currentMonth]);
 
   const handlePrevMonth = () => {
@@ -218,7 +220,8 @@ export default function CalendarView({
         dueDateISO: t.dueDateISO as string,
         startDateISO: t.startDateISO ?? null,
         recurringPattern: 'None',
-        colorClasses: PROJECT_TASK_STATUS_CLASSES[t.status],
+        colorClasses: 'border',
+        colorHex: TASK_STATUS_COLOR[t.status],
         projectLabel: projectById.get(t.projectId)?.title ?? 'ไม่ทราบโครงการ',
         projectId: t.projectId,
       }));
@@ -505,17 +508,19 @@ export default function CalendarView({
           ))}
         </div>
 
-        {/* Calendar Month Cell Grid — always exactly 6 equal-height rows (42 cells) that share the
-            flex-1 space evenly, so the grid always exactly fills its container with no inner
-            scrollbar. minmax(0, 1fr), not minmax(70px, 1fr) — a fixed floor is what forced a
-            scrollbar whenever 6 × 70px didn't fit; a cramped row still reads fine since chip
-            overflow already collapses into "+N more" and the click-to-expand popover. */}
+        {/* Calendar Month Cell Grid — a real 5 or 6 equal-height rows (whatever the month actually
+            needs, see calendarGrid's totalRows) that share the flex-1 space evenly, so the grid
+            always exactly fills its container with no inner scrollbar. minmax(0, 1fr), not
+            minmax(70px, 1fr) — a fixed floor is what forced a scrollbar whenever N × 70px didn't
+            fit; a cramped row still reads fine since chip overflow already collapses into
+            "+N more" and the click-to-expand popover. Hardcoding 6 rows regardless of the actual
+            month used to pad most months' last row with 100% next-month filler. */}
         <div
           ref={gridRef}
           className="flex-1 min-h-0 mt-1.5 grid grid-cols-7 gap-1.5"
-          style={{ gridTemplateRows: 'repeat(6, minmax(0, 1fr))' }}
+          style={{ gridTemplateRows: `repeat(${calendarGrid.totalRows}, minmax(0, 1fr))` }}
         >
-          {calendarGrid.map((cell, index) => {
+          {calendarGrid.cells.map((cell, index) => {
             const hasTasks = filterType !== 'Meetings' ? getTasksOnDate(cell.date) : [];
             const hasMeetings = filterType !== 'Tasks' ? getMeetingsOnDate(cell.date) : [];
             // Only shown on "แสดงทุกอย่าง" — the dedicated "เฉพาะโครงการ" filter replaces the whole
@@ -526,11 +531,12 @@ export default function CalendarView({
             const isOpen = openDayKey === cell.key;
             // Opens beside the cell, not below it — below used to drop the popover on top of the
             // next row's cells. Defaults to the right/downward; flips near the grid's right edge
-            // or bottom rows so it never runs off the card.
+            // or bottom rows so it never runs off the card. The flip threshold keys off the grid's
+            // real row count (not a literal 4) so it still flips correctly on a 5-row month.
             const col = index % 7;
             const row = Math.floor(index / 7);
             const popoverHorizontal = col >= 5 ? 'right-full mr-1.5' : 'left-full ml-1.5';
-            const popoverVertical = row >= 4 ? 'bottom-0' : 'top-0';
+            const popoverVertical = row >= calendarGrid.totalRows - 2 ? 'bottom-0' : 'top-0';
 
             return (
               <div
@@ -564,45 +570,46 @@ export default function CalendarView({
                 {/* overflow-hidden, not overflow-y-auto — a scrollbar inside a cell this small
                     just looks broken; clipping cleanly and letting the "+N more"/click-to-expand
                     popover carry any overflow reads far more balanced. */}
-                <div className="mt-1.5 space-y-1 overflow-hidden flex-1 min-h-0">
+                <div className="mt-1.5 flex flex-col gap-1 overflow-hidden flex-1 min-h-0">
 
                   {/* Tasks deadlining/starting */}
                   {hasTasks.slice(0, 2).map(task => (
-                    <div
-                      key={task.id}
-                      className={`text-[9px] px-1.5 py-0.5 rounded-md border truncate font-medium ${task.colorClasses}`}
-                      title={`[${task.projectLabel}] ${task.title}`}
-                    >
-                      {task.recurringPattern !== 'None' && (
-                        <RefreshCw size={8} className="inline-block mr-0.5 -mt-0.5 text-[#FF6537]" />
-                      )}
-                      {task.title}
-                    </div>
+                    <Tooltip key={task.id} content={`[${task.projectLabel}] ${task.title}`}>
+                      <div
+                        className={`text-[9px] px-1.5 py-0.5 rounded-md border truncate font-medium ${task.colorClasses}`}
+                        style={task.colorHex ? { backgroundColor: `${task.colorHex}1A`, color: task.colorHex, borderColor: `${task.colorHex}33` } : undefined}
+                      >
+                        {task.recurringPattern !== 'None' && (
+                          <RefreshCw size={8} className="inline-block mr-0.5 -mt-0.5 text-[#FF6537]" />
+                        )}
+                        {task.title}
+                      </div>
+                    </Tooltip>
                   ))}
 
                   {/* Meetings scheduled */}
                   {hasMeetings.slice(0, 2).map(meeting => (
-                    <div
-                      key={meeting.id}
-                      className="text-[9px] px-1.5 py-0.5 rounded-md border bg-purple-50 text-purple-700 border-purple-200 truncate font-medium flex items-center gap-0.5"
-                      title={`${meeting.startTime} ${meeting.title}`}
-                    >
-                      <Users2 size={9} className="shrink-0" />
-                      {meeting.startTime} {meeting.title}
-                    </div>
+                    <Tooltip key={meeting.id} content={`${meeting.startTime} ${meeting.title}`}>
+                      <div
+                        className="text-[9px] px-1.5 py-0.5 rounded-md border bg-purple-50 text-purple-700 border-purple-200 truncate font-medium flex items-center gap-0.5"
+                      >
+                        <Users2 size={9} className="shrink-0" />
+                        {meeting.startTime} {meeting.title}
+                      </div>
+                    </Tooltip>
                   ))}
 
                   {/* Project deadlines */}
                   {hasProjectDeadlines.slice(0, 1).map(project => (
-                    <div
-                      key={project.id}
-                      className="text-[9px] px-1.5 py-0.5 rounded-md border truncate font-medium flex items-center gap-0.5"
-                      style={{ backgroundColor: `${STATUS_DOT[project.status]}1A`, color: STATUS_DOT[project.status], borderColor: `${STATUS_DOT[project.status]}33` }}
-                      title={`ครบกำหนดโครงการ: ${project.title}`}
-                    >
-                      <Briefcase size={9} className="shrink-0" />
-                      {project.title}
-                    </div>
+                    <Tooltip key={project.id} content={`ครบกำหนดโครงการ: ${project.title}`}>
+                      <div
+                        className="text-[9px] px-1.5 py-0.5 rounded-md border truncate font-medium flex items-center gap-0.5"
+                        style={{ backgroundColor: `${STATUS_DOT[project.status]}1A`, color: STATUS_DOT[project.status], borderColor: `${STATUS_DOT[project.status]}33` }}
+                      >
+                        <Briefcase size={9} className="shrink-0" />
+                        {project.title}
+                      </div>
+                    </Tooltip>
                   ))}
 
                   {/* Excess Tasks hidden indicator */}
@@ -740,27 +747,30 @@ export default function CalendarView({
           })}
         </div>
 
-        {/* Legend Information */}
+        {/* Legend Information — task-status swatches are inline-styled from TASK_STATUS_COLOR
+            (the canonical palette ProjectDetail/ProjectGantt/MyWorkspace already color these same
+            statuses with), replacing what used to be an independent, disconnected set of pastel
+            Tailwind colors that didn't match the actual task chips shown in the grid above. */}
         <div className="shrink-0 mt-4 pt-4 border-t border-slate-100 flex flex-wrap gap-4 text-xs text-[#6F6F6F]">
           <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded bg-slate-100 border border-slate-200 block"></span>
-            <span>ยังไม่เริ่ม</span>
+            <span className="w-2.5 h-2.5 rounded block" style={{ backgroundColor: `${TASK_STATUS_COLOR.todo}1A`, border: `1px solid ${TASK_STATUS_COLOR.todo}` }}></span>
+            <span>{TASK_STATUS_LABEL.todo}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded bg-blue-50 border border-blue-200 block"></span>
-            <span>งานกำลังดำเนินการ</span>
+            <span className="w-2.5 h-2.5 rounded block" style={{ backgroundColor: `${TASK_STATUS_COLOR.in_progress}1A`, border: `1px solid ${TASK_STATUS_COLOR.in_progress}` }}></span>
+            <span>{TASK_STATUS_LABEL.in_progress}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded bg-amber-50 border border-amber-200 block"></span>
-            <span>รอตรวจ</span>
+            <span className="w-2.5 h-2.5 rounded block" style={{ backgroundColor: `${TASK_STATUS_COLOR.review}1A`, border: `1px solid ${TASK_STATUS_COLOR.review}` }}></span>
+            <span>{TASK_STATUS_LABEL.review}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded bg-emerald-50 border border-emerald-200 block"></span>
-            <span>งานเสร็จสิ้นแล้ว</span>
+            <span className="w-2.5 h-2.5 rounded block" style={{ backgroundColor: `${TASK_STATUS_COLOR.done}1A`, border: `1px solid ${TASK_STATUS_COLOR.done}` }}></span>
+            <span>{TASK_STATUS_LABEL.done}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded bg-rose-50 border border-rose-200 block"></span>
-            <span>ติดปัญหา / พัก</span>
+            <span className="w-2.5 h-2.5 rounded block" style={{ backgroundColor: `${TASK_STATUS_COLOR.blocked}1A`, border: `1px solid ${TASK_STATUS_COLOR.blocked}` }}></span>
+            <span>{TASK_STATUS_LABEL.blocked}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded bg-purple-50 border border-purple-200 block"></span>

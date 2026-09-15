@@ -14,13 +14,20 @@ interface ScheduleMeetingModalProps {
   employees: Employee[];
   currentUserId: string;
   onAddMeeting: (meeting: Omit<Meeting, 'id'>) => Promise<void>;
+  // Edit mode — mirrors AddTaskModal's own create/edit duality via editingTask. Editing an
+  // existing meeting requires a reason (see reasonForChange below), same as cancelling one does;
+  // it's not persisted on the meeting row itself (only cancellationReason is), it's just logged
+  // via the normal audit trail so there's still a record of why a scheduled meeting changed.
+  meetingToEdit?: Meeting | null;
+  onUpdateMeeting?: (id: string, updates: Partial<Meeting>, reasonForChange: string) => Promise<void>;
 }
 
 // A standalone meeting scheduler for the Calendar page, where there's no project already open to
 // borrow context from (unlike AddTaskModal's "การประชุม" tab, always launched from inside a
 // specific project). โครงการ here is a real optional picker instead of an implicit prop — picking
 // one still clamps the date to that project's own range, same rule AddTaskModal enforces.
-export default function ScheduleMeetingModal({ isOpen, onClose, projects, employees, currentUserId, onAddMeeting }: ScheduleMeetingModalProps) {
+export default function ScheduleMeetingModal({ isOpen, onClose, projects, employees, currentUserId, onAddMeeting, meetingToEdit, onUpdateMeeting }: ScheduleMeetingModalProps) {
+  const isEditMode = Boolean(meetingToEdit);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [projectId, setProjectId] = useState('');
@@ -29,21 +36,34 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
   const [meetingEndTime, setMeetingEndTime] = useState('');
   const [attendeeIds, setAttendeeIds] = useState<string[]>([]);
   const [location, setLocation] = useState('');
+  const [reasonForChange, setReasonForChange] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
 
   useEffect(() => {
     if (!isOpen) return;
-    setTitle('');
-    setDescription('');
-    setProjectId('');
-    setMeetingDate('');
-    setMeetingStartTime('');
-    setMeetingEndTime('');
-    setAttendeeIds([]);
-    setLocation('');
+    if (meetingToEdit) {
+      setTitle(meetingToEdit.title);
+      setDescription(meetingToEdit.description ?? '');
+      setProjectId(meetingToEdit.projectId ?? '');
+      setMeetingDate(meetingToEdit.date);
+      setMeetingStartTime(meetingToEdit.startTime);
+      setMeetingEndTime(meetingToEdit.endTime ?? '');
+      setAttendeeIds(meetingToEdit.attendeeIds);
+      setLocation(meetingToEdit.location ?? '');
+    } else {
+      setTitle('');
+      setDescription('');
+      setProjectId('');
+      setMeetingDate('');
+      setMeetingStartTime('');
+      setMeetingEndTime('');
+      setAttendeeIds([]);
+      setLocation('');
+    }
+    setReasonForChange('');
     setFormError('');
-  }, [isOpen]);
+  }, [isOpen, meetingToEdit]);
 
   const selectedProject = useMemo(() => projects.find((p) => p.id === projectId), [projects, projectId]);
   const projectStartDate = selectedProject?.startDateISO ?? null;
@@ -66,7 +86,8 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
     ? `ต้องไม่หลัง ${formatThaiDateShort(projectEndDate)} (วันที่สิ้นสุดโครงการ)`
     : '';
 
-  const isFormValid = titleValid && meetingDate.trim() !== '' && meetingStartTime.trim() !== '' && meetingTimeOrderValid && meetingDateInRange;
+  const isFormValid = titleValid && meetingDate.trim() !== '' && meetingStartTime.trim() !== '' && meetingTimeOrderValid && meetingDateInRange
+    && (!isEditMode || reasonForChange.trim() !== '');
 
   const resetAndClose = () => {
     setFormError('');
@@ -79,7 +100,7 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
     setFormError('');
     setIsSubmitting(true);
     try {
-      await onAddMeeting({
+      const payload = {
         projectId: projectId || undefined,
         title: title.trim(),
         description: description.trim() || undefined,
@@ -88,11 +109,15 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
         endTime: meetingEndTime || undefined,
         attendeeIds,
         location: location.trim() || undefined,
-        createdBy: currentUserId,
-      });
+      };
+      if (isEditMode && meetingToEdit && onUpdateMeeting) {
+        await onUpdateMeeting(meetingToEdit.id, payload, reasonForChange.trim());
+      } else {
+        await onAddMeeting({ ...payload, createdBy: currentUserId, status: 'scheduled' });
+      }
       resetAndClose();
     } catch {
-      setFormError('นัดประชุมไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+      setFormError(isEditMode ? 'บันทึกการแก้ไขไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' : 'นัดประชุมไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
     } finally {
       setIsSubmitting(false);
     }
@@ -120,9 +145,9 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
             <div className="flex justify-between items-center px-5 pt-5 pb-2 shrink-0">
               <div>
                 <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                  <Users2 size={15} className="text-[#FF6537]" /> นัดประชุมใหม่
+                  <Users2 size={15} className="text-[#FF6537]" /> {isEditMode ? 'แก้ไขการประชุม' : 'นัดประชุมใหม่'}
                 </h3>
-                <p className="text-[11px] text-[#6F6F6F] mt-0.5">กรอกรายละเอียดการประชุม</p>
+                <p className="text-[11px] text-[#6F6F6F] mt-0.5">{isEditMode ? 'ปรับข้อมูลการประชุมแล้วระบุเหตุผลที่แก้ไข' : 'กรอกรายละเอียดการประชุม'}</p>
               </div>
               <button onClick={resetAndClose} className="text-slate-400 hover:text-slate-600 cursor-pointer" type="button">
                 <X size={18} />
@@ -234,6 +259,21 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
                   />
                 </div>
 
+                {isEditMode && (
+                  <div>
+                    <label className="block text-[#272220] font-bold text-[11px] mb-1">
+                      เหตุผลที่แก้ไข <span className="text-[#FF6537]">*</span>
+                    </label>
+                    <textarea
+                      rows={2}
+                      placeholder="เช่น เปลี่ยนสถานที่ประชุมตามคำขอของทีม..."
+                      value={reasonForChange}
+                      onChange={(e) => setReasonForChange(e.target.value)}
+                      className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                    />
+                  </div>
+                )}
+
                 {formError && (
                   <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{formError}</p>
                 )}
@@ -254,7 +294,7 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
                     isFormValid && !isSubmitting ? 'bg-[#FF6537] hover:bg-[#e6572c] cursor-pointer' : 'bg-[#F68C6C] cursor-not-allowed'
                   }`}
                 >
-                  {isSubmitting ? 'กำลังบันทึก...' : 'นัดประชุม'}
+                  {isSubmitting ? 'กำลังบันทึก...' : isEditMode ? 'บันทึกการแก้ไข' : 'นัดประชุม'}
                 </button>
               </div>
             </form>

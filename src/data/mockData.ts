@@ -1,4 +1,4 @@
-import { Employee, Task, LinkedDoc, CredentialItem, LeaveRequest, Notification } from '../types';
+import { Employee, Task, LinkedDoc, CredentialItem, Notification } from '../types';
 
 export const INITIAL_EMPLOYEES: Employee[] = [
   {
@@ -312,29 +312,6 @@ export const INITIAL_CREDENTIALS: CredentialItem[] = [
     notes: 'สำหรับเชื่อมต่อระบบออกสลิปเงินเดือนพนักงานปลายเดือน',
     createdAt: '2026-06-22 11:15',
     createdBy: 'อานนท์ เลิศวิทยา'
-  }
-];
-
-export const INITIAL_LEAVE_REQUESTS: LeaveRequest[] = [
-  {
-    id: 'LEAVE01',
-    employeeId: 'E02',
-    employeeName: 'ณิชา วงศ์สุวรรณ',
-    type: 'Vacation',
-    startDate: '2026-07-06',
-    endDate: '2026-07-08',
-    status: 'Approved',
-    notes: 'ลาพักร้อนท่องเที่ยวประจำปี'
-  },
-  {
-    id: 'LEAVE02',
-    employeeId: 'E03',
-    employeeName: 'วิชัย มีสุข',
-    type: 'Sick Leave',
-    startDate: '2026-07-03',
-    endDate: '2026-07-03',
-    status: 'Pending',
-    notes: 'ลากิจรักษาอาการปวดศีรษะและพบแพทย์'
   }
 ];
 

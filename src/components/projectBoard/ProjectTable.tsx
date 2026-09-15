@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { Eye, Trash2 } from 'lucide-react';
 import { Employee } from '../../types';
 import { ProjectRow, ProjectPriority } from './types';
@@ -5,11 +6,16 @@ import { STATUS_DOT, STATUS_LABEL, STATUS_PILL, STATUS_ICON, PROJECT_PRIORITY_ME
 import { getAvatarColor } from '../../lib/avatarColor';
 import { displayName } from './CreateProjectModal';
 import Dropdown from '../Dropdown';
+import Tooltip from '../Tooltip';
 
-const PRIORITY_DROPDOWN_OPTIONS: { value: ProjectPriority; label: string }[] = [
-  { value: 'High', label: PROJECT_PRIORITY_META.High.label },
-  { value: 'Medium', label: PROJECT_PRIORITY_META.Medium.label },
-  { value: 'Low', label: PROJECT_PRIORITY_META.Low.label },
+// Dropdown is generic over string values only, so the numeric 1-5 scale is represented as
+// strings here and converted back to a number right at the onUpdatePriority call site below.
+const PRIORITY_DROPDOWN_OPTIONS: { value: string; label: string }[] = [
+  { value: '1', label: PROJECT_PRIORITY_META[1].label },
+  { value: '2', label: PROJECT_PRIORITY_META[2].label },
+  { value: '3', label: PROJECT_PRIORITY_META[3].label },
+  { value: '4', label: PROJECT_PRIORITY_META[4].label },
+  { value: '5', label: PROJECT_PRIORITY_META[5].label },
 ];
 
 function formatBudget(budget: number | null): string {
@@ -36,8 +42,26 @@ interface ProjectTableProps {
 }
 
 export default function ProjectTable({ rows, employees, onViewDetail, canDelete, onDelete, onUpdatePriority }: ProjectTableProps) {
+  // Same live-measurement technique as EmployeeManagement's table wrapper — a hardcoded
+  // calc(100vh - Npx) guess drifts whenever the toolbar/status-cards above it change height, so
+  // this keeps the table's bottom edge matching the sidebar's real bottom edge instead of
+  // guessing at it (still relevant even at 4 rows/page — e.g. a short viewport or extra rows from
+  // widened priority/status pills wrapping onto two lines).
+  const [tableMaxHeight, setTableMaxHeight] = useState<number>();
+  const tableWrapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function updateTableMaxHeight() {
+      if (!tableWrapRef.current) return;
+      const top = tableWrapRef.current.getBoundingClientRect().top;
+      setTableMaxHeight(window.innerHeight - top - 18);
+    }
+    updateTableMaxHeight();
+    window.addEventListener('resize', updateTableMaxHeight);
+    return () => window.removeEventListener('resize', updateTableMaxHeight);
+  }, [rows.length]);
+
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] overflow-x-auto">
+    <div ref={tableWrapRef} style={{ maxHeight: tableMaxHeight }} className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] overflow-x-auto overflow-y-auto">
       <table className="w-full text-sm border-collapse min-w-340">
         <thead>
           <tr className="bg-[#F9F9F9] text-[12px] font-semibold text-[#000000] border-b border-[#EDEEEF] whitespace-nowrap">
@@ -71,18 +95,18 @@ export default function ProjectTable({ rows, employees, onViewDetail, canDelete,
                   {accentColor && <span className="block w-1.5 h-9 rounded-full" style={{ backgroundColor: accentColor }} />}
                 </td>
                 <td className="px-4 py-4 text-[#6F6F6F]">{index + 1}</td>
-                <td className="px-4 py-4 text-[#6F6F6F]">{row.code}</td>
+                <td className="px-4 py-4 text-[#6F6F6F] whitespace-nowrap">{row.code}</td>
                 <td className="px-4 py-4 font-medium text-[#272220]">{row.title}</td>
-                <td className="px-4 py-4 text-[#6F6F6F] max-w-55 truncate" title={row.description}>
+                <td className="px-4 py-4 text-[#6F6F6F] max-w-55 truncate"><Tooltip content={row.description}><span className="block truncate">
                   {row.description || 'ยังไม่มี'}
-                </td>
+                </span></Tooltip></td>
                 <td className="px-4 py-4 text-[#272220]">{formatBudget(row.budget)}</td>
                 <td className="px-4 py-4 whitespace-nowrap">
                   <div className="w-28">
                     <Dropdown
-                      value={row.priority ?? ('' as ProjectPriority)}
+                      value={row.priority !== undefined ? String(row.priority) : ''}
                       options={PRIORITY_DROPDOWN_OPTIONS}
-                      onChange={(value) => onUpdatePriority(row, value)}
+                      onChange={(value) => onUpdatePriority(row, Number(value) as ProjectPriority)}
                       placeholder="ยังไม่มี"
                     />
                   </div>
@@ -154,14 +178,15 @@ export default function ProjectTable({ rows, employees, onViewDetail, canDelete,
                       ดูรายละเอียด
                     </button>
                     {canDelete && (
-                      <button
-                        type="button"
-                        onClick={() => onDelete(row)}
-                        title="ลบโครงการ"
-                        className="text-[#A0A0A0] hover:text-red-600 active:text-red-700 cursor-pointer transition-colors"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      <Tooltip content="ลบโครงการ">
+                        <button
+                          type="button"
+                          onClick={() => onDelete(row)}
+                          className="text-[#A0A0A0] hover:text-red-600 active:text-red-700 cursor-pointer transition-colors"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </Tooltip>
                     )}
                   </div>
                 </td>

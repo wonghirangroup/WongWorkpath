@@ -4,6 +4,7 @@ import { ProjectRow } from './types';
 import { STATUS_DOT, STATUS_LABEL, STATUS_PILL, STATUS_ICON } from './statusMeta';
 import { getAvatarColor } from '../../lib/avatarColor';
 import { displayName } from './CreateProjectModal';
+import Tooltip from '../Tooltip';
 
 function formatBudget(budget: number | null): string {
   if (budget === null) return 'ยังไม่มี';
@@ -73,12 +74,13 @@ export default function ProjectCard({ row, employees, onViewDetail }: ProjectCar
   return (
     <div className="relative bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] p-5 space-y-3 hover:-translate-y-1 hover:shadow-lg transition-all">
       {showDueWarning && (
-        <div
-          className="absolute -top-2 -left-2 w-6 h-6 rounded-full bg-[#F50C0C] flex items-center justify-center shadow-md ring-2 ring-white z-10"
-          title={row.daysUntilDue! < 0 ? 'เลยกำหนดแล้ว' : `ใกล้ครบกำหนด (อีก ${row.daysUntilDue} วัน)`}
-        >
-          <Flag size={11} className="text-white fill-white" />
-        </div>
+        <Tooltip content={row.daysUntilDue! < 0 ? 'เลยกำหนดแล้ว' : `ใกล้ครบกำหนด (อีก ${row.daysUntilDue} วัน)`}>
+          <div
+            className="absolute -top-2 -left-2 w-6 h-6 rounded-full bg-[#F50C0C] flex items-center justify-center shadow-md ring-2 ring-white z-10"
+          >
+            <Flag size={11} className="text-white fill-white" />
+          </div>
+        </Tooltip>
       )}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
@@ -114,15 +116,18 @@ export default function ProjectCard({ row, employees, onViewDetail }: ProjectCar
       <div className="flex items-center justify-between pt-2 border-t border-slate-50">
         {owner && ownerName ? (
           owner.avatar ? (
-            <img src={owner.avatar} alt="" title={ownerName} className="w-8 h-8 rounded-full object-cover ring-2 ring-white shrink-0" />
+            <Tooltip content={ownerName}>
+              <img src={owner.avatar} alt="" className="w-8 h-8 rounded-full object-cover ring-2 ring-white shrink-0" />
+            </Tooltip>
           ) : (
-            <div
-              className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ring-2 ring-white shrink-0"
-              style={{ backgroundColor: getAvatarColor(ownerName) }}
-              title={ownerName}
-            >
-              {ownerName.trim().charAt(0).toUpperCase()}
-            </div>
+            <Tooltip content={ownerName}>
+              <div
+                className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ring-2 ring-white shrink-0"
+                style={{ backgroundColor: getAvatarColor(ownerName) }}
+              >
+                {ownerName.trim().charAt(0).toUpperCase()}
+              </div>
+            </Tooltip>
           )
         ) : (
           <span className="text-xs text-[#A0A0A0]">ยังไม่มีผู้รับผิดชอบ</span>

@@ -128,21 +128,10 @@ export interface AuditLog {
   details: string;
 }
 
-export interface LeaveRequest {
-  id: string;
-  employeeId: string;
-  employeeName: string;
-  type: 'Vacation' | 'Sick Leave' | 'Personal Leave' | 'Business Leave';
-  startDate: string;
-  endDate: string;
-  status: 'Pending' | 'Approved' | 'Rejected';
-  notes: string;
-}
-
 // A scheduled meeting — optionally tied to a project (from the "จัดการงานและโครงการ" module's
 // "เพิ่มงาน" modal's new "การประชุม" tab), but not required to be, so it can also work as a
 // standalone/company-wide meeting shown only on the calendar. Kept as a real AppDataContext/
-// localStorage-backed domain type (like LeaveRequest above) rather than local component state,
+// localStorage-backed domain type rather than local component state,
 // so a meeting created from a project's page and one shown on the Calendar page are the same
 // record — see CalendarView.tsx and projectBoard/ProjectDetail.tsx, both of which read this type.
 export interface Meeting {
@@ -156,6 +145,8 @@ export interface Meeting {
   attendeeIds: string[]; // Employee ids
   location?: string; // a physical place or an online meeting link — free text either way
   createdBy?: string; // Employee id
+  status: 'scheduled' | 'cancelled';
+  cancellationReason?: string; // required whenever status is 'cancelled' — see ScheduleMeetingModal's cancel flow
 }
 
 export interface Notification {
@@ -165,4 +156,10 @@ export interface Notification {
   timestamp: string;
   read: boolean;
   type: 'info' | 'success' | 'warning';
+  // Deep-link target for clicking the notification in Header's bell dropdown. Every current
+  // trigger (task assignment/review, meeting scheduled/cancelled) is always viewed by opening its
+  // parent project's detail page — there's no standalone task or meeting view — so linkId is
+  // always a project id and 'project' is the only linkType there is today.
+  linkType?: 'project';
+  linkId?: string;
 }

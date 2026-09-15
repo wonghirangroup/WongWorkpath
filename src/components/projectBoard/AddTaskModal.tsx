@@ -177,6 +177,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
           attendeeIds,
           location: location.trim() || undefined,
           createdBy: currentUserId,
+          status: 'scheduled',
         });
       } else {
         // Raw ISO dates, not Thai-formatted text — the server owns formatting (and daysUntilDue)
@@ -326,7 +327,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                 </div>
 
                 <div>
-                  <label className="block text-[#272220] font-bold text-[11px] mb-1">ใครเป็นคนสร้าง</label>
+                  <label className="block text-[#272220] font-bold text-[11px] mb-1">ผู้สร้าง</label>
                   <div className="flex items-center gap-2.5 p-2 text-sm border border-[#E5E5E5] rounded-lg bg-slate-50">
                     {creator?.avatar ? (
                       <img src={creator.avatar} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
@@ -345,7 +346,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                 {mode === 'task' ? (
                   <>
                     <div>
-                      <label className="block text-[#272220] font-bold text-[11px] mb-1">ใครรับผิดชอบ (เลือกได้มากกว่า 1)</label>
+                      <label className="block text-[#272220] font-bold text-[11px] mb-1">ผู้รับผิดชอบ (เลือกได้มากกว่า 1)</label>
                       <EmployeeMultiSelect
                         employees={employees}
                         valueIds={assigneeIds}

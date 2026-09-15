@@ -1,30 +1,30 @@
-import { ProjectStatus } from './types';
-import { STATUS_LABEL } from './statusMeta';
+import { CustomProjectStatus } from './types';
+import { STATUS_LABEL, PROJECT_STATUS_OPTIONS } from './statusMeta';
 
-export type ProjectFilter = 'all' | 'near_deadline' | ProjectStatus;
+// A plain string (not a closed union) since a project's status — and therefore a filter tab for
+// it — can be a user-created custom status id, not just one of the 7 built-ins.
+export type ProjectFilter = string;
 
-const TABS: { value: ProjectFilter; label: string }[] = [
+const BASE_TABS: { value: ProjectFilter; label: string }[] = [
   { value: 'all', label: 'ทั้งหมด' },
   { value: 'near_deadline', label: 'ใกล้ครบกำหนด' },
-  { value: 'in_progress', label: STATUS_LABEL.in_progress },
-  { value: 'draft', label: STATUS_LABEL.draft },
-  { value: 'on_hold', label: STATUS_LABEL.on_hold },
-  { value: 'completed', label: STATUS_LABEL.completed },
-  { value: 'cancelled', label: STATUS_LABEL.cancelled },
+  ...PROJECT_STATUS_OPTIONS.map((s) => ({ value: s as ProjectFilter, label: STATUS_LABEL[s] })),
 ];
 
 interface ProjectFilterTabsProps {
   active: ProjectFilter;
   onChange: (filter: ProjectFilter) => void;
   hasNearDeadline: boolean;
+  customStatuses: CustomProjectStatus[];
 }
 
 // Matches the segmented pill tab switcher used in EmployeeManagement.tsx
 // (bg-white border border-slate-200 rounded-xl p-1, active bg-[#F4F4F5] text-[#272220]).
-export default function ProjectFilterTabs({ active, onChange, hasNearDeadline }: ProjectFilterTabsProps) {
+export default function ProjectFilterTabs({ active, onChange, hasNearDeadline, customStatuses }: ProjectFilterTabsProps) {
+  const tabs = [...BASE_TABS, ...customStatuses.map((s) => ({ value: s.id, label: s.label }))];
   return (
     <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-xl p-1 w-fit max-w-full overflow-x-auto scrollbar-none">
-      {TABS.map((tab) => (
+      {tabs.map((tab) => (
         <button
           key={tab.value}
           type="button"

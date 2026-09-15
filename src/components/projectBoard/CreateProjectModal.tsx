@@ -3,10 +3,11 @@ import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { X, Check, Folder, Pencil, CalendarClock, Clock, ArrowRight } from 'lucide-react';
 import { Employee } from '../../types';
-import { ProjectPriority, ProjectStatus } from './types';
-import { STATUS_LABEL, STATUS_PILL } from './statusMeta';
+import { ProjectPriority, ProjectStatus, ProjectType, CustomProjectStatus } from './types';
+import { STATUS_LABEL, STATUS_PILL, PROJECT_TYPE_META, PROJECT_TYPE_OPTIONS } from './statusMeta';
 import { getAvatarColor } from '../../lib/avatarColor';
 import { ApiError, CreateProjectPayload } from '../../lib/api';
+import Tooltip from '../Tooltip';
 
 export function formatThaiDateShort(iso: string): string {
   if (!iso) return '';
@@ -15,21 +16,20 @@ export function formatThaiDateShort(iso: string): string {
   return `${String(d.getDate()).padStart(2, '0')} ${months[d.getMonth()]} ${d.getFullYear() + 543}`;
 }
 
-export const STATUS_OPTIONS: ProjectStatus[] = ['draft', 'in_progress', 'on_hold', 'completed', 'cancelled'];
+export const STATUS_OPTIONS: ProjectStatus[] = ['draft', 'pending_review', 'in_progress', 'on_hold', 'completed', 'cancelled', 'idea'];
 
-export type Priority = 'high' | 'medium' | 'low';
+// Numeric scale, 1 = most important — shared identically by a project's own priority and a
+// task's priority (ProjectPriority in types.ts), so no translation is needed at any boundary
+// (server, DB, or between this wizard and AddTaskModal/TaskDetailModal, which reuse this same
+// array for task priority).
+export type Priority = ProjectPriority;
 export const PRIORITY_OPTIONS: { value: Priority; label: string; activeClass: string }[] = [
-  { value: 'high', label: 'สูง', activeClass: 'bg-red-50 border-red-500 text-red-600' },
-  { value: 'medium', label: 'กลาง', activeClass: 'bg-[#FFF1EC] border-[#FF6537] text-[#FF6537]' },
-  { value: 'low', label: 'ต่ำ', activeClass: 'bg-slate-100 border-slate-400 text-slate-600' },
+  { value: 1, label: '1', activeClass: 'bg-red-50 border-red-500 text-red-600' },
+  { value: 2, label: '2', activeClass: 'bg-orange-50 border-orange-500 text-orange-600' },
+  { value: 3, label: '3', activeClass: 'bg-[#FFF1EC] border-[#FF6537] text-[#FF6537]' },
+  { value: 4, label: '4', activeClass: 'bg-blue-50 border-blue-400 text-blue-600' },
+  { value: 5, label: '5', activeClass: 'bg-slate-100 border-slate-400 text-slate-600' },
 ];
-
-// The wizard's own Priority scale is lowercase ('high'/'medium'/'low'), but ProjectRow.priority
-// (and the project API) use capitalized values shared with other parts of the app — map at the
-// submit boundary rather than changing this scale's casing everywhere it's already used (task
-// priority in AddTaskModal/TaskDetailModal shares this same lowercase scale).
-export const PRIORITY_TO_ROW: Record<Priority, ProjectPriority> = { high: 'High', medium: 'Medium', low: 'Low' };
-export const ROW_TO_PRIORITY: Record<ProjectPriority, Priority> = { High: 'high', Medium: 'medium', Low: 'low' };
 
 type Duration = 'short' | 'long' | 'special';
 const DURATION_OPTIONS: { value: Duration; label: string }[] = [
@@ -190,6 +190,7 @@ export function EmployeeMultiSelect({
                   onClick={() => {
                     onChange([...valueIds, emp.id]);
                     setQuery('');
+                    setIsOpen(false);
                   }}
                   className="w-full text-left px-3 py-2 hover:bg-[#FEFAF9] cursor-pointer"
                 >
@@ -203,21 +204,21 @@ export function EmployeeMultiSelect({
       {selectedEmployees.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mt-2">
           {selectedEmployees.map((emp) => (
-            <span
-              key={emp.id}
-              title={emp.role}
-              className="inline-flex items-center gap-1.5 bg-[#FFF1EC] text-[#FF6537] text-xs font-medium pl-1 pr-2.5 py-1 rounded-full"
-            >
-              <img src={emp.avatar} alt="" className="w-5 h-5 rounded-full object-cover" />
-              {displayName(emp)}
-              <button
-                type="button"
-                onClick={() => onChange(valueIds.filter((id) => id !== emp.id))}
-                className="hover:text-[#e6572c] cursor-pointer"
+            <Tooltip key={emp.id} content={emp.role}>
+              <span
+                className="inline-flex items-center gap-1.5 bg-[#FFF1EC] text-[#FF6537] text-xs font-medium pl-1 pr-2.5 py-1 rounded-full"
               >
-                <X size={11} />
-              </button>
-            </span>
+                <img src={emp.avatar} alt="" className="w-5 h-5 rounded-full object-cover" />
+                {displayName(emp)}
+                <button
+                  type="button"
+                  onClick={() => onChange(valueIds.filter((id) => id !== emp.id))}
+                  className="hover:text-[#e6572c] cursor-pointer"
+                >
+                  <X size={11} />
+                </button>
+              </span>
+            </Tooltip>
           ))}
         </div>
       )}
@@ -300,9 +301,13 @@ interface CreateProjectModalProps {
   onCreate: (payload: Omit<CreateProjectPayload, 'createdBy'>) => Promise<void>;
   onCreated: (title: string, folderCreated: boolean) => void;
   onCreateFolder: (name: string, parentId?: string | null, taskId?: string) => string;
-  nextCode: string;
+  // Best-effort preview only — the real code (and its sequence number) is always generated
+  // server-side at submit time; this just reflects it back live as the user picks a type/types
+  // in an abbreviation, since the exact code can't be known until then.
+  getNextCodePreview: (abbreviation: string, type: ProjectType | null) => string;
   employees: Employee[];
   existingTitles: string[];
+  customStatuses: CustomProjectStatus[];
 }
 
 // Same silent auto-rename convention as CredentialVault's getUniqueLabel — a collision never
@@ -317,6 +322,20 @@ export function getUniqueTitle(desiredTitle: string, existingTitles: string[]): 
   return `${trimmed}${suffix}`;
 }
 
+// "ตัวย่อชื่อโครงการ" suggestion — initials of the title's Latin words ("Grow store" → "GS"), or the
+// capitals of a single CamelCase word ("WongWorkpath" → "WW"), else that word's first 2 letters.
+// Thai has no word spacing or capital letters to key initials off, so a Thai-only title suggests
+// nothing and the user types the abbreviation in themselves.
+function deriveAbbreviation(title: string): string {
+  const words = title.split(/\s+/).map((w) => w.replace(/[^A-Za-z]/g, '')).filter(Boolean);
+  if (words.length === 0) return '';
+  if (words.length === 1) {
+    const capitals = words[0].replace(/[^A-Z]/g, '');
+    return (capitals.length >= 2 ? capitals : words[0].slice(0, 2)).slice(0, 4).toUpperCase();
+  }
+  return words.slice(0, 4).map((w) => w[0]).join('').toUpperCase();
+}
+
 // Persists a real project row via onCreate (see AppDataContext's handleAddProject / the
 // server/routes/projects.ts API) before firing onCreated for the success toast — if the API call
 // fails, the form stays open and shows the error instead of closing, same pattern as
@@ -324,17 +343,22 @@ export function getUniqueTitle(desiredTitle: string, existingTitles: string[]): 
 // in the step 3 summary) is sent through as memberEmployeeIds and shows up in the project detail
 // page's "ทีม" tab. The optional "create a folder" step writes to the shared document store via
 // onCreateFolder, and only runs after the project itself is confirmed created.
-export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreated, onCreateFolder, nextCode, employees, existingTitles }: CreateProjectModalProps) {
+export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreated, onCreateFolder, getNextCodePreview, employees, existingTitles, customStatuses }: CreateProjectModalProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [title, setTitle] = useState('');
   const [renameNotice, setRenameNotice] = useState('');
   const [description, setDescription] = useState('');
   const [duration, setDuration] = useState<Duration | null>(null);
+  const [type, setType] = useState<ProjectType | null>(null);
+  const [abbreviation, setAbbreviation] = useState('');
+  // Once the user types their own abbreviation, retyping the title stops overwriting it.
+  const [abbreviationTouched, setAbbreviationTouched] = useState(false);
   const [ownerId, setOwnerId] = useState('');
   const [priority, setPriority] = useState<Priority | null>(null);
-  const [status, setStatus] = useState<ProjectStatus>('draft');
+  const [status, setStatus] = useState<string>('draft');
   const [budget, setBudget] = useState('');
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
+  const [memberDuties, setMemberDuties] = useState<Record<string, string>>({});
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [createFolder, setCreateFolder] = useState(true);
@@ -364,11 +388,15 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
     setRenameNotice('');
     setDescription('');
     setDuration(null);
+    setType(null);
+    setAbbreviation('');
+    setAbbreviationTouched(false);
     setOwnerId('');
     setPriority(null);
     setStatus('draft');
     setBudget('');
     setAssigneeIds([]);
+    setMemberDuties({});
     setStartDate('');
     setEndDate('');
     setCreateFolder(true);
@@ -381,18 +409,6 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
   // Only meaningful once both dates are set — an open-ended start or end date has nothing to
   // compare against yet.
   const dateOrderValid = !(startDate && endDate && endDate < startDate);
-
-  const skipStep2 = () => {
-    setOwnerId('');
-    setPriority(null);
-    setBudget('');
-    setAssigneeIds([]);
-    setStartDate('');
-    setEndDate('');
-    setCreateFolder(false);
-    setFolderName('');
-    setStep(3);
-  };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -411,9 +427,14 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
       await onCreate({
         title: finalTitle,
         description: description.trim() || undefined,
-        priority: priority ? PRIORITY_TO_ROW[priority] : undefined,
+        type: type ?? undefined,
+        abbreviation: abbreviation.trim() || undefined,
+        priority: priority ?? undefined,
         ownerEmployeeId: ownerId || undefined,
         memberEmployeeIds: assigneeIds,
+        memberDuties: Object.fromEntries(
+          Object.entries(memberDuties).filter(([id, duty]) => assigneeIds.includes(id) && duty.trim() !== '')
+        ),
         docFolderId: newFolderId,
         status,
         budget: budget.trim() !== '' && !isNaN(Number(budget)) ? Number(budget) : undefined,
@@ -473,7 +494,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-bold text-slate-800">สร้างโครงการใหม่</h3>
-                  <span className="text-[10px] font-bold text-[#FF6537] bg-[#FFF1EC] px-2 py-0.5 rounded-full">{nextCode}</span>
+                  <span className="text-[10px] font-bold text-[#FF6537] bg-[#FFF1EC] px-2 py-0.5 rounded-full">{getNextCodePreview(abbreviation.trim().toUpperCase(), type)}</span>
                 </div>
                 <p className="text-[11px] text-[#6F6F6F] mt-0.5">
                   ตรวจสอบความถูกต้องของข้อมูลก่อนยืนยันการบันทึกเข้าสู่ระบบ
@@ -499,7 +520,10 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                         autoFocus
                         placeholder="เช่น Grow store"
                         value={title}
-                        onChange={(e) => setTitle(e.target.value)}
+                        onChange={(e) => {
+                          setTitle(e.target.value);
+                          if (!abbreviationTouched) setAbbreviation(deriveAbbreviation(e.target.value));
+                        }}
                         onBlur={() => {
                           const unique = getUniqueTitle(title, existingTitles);
                           if (unique && unique !== title.trim()) {
@@ -513,6 +537,51 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                       {renameNotice && (
                         <p className="text-xs font-semibold text-[#FF6537] mt-1.5">ℹ️ {renameNotice}</p>
                       )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[#272220] font-bold text-[11px] mb-1">ประเภทโครงการ</label>
+                        <select
+                          value={type ?? ''}
+                          onChange={(e) => setType((e.target.value || null) as ProjectType | null)}
+                          className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg bg-white focus:outline-none focus:border-[#FF6537]"
+                        >
+                          <option value="">ไม่ระบุ</option>
+                          {PROJECT_TYPE_OPTIONS.map((t) => (
+                            <option key={t} value={t}>{PROJECT_TYPE_META[t].label} ({t})</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[#272220] font-bold text-[11px] mb-1">ตัวย่อโครงการ</label>
+                        <input
+                          type="text"
+                          readOnly
+                          tabIndex={-1}
+                          value={type ?? ''}
+                          placeholder="เลือกประเภทก่อน"
+                          className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg bg-slate-50 text-[#6F6F6F] placeholder:text-[#B0B0B0] cursor-default focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex items-baseline justify-between mb-1">
+                        <label className="block text-[#272220] font-bold text-[11px]">ตัวย่อชื่อโครงการ</label>
+                        <span className="text-[10px] text-[#6F6F6F]">ตั้งจากชื่อให้อัตโนมัติ แก้ไขเองได้</span>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="เช่น GS"
+                        maxLength={10}
+                        value={abbreviation}
+                        onChange={(e) => {
+                          const next = e.target.value.toUpperCase();
+                          setAbbreviation(next);
+                          // Clearing it hands control back to the title-derived suggestion.
+                          setAbbreviationTouched(next.trim() !== '');
+                        }}
+                        className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                      />
                     </div>
                     <div>
                       <label className="block text-[#272220] font-bold text-[11px] mb-1">ระยะโครงการ</label>
@@ -559,7 +628,10 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                     </div>
 
                     <div>
-                      <label className="block text-[#272220] font-bold text-[11px] mb-1">ระดับความสำคัญ</label>
+                      <div className="flex items-baseline justify-between mb-1">
+                        <label className="block text-[#272220] font-bold text-[11px]">ระดับความสำคัญ</label>
+                        <span className="text-[10px] text-[#A0A0A0]">1 = สำคัญที่สุด, 5 = สำคัญน้อยที่สุด</span>
+                      </div>
                       <div className="flex gap-2">
                         {PRIORITY_OPTIONS.map((p) => (
                           <button
@@ -580,11 +652,14 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                       <label className="block text-[#272220] font-bold text-[11px] mb-1">สถานะ</label>
                       <select
                         value={status}
-                        onChange={(e) => setStatus(e.target.value as ProjectStatus)}
+                        onChange={(e) => setStatus(e.target.value)}
                         className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg bg-white focus:outline-none focus:border-[#FF6537]"
                       >
                         {STATUS_OPTIONS.map((s) => (
                           <option key={s} value={s}>{STATUS_LABEL[s]}</option>
+                        ))}
+                        {customStatuses.map((s) => (
+                          <option key={s.id} value={s.id}>{s.label}</option>
                         ))}
                       </select>
                     </div>
@@ -613,6 +688,26 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                         onChange={setAssigneeIds}
                         placeholder="ค้นหาแล้วเลือกเพิ่มได้หลายคน..."
                       />
+                      {assigneeEmps.length > 0 && (
+                        <div className="mt-2 space-y-1.5">
+                          {assigneeEmps.map((emp) => (
+                            <div key={emp.id} className="flex items-center gap-2">
+                              <Tooltip content={displayName(emp)}>
+                                <span className="text-[11px] text-[#6F6F6F] w-20 truncate shrink-0">
+                                  {displayName(emp)}
+                                </span>
+                              </Tooltip>
+                              <input
+                                type="text"
+                                placeholder="หน้าที่ในโครงการนี้..."
+                                value={memberDuties[emp.id] ?? ''}
+                                onChange={(e) => setMemberDuties((prev) => ({ ...prev, [emp.id]: e.target.value }))}
+                                className="flex-1 p-1.5 text-xs border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
@@ -675,6 +770,11 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                     <SummarySection title="ข้อมูลโครงการ" dotColor="#FF6537" onEdit={() => setStep(1)}>
                       <SummaryRow label="ชื่อโครงการ" value={title} />
                       <SummaryRow
+                        label="ประเภทโครงการ"
+                        value={type ? `${PROJECT_TYPE_META[type].label} (${type})` : 'ไม่ระบุ'}
+                      />
+                      <SummaryRow label="ตัวย่อชื่อโครงการ" value={abbreviation || 'ไม่ระบุ'} />
+                      <SummaryRow
                         label="ระยะโครงการ"
                         value={
                           duration ? (
@@ -689,7 +789,9 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                         label="รายละเอียด"
                         value={
                           description ? (
-                            <span className="line-clamp-2 break-all" title={description}>{description}</span>
+                            <Tooltip content={description}>
+                              <span className="line-clamp-2 break-all">{description}</span>
+                            </Tooltip>
                           ) : 'ไม่ระบุ'
                         }
                       />
@@ -748,22 +850,22 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                             <span className="flex items-center justify-end">
                               {assigneeEmps.slice(0, 3).map((emp, idx) => (
                                 emp.avatar ? (
-                                  <img
-                                    key={emp.id}
-                                    src={emp.avatar}
-                                    alt=""
-                                    title={displayName(emp)}
-                                    className={`w-6 h-6 rounded-full object-cover ring-2 ring-white ${idx > 0 ? '-ml-2' : ''}`}
-                                  />
+                                  <Tooltip key={emp.id} content={displayName(emp)}>
+                                    <img
+                                      src={emp.avatar}
+                                      alt=""
+                                      className={`w-6 h-6 rounded-full object-cover ring-2 ring-white ${idx > 0 ? '-ml-2' : ''}`}
+                                    />
+                                  </Tooltip>
                                 ) : (
-                                  <span
-                                    key={emp.id}
-                                    title={displayName(emp)}
-                                    className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-bold ring-2 ring-white ${idx > 0 ? '-ml-2' : ''}`}
-                                    style={{ backgroundColor: getAvatarColor(displayName(emp)) }}
-                                  >
-                                    {displayName(emp).trim().charAt(0).toUpperCase()}
-                                  </span>
+                                  <Tooltip key={emp.id} content={displayName(emp)}>
+                                    <span
+                                      className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-bold ring-2 ring-white ${idx > 0 ? '-ml-2' : ''}`}
+                                      style={{ backgroundColor: getAvatarColor(displayName(emp)) }}
+                                    >
+                                      {displayName(emp).trim().charAt(0).toUpperCase()}
+                                    </span>
+                                  </Tooltip>
                                 )
                               ))}
                               {assigneeEmps.length > 3 && (
@@ -826,25 +928,16 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                 )}
 
                 {step === 2 && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={skipStep2}
-                      className="px-4 h-10 text-sm font-semibold text-[#6F6F6F] hover:bg-slate-50 rounded-lg border border-[#E5E5E5] cursor-pointer"
-                    >
-                      ข้าม
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!dateOrderValid}
-                      onClick={() => setStep(3)}
-                      className={`flex-1 h-10 text-white font-bold text-sm rounded-lg transition-colors ${
-                        dateOrderValid ? 'bg-[#FF6537] hover:bg-[#e6572c] cursor-pointer' : 'bg-[#F68C6C] cursor-not-allowed'
-                      }`}
-                    >
-                      ถัดไป
-                    </button>
-                  </>
+                  <button
+                    type="button"
+                    disabled={!dateOrderValid}
+                    onClick={() => setStep(3)}
+                    className={`flex-1 h-10 text-white font-bold text-sm rounded-lg transition-colors ${
+                      dateOrderValid ? 'bg-[#FF6537] hover:bg-[#e6572c] cursor-pointer' : 'bg-[#F68C6C] cursor-not-allowed'
+                    }`}
+                  >
+                    ถัดไป
+                  </button>
                 )}
 
                 {step === 3 && (

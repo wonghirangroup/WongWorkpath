@@ -1,10 +1,9 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useRef, ReactNode } from 'react';
 import {
   Employee,
   Task,
   LinkedDoc,
   CredentialItem,
-  LeaveRequest,
   Meeting,
   Notification,
   AuditLog,
@@ -14,13 +13,12 @@ import { DEFAULT_ORG_DIVISIONS, OrgDivisionData } from '../data/orgStructure';
 import {
   INITIAL_EMPLOYEES,
   INITIAL_DOCS,
-  INITIAL_CREDENTIALS,
-  INITIAL_LEAVE_REQUESTS,
-  INITIAL_NOTIFICATIONS
+  INITIAL_CREDENTIALS
 } from '../data/mockData';
-import { fetchEmployees, createEmployee, updateEmployeeRemote, deleteEmployeeRemote, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote, fetchProjects, createProject, updateProjectRemote, deleteProjectRemote, CreateProjectPayload, fetchMeetings, createMeeting, updateMeetingRemote, deleteMeetingRemote, fetchProjectTasks, createProjectTask, updateProjectTaskRemote, deleteProjectTaskRemote } from '../lib/api';
+import { fetchEmployees, createEmployee, updateEmployeeRemote, deleteEmployeeRemote, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote, fetchProjects, createProject, updateProjectRemote, deleteProjectRemote, CreateProjectPayload, fetchMeetings, createMeeting, updateMeetingRemote, deleteMeetingRemote, fetchProjectTasks, createProjectTask, updateProjectTaskRemote, deleteProjectTaskRemote, fetchProjectCustomStatuses, createProjectCustomStatus, deleteProjectCustomStatusRemote, fetchNotifications, createNotification, markNotificationRead, markAllNotificationsRead, CreateNotificationPayload } from '../lib/api';
 import { nowTimestamp } from '../lib/datetime';
-import type { ProjectRow, ProjectTaskItem } from '../components/projectBoard/types';
+import type { ProjectRow, ProjectTaskItem, CustomProjectStatus } from '../components/projectBoard/types';
+import { registerCustomStatusLabels } from '../components/projectBoard/statusMeta';
 
 // One-time shape migration for documents saved to localStorage before the Drive redesign added
 // `kind`/`parentId` (folders + file uploads) in place of the old `type` enum — without this,
@@ -51,7 +49,6 @@ interface AppDataContextValue {
   tasks: Task[];
   documents: LinkedDoc[];
   credentials: CredentialItem[];
-  leaveRequests: LeaveRequest[];
   meetings: Meeting[];
   notifications: Notification[];
   auditLogs: AuditLog[];
@@ -73,6 +70,9 @@ interface AppDataContextValue {
   handleAddProject: (payload: CreateProjectPayload) => Promise<ProjectRow>;
   handleUpdateProject: (id: string, updates: Partial<ProjectRow>) => Promise<void>;
   handleDeleteProject: (id: string) => Promise<void>;
+  customProjectStatuses: CustomProjectStatus[];
+  handleAddCustomProjectStatus: (label: string) => Promise<CustomProjectStatus>;
+  handleDeleteCustomProjectStatus: (id: string) => Promise<void>;
   handleAddProjectTask: (task: Omit<ProjectTaskItem, 'id'>) => Promise<ProjectTaskItem>;
   handleUpdateProjectTask: (id: string, updates: Partial<ProjectTaskItem>) => Promise<void>;
   handleDeleteProjectTask: (id: string) => Promise<void>;
@@ -93,16 +93,19 @@ interface AppDataContextValue {
   // of the page's normal static subtitle, same pattern as docCurrentFolderId above.
   taskSelectedProjectId: string | null;
   setTaskSelectedProjectId: (id: string | null) => void;
-  handleAddLeaveRequest: (newLeave: Omit<LeaveRequest, 'id'>) => void;
-  handleApproveLeave: (leaveId: string, approved: boolean) => void;
   handleAddMeeting: (newMeeting: Omit<Meeting, 'id'>) => Promise<void>;
-  handleUpdateMeeting: (id: string, updates: Partial<Meeting>) => Promise<void>;
+  handleUpdateMeeting: (id: string, updates: Partial<Meeting>, reason?: string) => Promise<void>;
   handleDeleteMeeting: (id: string) => Promise<void>;
   handleAddCredential: (newItem: CredentialItem) => void;
   handleUpdateCredential: (id: string, updates: Partial<CredentialItem>) => void;
   handleDeleteCredential: (id: string) => void;
   handleLogAudit: (action: string, details: string) => void;
   handleMarkAllNotificationsRead: () => void;
+  handleMarkNotificationRead: (id: string) => void;
+  // Newest unread notification(s) that arrived mid-session, for the corner NotificationToast —
+  // null when nothing new is waiting to be announced.
+  notificationToast: { notification: Notification; moreCount: number } | null;
+  dismissNotificationToast: () => void;
 
   // Org chart structure (โครงสร้างองค์กร) — admin-editable from Employee Management's
   // โครงสร้างองค์กร tab. `orgSections` is every section flattened, in division order, for the
@@ -133,15 +136,19 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   // Persistence States
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [projects, setProjects] = useState<ProjectRow[]>([]);
+  const [customProjectStatuses, setCustomProjectStatuses] = useState<CustomProjectStatus[]>([]);
   const [projectTasks, setProjectTasks] = useState<ProjectTaskItem[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [documents, setDocuments] = useState<LinkedDoc[]>([]);
   const [docCurrentFolderId, setDocCurrentFolderId] = useState<string | null>(null);
   const [taskSelectedProjectId, setTaskSelectedProjectId] = useState<string | null>(null);
   const [credentials, setCredentials] = useState<CredentialItem[]>([]);
-  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notificationToast, setNotificationToast] = useState<{ notification: Notification; moreCount: number } | null>(null);
+  // Every notification id this session has already seen — null until the first fetch for the
+  // logged-in user lands, which only records the existing backlog instead of announcing it.
+  const seenNotificationIds = useRef<Set<string> | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [orgDivisions, setOrgDivisions] = useState<OrgDivisionData[]>(DEFAULT_ORG_DIVISIONS);
   const orgSections = useMemo(() => orgDivisions.flatMap((d) => d.sections), [orgDivisions]);
@@ -218,6 +225,28 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // Custom project statuses (see server/routes/project-custom-statuses.ts) — registered into
+  // statusMeta.ts's label lookup as soon as they arrive, so every existing STATUS_LABEL[status]
+  // call site across the app resolves a custom status's real label instead of its raw id, with
+  // zero changes needed at any of those call sites.
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchProjectCustomStatuses()
+      .then((statuses) => {
+        if (cancelled) return;
+        setCustomProjectStatuses(statuses);
+        registerCustomStatusLabels(statuses);
+      })
+      .catch((err) => {
+        console.warn('Could not load project custom statuses from the API:', err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Meetings live in the real `meeting` table (see server/routes/meetings.ts) — same no-
   // localStorage-layer treatment as projects. Old localStorage meetings from before this migration
   // are not carried over (they referenced the old mock project ids, which no longer exist anyway).
@@ -258,13 +287,110 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // Notifications: fetched for the logged-in user and re-polled every 45s. There's no WebSocket
+  // layer anywhere in this app, so a notification another user triggers (a task assigned to you,
+  // a review result) only lands on this screen at the next poll — an explicitly accepted
+  // trade-off rather than an oversight. Anything unread that turns up after this session's first
+  // fetch is also announced once as a corner toast; logging in never replays the backlog.
+  const announceNewNotifications = (incoming: Notification[]) => {
+    const seen = seenNotificationIds.current;
+    if (!seen) return;
+    const fresh = incoming.filter((n) => !n.read && !seen.has(n.id));
+    incoming.forEach((n) => seen.add(n.id));
+    if (fresh.length > 0) setNotificationToast({ notification: fresh[0], moreCount: fresh.length - 1 });
+  };
+
+  useEffect(() => {
+    seenNotificationIds.current = null;
+    setNotificationToast(null);
+    if (!currentUser) {
+      setNotifications([]);
+      return;
+    }
+    let cancelled = false;
+    const employeeId = currentUser.id;
+
+    const refresh = () => {
+      fetchNotifications(employeeId)
+        .then((list) => {
+          if (cancelled) return;
+          if (seenNotificationIds.current) announceNewNotifications(list);
+          else seenNotificationIds.current = new Set(list.map((n) => n.id));
+          setNotifications(list);
+        })
+        .catch((err) => console.warn('Could not load notifications from the API:', err));
+    };
+
+    refresh();
+    const interval = setInterval(refresh, 45000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [currentUser]);
+
+  // "Due soon / overdue / meeting coming up" aren't user actions anyone triggers, so unlike the
+  // rest they're derived by scanning the data already loaded on this client. Each gets a
+  // deterministic notification id so re-running this scan (on any data change, or in the next
+  // session) collides on the primary key server-side instead of notifying the same thing twice —
+  // see server/routes/notifications.ts. Only the logged-in user's own items are scanned: there's
+  // no server-side scheduler, so nobody else's client can be reached from here.
+  const scannedNotificationIds = useRef(new Set<string>());
+  useEffect(() => {
+    if (!currentUser) return;
+    const me = currentUser.id;
+
+    const attempt = (id: string, payload: Omit<CreateNotificationPayload, 'targetEmployeeId' | 'id'>) => {
+      if (scannedNotificationIds.current.has(id)) return;
+      scannedNotificationIds.current.add(id);
+      pushNotification({ ...payload, id, targetEmployeeId: me });
+    };
+
+    projectTasks
+      .filter((t) => t.status !== 'done' && t.assigneeEmployeeIds.includes(me) && t.daysUntilDue !== undefined)
+      .forEach((t) => {
+        const projectTitle = projects.find((p) => p.id === t.projectId)?.title ?? 'โครงการ';
+        if (t.daysUntilDue! < 0) {
+          attempt(`notif_overdue_${t.id}`, {
+            title: 'งานเลยกำหนดส่งแล้ว',
+            message: `งาน "${t.title}" ในโครงการ ${projectTitle} เลยกำหนดส่งแล้ว`,
+            type: 'warning',
+            linkType: 'project',
+            linkId: t.projectId,
+          });
+        } else if (t.daysUntilDue! <= 2) {
+          attempt(`notif_duesoon_${t.id}`, {
+            title: 'งานใกล้ครบกำหนด',
+            message: `งาน "${t.title}" ในโครงการ ${projectTitle} ครบกำหนดในอีก ${t.daysUntilDue} วัน`,
+            type: 'warning',
+            linkType: 'project',
+            linkId: t.projectId,
+          });
+        }
+      });
+
+    const todayISO = new Date().toISOString().slice(0, 10);
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowISO = tomorrow.toISOString().slice(0, 10);
+    meetings
+      .filter((m) => m.status !== 'cancelled' && m.attendeeIds.includes(me) && (m.date === todayISO || m.date === tomorrowISO))
+      .forEach((m) => {
+        attempt(`notif_meetingsoon_${m.id}`, {
+          title: 'ใกล้ถึงเวลานัดประชุม',
+          message: `"${m.title}" วันที่ ${m.date} เวลา ${m.startTime}`,
+          type: 'info',
+          linkType: m.projectId ? 'project' : undefined,
+          linkId: m.projectId,
+        });
+      });
+  }, [currentUser, projectTasks, meetings, projects]);
+
   // Initialize remaining domain data on mount (still localStorage/mock-only — no backend yet)
   useEffect(() => {
     const localTasks = localStorage.getItem('unityspace_tasks');
     const localDocs = localStorage.getItem('unityspace_docs');
     const localCredentials = localStorage.getItem('unityspace_credentials');
-    const localLeaves = localStorage.getItem('unityspace_leaves');
-    const localNotifications = localStorage.getItem('unityspace_notifications');
     const localLogs = localStorage.getItem('unityspace_audit_logs');
     const localOrgDivisions = localStorage.getItem('unityspace_org_divisions');
 
@@ -302,17 +428,13 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('unityspace_credentials', JSON.stringify(INITIAL_CREDENTIALS));
     }
 
-    if (localLeaves) setLeaveRequests(JSON.parse(localLeaves));
-    else {
-      setLeaveRequests(INITIAL_LEAVE_REQUESTS);
-      localStorage.setItem('unityspace_leaves', JSON.stringify(INITIAL_LEAVE_REQUESTS));
-    }
+    // The leave-request module was removed from the app entirely — drop its old mock data too.
+    localStorage.removeItem('unityspace_leaves');
 
-    if (localNotifications) setNotifications(JSON.parse(localNotifications));
-    else {
-      setNotifications(INITIAL_NOTIFICATIONS);
-      localStorage.setItem('unityspace_notifications', JSON.stringify(INITIAL_NOTIFICATIONS));
-    }
+    // Notifications are real, per-employee DB rows now (server/routes/notifications.ts) — fetched
+    // and polled in their own effect below, keyed to the logged-in user. Any leftover mock list
+    // from the old localStorage-only version is cleared so it can't linger in the bell dropdown.
+    localStorage.removeItem('unityspace_notifications');
 
     if (localLogs) setAuditLogs(JSON.parse(localLogs));
     else {
@@ -375,14 +497,19 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('unityspace_credentials', JSON.stringify(newCreds));
   };
 
-  const saveLeaves = (newLeaves: LeaveRequest[]) => {
-    setLeaveRequests(newLeaves);
-    localStorage.setItem('unityspace_leaves', JSON.stringify(newLeaves));
-  };
-
-  const saveNotifications = (newNotifs: Notification[]) => {
-    setNotifications(newNotifs);
-    localStorage.setItem('unityspace_notifications', JSON.stringify(newNotifs));
+  // Every notification is a real row owned by one target employee. Fire-and-forget: a failure to
+  // notify must never fail (or roll back) the action that triggered it — the task really was
+  // assigned, the meeting really was cancelled. The optimistic local prepend only applies when
+  // the target is the user looking at this screen; everyone else picks it up on their next poll.
+  const pushNotification = (payload: CreateNotificationPayload) => {
+    createNotification(payload)
+      .then((created) => {
+        if (payload.targetEmployeeId === currentUser?.id) {
+          announceNewNotifications([created]);
+          setNotifications((prev) => (prev.some((n) => n.id === created.id) ? prev : [created, ...prev]));
+        }
+      })
+      .catch((err) => console.warn('Could not create notification:', err));
   };
 
   const handleLogAudit = (action: string, details: string, actor: Employee | null = currentUser) => {
@@ -466,17 +593,91 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     if (target) handleLogAudit('DELETE_PROJECT', `ลบโครงการ: "${target.title}" (${target.code}) ออกจากระบบถาวร`);
   };
 
+  // Custom project statuses (StatusSummaryCards.tsx's widget settings) — registerCustomStatusLabels
+  // is called again with the merged list right away so the new status's label is resolvable by
+  // statusMeta.ts's STATUS_LABEL immediately, not just after the next full page load.
+  const handleAddCustomProjectStatus = async (label: string) => {
+    const created = await createProjectCustomStatus(label, currentUser?.id);
+    setCustomProjectStatuses((prev) => {
+      const next = [...prev, created];
+      registerCustomStatusLabels(next);
+      return next;
+    });
+    return created;
+  };
+
+  const handleDeleteCustomProjectStatus = async (id: string) => {
+    await deleteProjectCustomStatusRemote(id);
+    setCustomProjectStatuses((prev) => {
+      const next = prev.filter((s) => s.id !== id);
+      registerCustomStatusLabels(next);
+      return next;
+    });
+  };
+
   const handleAddProjectTask = async (task: Omit<ProjectTaskItem, 'id'>) => {
     const created = await createProjectTask(task);
     setProjectTasks((prev) => [created, ...prev]);
+
+    // Notify each assignee — except whoever created it, who doesn't need telling about their own
+    // action. Random-suffixed (not deterministic) id: reassigning a task later should genuinely
+    // produce a second notification, not silently collide with the first one.
+    const projectTitle = projects.find((p) => p.id === created.projectId)?.title ?? 'โครงการ';
+    created.assigneeEmployeeIds
+      .filter((assigneeId) => assigneeId !== currentUser?.id)
+      .forEach((assigneeId) => {
+        pushNotification({
+          targetEmployeeId: assigneeId,
+          title: 'ได้รับมอบหมายงานใหม่',
+          message: `คุณได้รับมอบหมายงาน "${created.title}" ในโครงการ ${projectTitle}`,
+          type: 'info',
+          linkType: 'project',
+          linkId: created.projectId,
+        });
+      });
+
     return created;
   };
 
   // Same awaited-replace pattern as handleUpdateProject — an edit may submit raw ISO dates, which
   // must never leak into the Thai-formatted startDate/dueDate display fields.
   const handleUpdateProjectTask = async (id: string, updates: Partial<ProjectTaskItem>) => {
+    const before = projectTasks.find((t) => t.id === id);
     const updated = await updateProjectTaskRemote(id, updates);
     setProjectTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
+
+    const projectTitle = projects.find((p) => p.id === updated.projectId)?.title ?? 'โครงการ';
+    const notifyEach = (ids: string[] | undefined, payload: Omit<CreateNotificationPayload, 'targetEmployeeId'>) => {
+      (ids ?? [])
+        .filter((empId) => empId !== currentUser?.id)
+        .forEach((empId) => pushNotification({ ...payload, targetEmployeeId: empId }));
+    };
+
+    // Submitted for review — the reviewers are the ones who need to act next.
+    if (updates.status === 'review' && before?.status !== 'review') {
+      notifyEach(updated.reviewerEmployeeIds, {
+        title: 'มีงานรอตรวจ',
+        message: `งาน "${updated.title}" ในโครงการ ${projectTitle} ถูกส่งมาให้ตรวจแล้ว`,
+        type: 'warning',
+        linkType: 'project',
+        linkId: updated.projectId,
+      });
+    }
+
+    // Review result — only when the task was actually sitting in review beforehand, so an
+    // ordinary status edit (e.g. todo -> in_progress) never reads as "your work was reviewed".
+    if (before?.status === 'review' && (updates.status === 'done' || updates.status === 'in_progress')) {
+      const passed = updates.status === 'done';
+      notifyEach(updated.assigneeEmployeeIds, {
+        title: passed ? 'งานของคุณผ่านการตรวจแล้ว' : 'งานของคุณถูกตีกลับ',
+        message: passed
+          ? `งาน "${updated.title}" ในโครงการ ${projectTitle} ผ่านการตรวจเรียบร้อย`
+          : `งาน "${updated.title}" ถูกตีกลับ: ${updates.reviewNote || 'ไม่ได้ระบุเหตุผล'}`,
+        type: passed ? 'success' : 'warning',
+        linkType: 'project',
+        linkId: updated.projectId,
+      });
+    }
   };
 
   const handleDeleteProjectTask = async (id: string) => {
@@ -589,15 +790,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     // Create system notification for target receiver
     const receiver = employees.find(e => e.id === toUserId);
     const sender = employees.find(e => e.id === fromUserId);
-    const newNotif: Notification = {
-      id: 'NOTIF_HO_' + Date.now(),
-      title: 'ต้องการอนุมัติส่งมอบงาน 👉',
+    pushNotification({
+      targetEmployeeId: toUserId,
+      title: 'ต้องการอนุมัติส่งมอบงาน',
       message: `${sender?.name} ได้ทำการส่งมอบสเตจงานเพื่อให้คุณดูแลต่อเพื่อยืนยันโปรโตคอล`,
-      timestamp: nowTimestamp(),
-      read: false,
-      type: 'warning'
-    };
-    saveNotifications([newNotif, ...notifications]);
+      type: 'warning',
+    });
 
     handleLogAudit('INITIATE_HANDOVER', `เริ่มขั้นตอนส่งมอบงานย่อยจาก ${sender?.name} ไปยัง ${receiver?.name}`);
   };
@@ -643,25 +841,31 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
     // Create response notification for sender
     const sender = employees.find(e => e.id === activeH?.fromUserId);
-    const newNotif: Notification = {
-      id: 'NOTIF_HO_RESP_' + Date.now(),
-      title: approved ? 'ส่งต่อสเตจงานอนุมัติแล้ว! ✅' : 'คำขอส่งต่องานถูกปฏิเสธ ❌',
-      message: approved
-        ? `ยินดีด้วย! การส่งมอบสเตจของคุณให้กับฝ่ายรับมอบช่วงผ่านการตรวจทานแล้ว`
-        : `ข้อเสนอส่งมอบสเตจงานของคุณได้รับการตีกลับ: "${notes}"`,
-      timestamp: nowTimestamp(),
-      read: false,
-      type: approved ? 'success' : 'warning'
-    };
-    saveNotifications([newNotif, ...notifications]);
+    if (activeH?.fromUserId) {
+      pushNotification({
+        targetEmployeeId: activeH.fromUserId,
+        title: approved ? 'ส่งต่อสเตจงานอนุมัติแล้ว' : 'คำขอส่งต่องานถูกปฏิเสธ',
+        message: approved
+          ? 'ยินดีด้วย! การส่งมอบสเตจของคุณให้กับฝ่ายรับมอบช่วงผ่านการตรวจทานแล้ว'
+          : `ข้อเสนอส่งมอบสเตจงานของคุณได้รับการตีกลับ: "${notes}"`,
+        type: approved ? 'success' : 'warning',
+      });
+    }
 
     handleLogAudit('RESOLVE_HANDOVER', `${approved ? 'อนุมัติ' : 'ปฏิเสธ'} สเตจส่งมอบงานของ ${sender?.name}: "${notes}"`);
   };
 
   // 3. Document Operations
+  // Functional update (not `[newDoc, ...documents]` off the closed-over `documents` variable) —
+  // callers like SubmitTaskModal call this once per attachment in a loop (a file, then a link),
+  // and building off the stale closure meant every call but the last silently overwrote the ones
+  // before it, since none of them saw each other's additions within the same render cycle.
   const handleAddDocument = (newDoc: LinkedDoc) => {
-    const updated = [newDoc, ...documents];
-    saveDocs(updated);
+    setDocuments((prev) => {
+      const updated = [newDoc, ...prev];
+      localStorage.setItem('unityspace_docs', JSON.stringify(updated));
+      return updated;
+    });
     const actionLabel = newDoc.kind === 'folder' ? 'สร้างโฟลเดอร์' : newDoc.kind === 'file' ? 'อัปโหลดไฟล์' : 'แนบลิงก์เอกสาร';
     handleLogAudit('ADD_DOCUMENT', `${actionLabel}ใน Drive: "${newDoc.name}"`);
   };
@@ -715,61 +919,56 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // 4. Leave Operations
-  const handleAddLeaveRequest = (newLeave: Omit<LeaveRequest, 'id'>) => {
-    const request: LeaveRequest = {
-      ...newLeave,
-      id: 'LEAVE_' + Date.now()
-    };
-    const updated = [request, ...leaveRequests];
-    saveLeaves(updated);
-    handleLogAudit('APPLY_LEAVE', `พนักงาน ${newLeave.employeeName} ยื่นคำขอลาพักผ่อนแบบ ${newLeave.type}`);
-  };
-
   const handleAddMeeting = async (newMeeting: Omit<Meeting, 'id'>) => {
     const created = await createMeeting(newMeeting);
     setMeetings((prev) => [created, ...prev]);
     handleLogAudit('CREATE_MEETING', `นัดประชุม "${created.title}" วันที่ ${created.date} เวลา ${created.startTime}`);
+
+    created.attendeeIds
+      .filter((attendeeId) => attendeeId !== currentUser?.id)
+      .forEach((attendeeId) => {
+        pushNotification({
+          targetEmployeeId: attendeeId,
+          title: 'มีนัดประชุมใหม่',
+          message: `"${created.title}" วันที่ ${created.date} เวลา ${created.startTime}`,
+          type: 'info',
+          linkType: created.projectId ? 'project' : undefined,
+          linkId: created.projectId,
+        });
+      });
   };
 
-  const handleUpdateMeeting = async (id: string, updates: Partial<Meeting>) => {
+  // `reason` covers both edit ("แก้ไขสถานที่/ลิงก์") and cancel — cancel's own reason already
+  // lands in updates.cancellationReason on the row itself, but logging it here too means both
+  // kinds of change show up the same way in the audit trail (บันทึกกิจกรรม), not just cancels.
+  const handleUpdateMeeting = async (id: string, updates: Partial<Meeting>, reason?: string) => {
     const updated = await updateMeetingRemote(id, updates);
     setMeetings((prev) => prev.map((m) => (m.id === id ? updated : m)));
+    if (reason) {
+      const action = updates.status === 'cancelled' ? 'CANCEL_MEETING' : 'UPDATE_MEETING';
+      const verb = updates.status === 'cancelled' ? 'ยกเลิกการประชุม' : 'แก้ไขการประชุม';
+      handleLogAudit(action, `${verb}: "${updated.title}" — เหตุผล: ${reason}`);
+    }
+
+    if (updates.status === 'cancelled') {
+      updated.attendeeIds
+        .filter((attendeeId) => attendeeId !== currentUser?.id)
+        .forEach((attendeeId) => {
+          pushNotification({
+            targetEmployeeId: attendeeId,
+            title: 'การประชุมถูกยกเลิก',
+            message: `"${updated.title}" วันที่ ${updated.date} ถูกยกเลิก: ${updated.cancellationReason || 'ไม่ได้ระบุเหตุผล'}`,
+            type: 'warning',
+            linkType: updated.projectId ? 'project' : undefined,
+            linkId: updated.projectId,
+          });
+        });
+    }
   };
 
   const handleDeleteMeeting = async (id: string) => {
     await deleteMeetingRemote(id);
     setMeetings((prev) => prev.filter((m) => m.id !== id));
-  };
-
-  const handleApproveLeave = (leaveId: string, approved: boolean) => {
-    const leave = leaveRequests.find(l => l.id === leaveId);
-    if (!leave) return;
-
-    const updated = leaveRequests.map(l => {
-      if (l.id === leaveId) {
-        return {
-          ...l,
-          status: approved ? 'Approved' : 'Rejected'
-        } as LeaveRequest;
-      }
-      return l;
-    });
-
-    saveLeaves(updated);
-
-    // Notify employee of approval
-    const newNotif: Notification = {
-      id: 'NOTIF_LEAVE_' + Date.now(),
-      title: approved ? 'คำขออนุมัติลาผ่านแล้ว 🏖️' : 'คำขอลาถูกปฏิเสธ ❌',
-      message: `ใบเสนอขอลาประเภท ${leave.type} ได้รับการพิจารณาเป็นที่เรียบร้อย`,
-      timestamp: nowTimestamp(),
-      read: false,
-      type: approved ? 'success' : 'warning'
-    };
-    saveNotifications([newNotif, ...notifications]);
-
-    handleLogAudit('RESOLVE_LEAVE', `${approved ? 'อนุมัติ' : 'ปฏิเสธ'} ใบลาของพนักงาน: ${leave.employeeName}`);
   };
 
   // 5. Credential Safe Operations
@@ -798,10 +997,19 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   // Unread Count
   const unreadCount = notifications.filter(n => !n.read).length;
 
+  // Optimistic locally, persisted server-side — the bell badge shouldn't wait on a round trip.
   const handleMarkAllNotificationsRead = () => {
-    const updated = notifications.map(n => ({ ...n, read: true }));
-    saveNotifications(updated);
+    if (!currentUser) return;
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    markAllNotificationsRead(currentUser.id).catch((err) => console.warn('Could not mark notifications read:', err));
   };
+
+  const handleMarkNotificationRead = (id: string) => {
+    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    markNotificationRead(id).catch((err) => console.warn('Could not mark notification read:', err));
+  };
+
+  const dismissNotificationToast = () => setNotificationToast(null);
 
   const openAddTaskModal = () => {
     setIsTaskModalOpen(true);
@@ -822,7 +1030,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     tasks,
     documents,
     credentials,
-    leaveRequests,
     meetings,
     notifications,
     auditLogs,
@@ -836,6 +1043,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     handleAddProject,
     handleUpdateProject,
     handleDeleteProject,
+    customProjectStatuses,
+    handleAddCustomProjectStatus,
+    handleDeleteCustomProjectStatus,
     handleAddProjectTask,
     handleUpdateProjectTask,
     handleDeleteProjectTask,
@@ -851,8 +1061,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     setDocCurrentFolderId,
     taskSelectedProjectId,
     setTaskSelectedProjectId,
-    handleAddLeaveRequest,
-    handleApproveLeave,
     handleAddMeeting,
     handleUpdateMeeting,
     handleDeleteMeeting,
@@ -861,6 +1069,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     handleDeleteCredential,
     handleLogAudit,
     handleMarkAllNotificationsRead,
+    handleMarkNotificationRead,
+    notificationToast,
+    dismissNotificationToast,
     orgDivisions,
     orgSections,
     handleAddDivision,

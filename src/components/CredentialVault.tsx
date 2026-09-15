@@ -26,6 +26,7 @@ import searchIcon from '../../images/icon/Search pass.png';
 import firstCreatePassIcon from '../../images/frist create pass icon.png';
 import linkIcon from '../../images/icon menu/linkki.png';
 import linkActiveIcon from '../../images/icon menu/linkki active.png';
+import Tooltip from './Tooltip';
 
 // Common services suggested while typing the "ชื่อบริการ" field, auto-filling their site URL
 const KNOWN_SERVICES: { name: string; url: string }[] = [
@@ -171,12 +172,16 @@ function formatThaiShortDate(dateStr: string) {
 function CredentialCardMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
   return (
     <div className="flex items-center gap-0.5">
-      <button onClick={onEdit} title="แก้ไข" className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer">
-        <Pencil size={15} />
-      </button>
-      <button onClick={onDelete} title="ลบ" className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer">
-        <Trash2 size={15} />
-      </button>
+      <Tooltip content="แก้ไข">
+        <button onClick={onEdit} aria-label="แก้ไข" className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer">
+          <Pencil size={15} />
+        </button>
+      </Tooltip>
+      <Tooltip content="ลบ">
+        <button onClick={onDelete} aria-label="ลบ" className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer">
+          <Trash2 size={15} />
+        </button>
+      </Tooltip>
     </div>
   );
 }
@@ -646,6 +651,9 @@ export default function CredentialVault({
             </div>
           ) : (
           <>
+          {/* Sticky under Header, same pattern as EmployeeManagement/ProjectBoard/Dashboard, so
+              this row stays put while the list/grid scrolls under it. */}
+          <div className="sticky -top-4 sm:-top-6 lg:-top-8 z-30 bg-[#F6F6F6] pt-1">
           {/* Search, view toggle, scope filter & create — single controls row */}
           <div className="flex flex-col lg:flex-row gap-3 lg:items-center">
             <div className="relative w-full lg:w-137.5 lg:flex-none">
@@ -659,36 +667,42 @@ export default function CredentialVault({
                 className="w-full h-10 pl-9 pr-9 bg-white border border-slate-200 rounded-xl text-[13px] font-normal focus:outline-none focus:border-[#FF6537]"
               />
               {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => { setSearchQuery(''); setCurrentPage(1); searchInputRef.current?.focus(); }}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                  title="ล้างคำค้นหา"
-                >
-                  <X size={15} />
-                </button>
+                <Tooltip content="ล้างคำค้นหา">
+                  <button
+                    type="button"
+                    onClick={() => { setSearchQuery(''); setCurrentPage(1); searchInputRef.current?.focus(); }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    aria-label="ล้างคำค้นหา"
+                  >
+                    <X size={15} />
+                  </button>
+                </Tooltip>
               )}
             </div>
 
             <div className="flex items-center gap-3 flex-1 min-w-0">
               {/* Grid / list view toggle */}
               <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-xl p-1 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => { setViewMode('grid'); setCurrentPage(1); }}
-                  className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'grid' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
-                  title="มุมมองตาราง"
-                >
-                  <LayoutGrid size={15} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setViewMode('list'); setCurrentPage(1); }}
-                  className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'list' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
-                  title="มุมมองรายการ"
-                >
-                  <List size={15} />
-                </button>
+                <Tooltip content="มุมมองตาราง">
+                  <button
+                    type="button"
+                    onClick={() => { setViewMode('grid'); setCurrentPage(1); }}
+                    className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'grid' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
+                    aria-label="มุมมองตาราง"
+                  >
+                    <LayoutGrid size={15} />
+                  </button>
+                </Tooltip>
+                <Tooltip content="มุมมองรายการ">
+                  <button
+                    type="button"
+                    onClick={() => { setViewMode('list'); setCurrentPage(1); }}
+                    className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'list' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
+                    aria-label="มุมมองรายการ"
+                  >
+                    <List size={15} />
+                  </button>
+                </Tooltip>
               </div>
 
               <div className="w-36 h-10">
@@ -710,6 +724,7 @@ export default function CredentialVault({
               </button>
             </div>
           </div>
+          </div>
 
           {/* Result count + sort, with pagination on the same row (right-aligned) instead of its
               own row below the table/grid. */}
@@ -721,7 +736,6 @@ export default function CredentialVault({
                 type="button"
                 onClick={() => setIsResultFilterOpen((prev) => !prev)}
                 className="flex items-center gap-2 cursor-pointer"
-                title="เรียงตาม"
               >
                 <span className="text-sm text-[#6F6F6F] leading-none mt-1">•</span>
                 <span className="text-sm text-[#6F6F6F] leading-none mt-0.5">
@@ -1090,13 +1104,15 @@ export default function CredentialVault({
                           <td className="px-4 py-3 whitespace-nowrap">
                             <div className="flex items-center gap-1.5">
                               <span className="text-[12px] font-medium text-[#272220] select-all">{item.username}</span>
-                              <button
-                                onClick={() => copySecret(item.username, usernameCopyId, 'คัดลอกชื่อผู้ใช้แล้ว')}
-                                className="p-1 rounded text-[#6F6F6F] hover:bg-slate-100 cursor-pointer"
-                                title="คัดลอกชื่อผู้ใช้"
-                              >
-                                {copiedId === usernameCopyId ? <Check size={13} /> : <Copy size={13} />}
-                              </button>
+                              <Tooltip content="คัดลอกชื่อผู้ใช้">
+                                <button
+                                  onClick={() => copySecret(item.username, usernameCopyId, 'คัดลอกชื่อผู้ใช้แล้ว')}
+                                  className="p-1 rounded text-[#6F6F6F] hover:bg-slate-100 cursor-pointer"
+                                  aria-label="คัดลอกชื่อผู้ใช้"
+                                >
+                                  {copiedId === usernameCopyId ? <Check size={13} /> : <Copy size={13} />}
+                                </button>
+                              </Tooltip>
                             </div>
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap">
@@ -1104,20 +1120,24 @@ export default function CredentialVault({
                               <span className={`text-[12px] font-medium text-[#272220] ${isSecretVisible ? 'select-all' : ''}`}>
                                 {isSecretVisible ? decryptedText : '**********'}
                               </span>
-                              <button
-                                onClick={() => handleViewCredential(item)}
-                                className="p-1 rounded text-[#6F6F6F] hover:bg-slate-100 cursor-pointer"
-                                title={isSecretVisible ? 'ปิดการแสดงผลรหัสผ่าน' : 'เปิดดูรหัสผ่านพนักงาน'}
-                              >
-                                {isSecretVisible ? <Eye size={13} /> : <EyeOff size={13} />}
-                              </button>
-                              <button
-                                onClick={() => copySecretForItem(item)}
-                                className="p-1 rounded text-[#6F6F6F] hover:bg-slate-100 cursor-pointer"
-                                title="คัดลอกรหัสผ่านลับ"
-                              >
-                                {copiedId === item.id ? <Check size={13} /> : <Copy size={13} />}
-                              </button>
+                              <Tooltip content={isSecretVisible ? 'ปิดการแสดงผลรหัสผ่าน' : 'เปิดดูรหัสผ่านพนักงาน'}>
+                                <button
+                                  onClick={() => handleViewCredential(item)}
+                                  className="p-1 rounded text-[#6F6F6F] hover:bg-slate-100 cursor-pointer"
+                                  aria-label={isSecretVisible ? 'ปิดการแสดงผลรหัสผ่าน' : 'เปิดดูรหัสผ่านพนักงาน'}
+                                >
+                                  {isSecretVisible ? <Eye size={13} /> : <EyeOff size={13} />}
+                                </button>
+                              </Tooltip>
+                              <Tooltip content="คัดลอกรหัสผ่านลับ">
+                                <button
+                                  onClick={() => copySecretForItem(item)}
+                                  className="p-1 rounded text-[#6F6F6F] hover:bg-slate-100 cursor-pointer"
+                                  aria-label="คัดลอกรหัสผ่านลับ"
+                                >
+                                  {copiedId === item.id ? <Check size={13} /> : <Copy size={13} />}
+                                </button>
+                              </Tooltip>
                             </div>
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap text-[12px] font-normal text-[#6F6F6F]">
@@ -1230,13 +1250,15 @@ export default function CredentialVault({
                         <div className="flex items-center gap-1.5 min-w-0 flex-1 justify-end">
                           <span className="text-[12px] font-medium text-[#272220] select-all truncate">{item.username}</span>
                           <span className="w-5 h-5 shrink-0" aria-hidden="true" />
-                          <button
-                            onClick={() => copySecret(item.username, usernameCopyId, 'คัดลอกชื่อผู้ใช้แล้ว')}
-                            className="p-1 rounded shrink-0 text-[#6F6F6F] hover:bg-slate-100 cursor-pointer"
-                            title="คัดลอกชื่อผู้ใช้"
-                          >
-                            {copiedId === usernameCopyId ? <Check size={14} /> : <Copy size={14} />}
-                          </button>
+                          <Tooltip content="คัดลอกชื่อผู้ใช้">
+                            <button
+                              onClick={() => copySecret(item.username, usernameCopyId, 'คัดลอกชื่อผู้ใช้แล้ว')}
+                              className="p-1 rounded shrink-0 text-[#6F6F6F] hover:bg-slate-100 cursor-pointer"
+                              aria-label="คัดลอกชื่อผู้ใช้"
+                            >
+                              {copiedId === usernameCopyId ? <Check size={14} /> : <Copy size={14} />}
+                            </button>
+                          </Tooltip>
                         </div>
                       </div>
 
@@ -1247,20 +1269,24 @@ export default function CredentialVault({
                             {isSecretVisible ? decryptedText : '**********'}
                           </span>
 
-                          <button onClick={() => handleViewCredential(item)}
-                            className="p-1 rounded text-[#6F6F6F] hover:bg-slate-100 shrink-0 cursor-pointer"
-                            title={isSecretVisible ? 'ปิดการแสดงผลรหัสผ่าน' : 'เปิดดูรหัสผ่านพนักงาน'}
-                          >
-                            {isSecretVisible ? <Eye size={14} /> : <EyeOff size={14} />}
-                          </button>
+                          <Tooltip content={isSecretVisible ? 'ปิดการแสดงผลรหัสผ่าน' : 'เปิดดูรหัสผ่านพนักงาน'}>
+                            <button onClick={() => handleViewCredential(item)}
+                              className="p-1 rounded text-[#6F6F6F] hover:bg-slate-100 shrink-0 cursor-pointer"
+                              aria-label={isSecretVisible ? 'ปิดการแสดงผลรหัสผ่าน' : 'เปิดดูรหัสผ่านพนักงาน'}
+                            >
+                              {isSecretVisible ? <Eye size={14} /> : <EyeOff size={14} />}
+                            </button>
+                          </Tooltip>
 
-                          <button
-                            onClick={() => copySecretForItem(item)}
-                            className="p-1 rounded shrink-0 text-[#6F6F6F] hover:bg-slate-100 cursor-pointer"
-                            title="คัดลอกรหัสผ่านลับ"
-                          >
-                            {copiedId === item.id ? <Check size={14} /> : <Copy size={14} />}
-                          </button>
+                          <Tooltip content="คัดลอกรหัสผ่านลับ">
+                            <button
+                              onClick={() => copySecretForItem(item)}
+                              className="p-1 rounded shrink-0 text-[#6F6F6F] hover:bg-slate-100 cursor-pointer"
+                              aria-label="คัดลอกรหัสผ่านลับ"
+                            >
+                              {copiedId === item.id ? <Check size={14} /> : <Copy size={14} />}
+                            </button>
+                          </Tooltip>
                         </div>
                       </div>
 

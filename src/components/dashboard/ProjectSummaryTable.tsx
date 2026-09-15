@@ -5,6 +5,7 @@ import { STATUS_LABEL, STATUS_PILL, STATUS_ICON, STATUS_DOT } from '../projectBo
 import { displayName } from '../projectBoard/CreateProjectModal';
 import { getAvatarColor } from '../../lib/avatarColor';
 import Dropdown from '../Dropdown';
+import Tooltip from '../Tooltip';
 
 function formatBaht(n: number): string {
   return `฿${Math.round(n).toLocaleString('th-TH')}`;
@@ -112,7 +113,9 @@ export default function ProjectSummaryTable({ projects, employees, onSelectProje
                     className="border-b border-slate-50 last:border-0 hover:bg-slate-50 cursor-pointer transition-colors"
                   >
                     <td className="py-2.5 pr-3 max-w-40">
-                      <p className="font-medium text-[#272220] truncate" title={p.title}>{p.title}</p>
+                      <Tooltip content={p.title}>
+                        <p className="font-medium text-[#272220] truncate">{p.title}</p>
+                      </Tooltip>
                     </td>
                     <td className="py-2.5 pr-3">
                       {owner ? (

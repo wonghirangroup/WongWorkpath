@@ -1,18 +1,17 @@
-import { ProjectStatus } from './types';
 import { STATUS_LABEL, STATUS_DOT, STATUS_ICON } from './statusMeta';
 
-const ORDER: ProjectStatus[] = ['in_progress', 'completed', 'on_hold', 'cancelled', 'draft'];
-
 interface StatusSummaryCardsProps {
-  counts: Record<ProjectStatus, number>;
+  counts: Record<string, number>;
+  selectedIds: string[];
 }
 
 // Dot + label up top, big count below, and an outlined circular status icon anchored to
-// the bottom-right corner — the original layout used before the Dashboard StatCard pass.
-export default function StatusSummaryCards({ counts }: StatusSummaryCardsProps) {
+// the bottom-right corner. Which up-to-5 statuses show is chosen from ProjectBoard's toolbar
+// (StatusWidgetSettingsMenu), which owns that selection and its persistence.
+export default function StatusSummaryCards({ counts, selectedIds }: StatusSummaryCardsProps) {
   return (
     <div className="flex gap-4 overflow-x-auto scrollbar-none snap-x sm:grid sm:grid-cols-3 sm:overflow-visible lg:grid-cols-5">
-      {ORDER.map((status) => {
+      {selectedIds.map((status) => {
         const Icon = STATUS_ICON[status];
         const color = STATUS_DOT[status];
         return (
@@ -25,7 +24,7 @@ export default function StatusSummaryCards({ counts }: StatusSummaryCardsProps) 
                 <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
                 <span className="text-sm text-[#6F6F6F] font-medium truncate">{STATUS_LABEL[status]}</span>
               </div>
-              <h3 className="text-4xl font-bold text-[#374151]">{counts[status]}</h3>
+              <h3 className="text-4xl font-bold text-[#374151]">{counts[status] ?? 0}</h3>
             </div>
             <div className="w-11 h-11 flex items-center justify-center shrink-0" style={{ color }}>
               <Icon size={38} strokeWidth={2} />

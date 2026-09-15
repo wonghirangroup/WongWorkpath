@@ -5,7 +5,7 @@ import { DashboardWidgetPrefs, DashboardWidgetVisibility } from './widgetPrefs';
 
 const WIDGET_LABELS: { key: keyof DashboardWidgetVisibility; label: string }[] = [
   { key: 'summaryTable', label: 'สรุปโครงการ (ตาราง)' },
-  { key: 'progressGauge', label: 'ความคืบหน้าภาพรวม' },
+  { key: 'statusChart', label: 'สัดส่วนสถานะโครงการ (กราฟวงกลม)' },
   { key: 'myTasks', label: 'งานของฉันที่ใกล้ครบกำหนด' },
   { key: 'workload', label: 'ใครทำอะไรอยู่บ้าง' },
 ];
@@ -68,16 +68,6 @@ export default function WidgetSettingsMenu({ prefs, onChange }: WidgetSettingsMe
                 {label}
               </label>
             ))}
-            <div className="my-1.5 border-t border-slate-100" />
-            <label className="flex items-center gap-2 px-3.5 py-2 text-sm text-[#272220] hover:bg-[#FEFAF9] cursor-pointer">
-              <input
-                type="checkbox"
-                checked={prefs.groupByDepartment}
-                onChange={() => onChange({ ...prefs, groupByDepartment: !prefs.groupByDepartment })}
-                className="w-3.5 h-3.5 accent-[#FF6537] cursor-pointer shrink-0"
-              />
-              จัดกลุ่มตามแผนก
-            </label>
           </motion.div>
         )}
       </AnimatePresence>

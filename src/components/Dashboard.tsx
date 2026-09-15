@@ -5,7 +5,7 @@ import { Wallet, Briefcase, AlertCircle, Users } from 'lucide-react';
 import DashboardToolbar from './dashboard/DashboardToolbar';
 import StatCard from './dashboard/StatCard';
 import ProjectSummaryTable from './dashboard/ProjectSummaryTable';
-import OverallProgressGauge from './dashboard/OverallProgressGauge';
+import StatusDistributionChart from './dashboard/StatusDistributionChart';
 import MyUpcomingTasks from './dashboard/MyUpcomingTasks';
 import TeamActivityList from './dashboard/TeamActivityList';
 import { loadWidgetPrefs, saveWidgetPrefs } from './dashboard/widgetPrefs';
@@ -34,6 +34,7 @@ export default function Dashboard({
   onSelectProject
 }: DashboardProps) {
   const [departmentFilter, setDepartmentFilter] = useState('All');
+  const [projectFilter, setProjectFilter] = useState('All');
   const [widgetPrefs, setWidgetPrefs] = useState(loadWidgetPrefs);
   useEffect(() => saveWidgetPrefs(widgetPrefs), [widgetPrefs]);
 
@@ -46,7 +47,11 @@ export default function Dashboard({
   const getEffectiveDepartment = (project: ProjectRow): string =>
     project.department || (project.ownerEmployeeId && employeeById.get(project.ownerEmployeeId)?.department) || 'ไม่ระบุ';
 
-  const filteredProjects = departmentFilter === 'All'
+  // A specific project pick takes precedence over the department filter — picking one project
+  // narrows every widget on this page down to just that project, department filter or not.
+  const filteredProjects = projectFilter !== 'All'
+    ? projects.filter((p) => p.id === projectFilter)
+    : departmentFilter === 'All'
     ? projects
     : projects.filter((p) => getEffectiveDepartment(p) === departmentFilter);
   const filteredProjectIds = useMemo(() => new Set(filteredProjects.map((p) => p.id)), [filteredProjects]);
@@ -63,19 +68,8 @@ export default function Dashboard({
   const getEmployeeActiveTasks = (empId: string) =>
     filteredProjectTasks.filter((t) => t.assigneeEmployeeIds.includes(empId) && t.status !== 'done');
 
-  // "จัดกลุ่มตามแผนก" splits the progress gauge below into one card per department instead of a
-  // single combined view, so an executive can watch several projects' status move meaningfully at
-  // the same time without them blending into one aggregate number.
-  const departmentGroupMap = new Map<string, ProjectRow[]>();
-  filteredProjects.forEach((p) => {
-    const dept = getEffectiveDepartment(p);
-    if (!departmentGroupMap.has(dept)) departmentGroupMap.set(dept, []);
-    departmentGroupMap.get(dept)!.push(p);
-  });
-  const departmentGroups = Array.from(departmentGroupMap.entries());
-  const { groupByDepartment } = widgetPrefs;
   const showSummaryTable = widgetPrefs.visible.summaryTable;
-  const showProgressGauge = widgetPrefs.visible.progressGauge;
+  const showStatusChart = widgetPrefs.visible.statusChart;
   const showMyTasks = widgetPrefs.visible.myTasks;
   const showWorkload = widgetPrefs.visible.workload;
 
@@ -83,15 +77,23 @@ export default function Dashboard({
 
   return (
     <div className="space-y-6" id="dashboard-tab">
-      <DashboardToolbar
-        onAddTask={onAddTask}
-        onExport={handleExport}
-        departmentFilter={departmentFilter}
-        onDepartmentFilterChange={setDepartmentFilter}
-        orgSections={orgSections}
-        widgetPrefs={widgetPrefs}
-        onWidgetPrefsChange={setWidgetPrefs}
-      />
+      {/* Sticky under Header (same -top offset trick as EmployeeManagement's tab/toolbar bar) so
+          the filter/action row stays put while the stat cards and widgets below scroll under it,
+          instead of disappearing upward with the rest of the page. */}
+      <div className="sticky -top-4 sm:-top-6 lg:-top-8 z-30 bg-[#F6F6F6] pt-1 print:hidden">
+        <DashboardToolbar
+          onAddTask={onAddTask}
+          onExport={handleExport}
+          departmentFilter={departmentFilter}
+          onDepartmentFilterChange={setDepartmentFilter}
+          orgSections={orgSections}
+          projectFilter={projectFilter}
+          onProjectFilterChange={setProjectFilter}
+          projects={projects}
+          widgetPrefs={widgetPrefs}
+          onWidgetPrefsChange={setWidgetPrefs}
+        />
+      </div>
 
       {/* Overview Stat Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4" id="overview-stats">
@@ -126,29 +128,17 @@ export default function Dashboard({
         />
       </div>
 
-      {showSummaryTable && (
-        <div className={groupByDepartment || !showProgressGauge ? '' : 'grid grid-cols-1 lg:grid-cols-3 gap-6'}>
-          <div className={groupByDepartment || !showProgressGauge ? '' : 'lg:col-span-2'}>
-            <ProjectSummaryTable projects={filteredProjects} employees={employees} onSelectProject={onSelectProject} />
-          </div>
-          {!groupByDepartment && showProgressGauge && (
-            <OverallProgressGauge projects={filteredProjects} />
+      {/* Summary table and the status donut share one row — the table takes two thirds, the donut
+          the remaining third. Either one alone simply fills the row. */}
+      {(showSummaryTable || showStatusChart) && (
+        <div className={showSummaryTable && showStatusChart ? 'grid grid-cols-1 lg:grid-cols-3 gap-6' : ''}>
+          {showSummaryTable && (
+            <div className={showStatusChart ? 'lg:col-span-2' : ''}>
+              <ProjectSummaryTable projects={filteredProjects} employees={employees} onSelectProject={onSelectProject} />
+            </div>
           )}
+          {showStatusChart && <StatusDistributionChart projects={filteredProjects} />}
         </div>
-      )}
-
-      {(groupByDepartment || !showSummaryTable) && showProgressGauge && (
-        groupByDepartment ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {departmentGroups.map(([dept, projs]) => (
-              <OverallProgressGauge key={dept} projects={projs} titleOverride={`ความคืบหน้า — ${dept}`} />
-            ))}
-          </div>
-        ) : (
-          <div className="max-w-md">
-            <OverallProgressGauge projects={filteredProjects} />
-          </div>
-        )
       )}
 
       {(showMyTasks || showWorkload) && (

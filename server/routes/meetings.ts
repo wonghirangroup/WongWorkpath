@@ -16,6 +16,8 @@ interface MeetingRowDb extends RowDataPacket {
   attendee_ids: string | null;
   location: string | null;
   created_by: string | null;
+  status: 'scheduled' | 'cancelled';
+  cancellation_reason: string | null;
 }
 
 // Same JSON-array-as-TEXT convention as project.member_employee_ids.
@@ -38,10 +40,12 @@ function toMeeting(r: MeetingRowDb) {
     attendeeIds: r.attendee_ids ? JSON.parse(r.attendee_ids) : [],
     location: r.location ?? undefined,
     createdBy: r.created_by ?? undefined,
+    status: r.status,
+    cancellationReason: r.cancellation_reason ?? undefined,
   };
 }
 
-const SELECT_FIELDS = `id, project_id, title, description, date, start_time, end_time, attendee_ids, location, created_by`;
+const SELECT_FIELDS = `id, project_id, title, description, date, start_time, end_time, attendee_ids, location, created_by, status, cancellation_reason`;
 
 meetingsRouter.get('/', async (_req, res) => {
   try {
@@ -104,6 +108,19 @@ meetingsRouter.put('/:id', async (req, res) => {
     values.push(attendeeIds.length ? JSON.stringify(attendeeIds) : null);
   }
   if ('location' in m) { fields.push('location = ?'); values.push(m.location?.trim() || null); }
+
+  // Cancelling always requires a reason — set together in the same request so a meeting can
+  // never end up cancelled with no explanation on record.
+  if (m.status === 'cancelled') {
+    if (typeof m.cancellationReason !== 'string' || !m.cancellationReason.trim()) {
+      return res.status(400).json({ message: 'กรุณาระบุเหตุผลที่ยกเลิกการประชุม' });
+    }
+    fields.push('status = ?', 'cancellation_reason = ?');
+    values.push('cancelled', m.cancellationReason.trim());
+  } else if (m.status === 'scheduled') {
+    fields.push('status = ?', 'cancellation_reason = ?');
+    values.push('scheduled', null);
+  }
 
   if (fields.length === 0) {
     return res.status(400).json({ message: 'ไม่มีข้อมูลที่จะอัปเดต' });

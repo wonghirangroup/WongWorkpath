@@ -2,13 +2,15 @@ import { useMemo, useState } from 'react';
 import { CalendarRange, ChevronLeft, ChevronRight } from 'lucide-react';
 import { ProjectRow, ProjectTaskItem } from './types';
 import { STATUS_DOT, STATUS_LABEL, TASK_STATUS_COLOR } from './statusMeta';
+import Tooltip from '../Tooltip';
 
 // A month-column overview instead of a fine day-axis — day-level ticks (per the older version of
 // this chart) don't scale once projects span multiple months each, since 6 date ticks across a
 // multi-month range says almost nothing about any individual month. One column per calendar month,
-// a full year at a time (prev/next year nav), each project's row tinted across the months its own
-// start/end range touches, and up to 2 of that project's own tasks (by due date) surfaced directly
-// inside whichever month cell they're due in — "which tasks, due when" at a glance per project.
+// a full year at a time (prev/next year nav), each project drawn as a solid status-colored bar
+// across the months its own start/end range touches (a faint row tint alone was invisible for
+// grey statuses like ร่าง), and up to 2 of that project's own tasks (by due date) surfaced directly
+// under it in whichever month they're due — "which tasks, due when" at a glance per project.
 const THAI_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 
 interface ProjectsGanttChartProps {
@@ -95,6 +97,12 @@ export default function ProjectsGanttChart({ projects, projectTasks, onSelectPro
           <div className="divide-y divide-[#F9F9F9]">
             {rows.map(({ project: p, startMonthKey, endMonthKey, tasksByMonth }) => {
               const color = STATUS_DOT[p.status];
+              const yearStartKey = year * 12;
+              const visibleStart = Math.max(startMonthKey, yearStartKey);
+              const visibleEnd = Math.min(endMonthKey, yearStartKey + 11);
+              const hasBar = visibleStart <= visibleEnd;
+              const continuesBefore = startMonthKey < yearStartKey;
+              const continuesAfter = endMonthKey > yearStartKey + 11;
               return (
                 <button
                   key={p.id}
@@ -106,32 +114,49 @@ export default function ProjectsGanttChart({ projects, projectTasks, onSelectPro
                     <p className="text-sm font-medium text-[#272220] truncate">{p.title}</p>
                     <p className="text-[11px] text-[#A0A0A0] truncate">{p.code} · {STATUS_LABEL[p.status]}</p>
                   </div>
-                  <div className="flex-1 grid grid-cols-12 min-h-16">
-                    {months.map((monthKey) => {
-                      const inSpan = monthKey >= startMonthKey && monthKey <= endMonthKey;
-                      const monthTasks = tasksByMonth.get(monthKey) ?? [];
-                      return (
-                        <div
-                          key={monthKey}
-                          className="border-r border-[#F9F9F9] last:border-r-0 p-1 space-y-0.5"
-                          style={inSpan ? { backgroundColor: `${color}0D` } : undefined}
-                        >
-                          {monthTasks.slice(0, 2).map((t) => (
-                            <div
-                              key={t.id}
-                              className="text-[9px] px-1 py-0.5 rounded truncate font-medium"
-                              style={{ backgroundColor: `${TASK_STATUS_COLOR[t.status]}1A`, color: TASK_STATUS_COLOR[t.status] }}
-                              title={`${t.title} · กำหนดส่ง ${t.dueDate}`}
-                            >
-                              {new Date(`${t.dueDateISO}T00:00:00`).getDate()} — {t.title}
-                            </div>
-                          ))}
-                          {monthTasks.length > 2 && (
-                            <div className="text-[8px] text-center text-[#A0A0A0] font-bold">+{monthTasks.length - 2} งาน</div>
-                          )}
-                        </div>
-                      );
-                    })}
+                  <div className="flex-1 relative min-h-16">
+                    <div className="absolute inset-0 grid grid-cols-12 pointer-events-none">
+                      {months.map((monthKey) => (
+                        <div key={monthKey} className="border-r border-[#F9F9F9] last:border-r-0" />
+                      ))}
+                    </div>
+                    <div className="relative grid grid-cols-12 gap-y-1 py-2">
+                      {hasBar && (
+                        <Tooltip content={`${p.title} · ${p.startDate ?? '—'} – ${p.endDate ?? '—'}`}>
+                          <div
+                            className={`h-3 self-center ${continuesBefore ? 'rounded-l-none' : 'ml-1 rounded-l-full'} ${
+                              continuesAfter ? 'rounded-r-none' : 'mr-1 rounded-r-full'
+                            }`}
+                            style={{
+                              gridRow: 1,
+                              gridColumn: `${visibleStart - yearStartKey + 1} / ${visibleEnd - yearStartKey + 2}`,
+                              backgroundColor: color,
+                            }}
+                          />
+                        </Tooltip>
+                      )}
+                      {months.map((monthKey, idx) => {
+                        const monthTasks = tasksByMonth.get(monthKey) ?? [];
+                        if (monthTasks.length === 0) return null;
+                        return (
+                          <div key={monthKey} className="px-1 flex flex-col gap-0.5 min-w-0" style={{ gridRow: 2, gridColumn: idx + 1 }}>
+                            {monthTasks.slice(0, 2).map((t) => (
+                              <Tooltip key={t.id} content={`${t.title} · กำหนดส่ง ${t.dueDate}`}>
+                                <div
+                                  className="text-[9px] px-1 py-0.5 rounded truncate font-medium"
+                                  style={{ backgroundColor: `${TASK_STATUS_COLOR[t.status]}1A`, color: TASK_STATUS_COLOR[t.status] }}
+                                >
+                                  {new Date(`${t.dueDateISO}T00:00:00`).getDate()} — {t.title}
+                                </div>
+                              </Tooltip>
+                            ))}
+                            {monthTasks.length > 2 && (
+                              <div className="text-[8px] text-center text-[#A0A0A0] font-bold">+{monthTasks.length - 2} งาน</div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </button>
               );

@@ -27,6 +27,7 @@ import fileHover from '../../../images/new side bar/file icon hover.png';
 import passwordActive from '../../../images/new side bar/password icon active.png';
 import passwordInactive from '../../../images/new side bar/password icon not active.png';
 import passwordHold from '../../../images/new side bar/password icon hold.png';
+import Tooltip from '../Tooltip';
 
 export const NAV_ITEMS = [
   { id: 'dashboard', label: 'แดชบอร์ด', iconActive: dashboardActive, iconInactive: dashboardInactive, iconHover: undefined as string | undefined, iconComponent: undefined as typeof Users | undefined },
@@ -97,99 +98,103 @@ export default function Sidebar({ isMobileMenuOpen, onCloseMobileMenu }: Sidebar
                 <span className="text-white">Workpath</span>
               </span>
             </div>
-            <button
-              onClick={() => setIsCollapsed((prev) => !prev)}
-              className="shrink-0 w-6 h-6 rounded-lg flex items-center justify-center cursor-pointer hover:bg-white/5"
-              title={isCollapsed ? 'ขยายเมนู' : 'ย่อเมนู'}
-              id="btn-sidebar-collapse"
-            >
-              <img src={isCollapsed ? minimizeSmall : minimizeFull} alt="" className="w-4 h-4 object-contain" />
-            </button>
+            <Tooltip content={isCollapsed ? 'ขยายเมนู' : 'ย่อเมนู'} placement="right">
+              <button
+                onClick={() => setIsCollapsed((prev) => !prev)}
+                className="shrink-0 w-6 h-6 rounded-lg flex items-center justify-center cursor-pointer hover:bg-white/5"
+                aria-label={isCollapsed ? 'ขยายเมนู' : 'ย่อเมนู'}
+                id="btn-sidebar-collapse"
+              >
+                <img src={isCollapsed ? minimizeSmall : minimizeFull} alt="" className="w-4 h-4 object-contain" />
+              </button>
+            </Tooltip>
           </div>
 
           <div className="border-t border-[#666666] mx-4" />
 
-          <nav className="space-y-0.5 px-2 pt-1.5">
+          <nav className="flex flex-col gap-0.5 px-2 pt-1.5">
             {visibleNavItems.map(({ id, label, iconActive, iconInactive, iconHover, iconComponent: IconComponent }) => {
               const isActive = pathname === `/${id}`;
               const hasHoverIcon = Boolean(iconHover);
               return (
-                <Link
-                  key={id}
-                  to={`/${id}`}
-                  className={`group relative w-full min-w-0 flex items-center gap-3 pl-6 pr-3.5 py-3 rounded-xl text-sm font-medium transition-colors duration-150 ease-out cursor-pointer ${
-                    isActive ? 'text-white' : 'text-[#ACACAC] hover:text-white'
-                  }`}
-                  id={`menu-${id}`}
-                  title={isCollapsed ? label : undefined}
-                >
-                  {isActive && (
-                    <motion.div
-                      layoutId="sidebar-active-pill"
-                      className={`absolute rounded-xl bg-[#FF6537] ${isCollapsed ? 'inset-y-0 left-3 right-3' : 'inset-0'}`}
-                      transition={{ type: 'spring', stiffness: 320, damping: 28, mass: 0.8 }}
-                    />
-                  )}
-                  {!isActive && (
-                    <div className={`absolute rounded-xl bg-[rgba(255,91,38,0)] group-hover:bg-[rgba(255,91,38,0.1)] transition-colors duration-150 ease-out ${isCollapsed ? 'inset-y-0 left-3 right-3' : 'inset-0'}`} />
-                  )}
-
-                  <span className="relative z-10 w-5 h-5 shrink-0 flex items-center justify-center">
-                    {IconComponent ? (
-                      <IconComponent size={19} strokeWidth={1.75} />
-                    ) : (
-                      <>
-                        <img
-                          src={iconInactive}
-                          alt=""
-                          className={`absolute inset-0 w-5 h-5 object-contain transition-opacity duration-150 ease-out ${isActive ? 'opacity-0' : 'opacity-100 group-hover:opacity-0'}`}
-                        />
-                        {hasHoverIcon && !isActive && (
-                          <img
-                            src={iconHover}
-                            alt=""
-                            className="absolute inset-0 w-5 h-5 object-contain opacity-0 group-hover:opacity-100 transition-opacity duration-150 ease-out"
-                          />
-                        )}
-                        <img
-                          src={iconActive}
-                          alt=""
-                          className={`absolute inset-0 w-5 h-5 object-contain transition-opacity duration-150 ease-out ${
-                            isActive ? 'opacity-100' : hasHoverIcon ? 'opacity-0' : 'opacity-0 group-hover:opacity-100'
-                          }`}
-                        />
-                      </>
-                    )}
-                  </span>
-                  <span
-                    className={`relative z-10 whitespace-nowrap overflow-hidden transition-all duration-300 ease-in-out ${
-                      isCollapsed ? 'max-w-0 opacity-0' : 'max-w-45 opacity-100'
+                <Tooltip key={id} content={isCollapsed ? label : undefined} placement="right">
+                  <Link
+                    to={`/${id}`}
+                    className={`group relative w-full min-w-0 flex items-center gap-3 pl-6 pr-3.5 py-3 rounded-xl text-sm font-medium transition-colors duration-150 ease-out cursor-pointer ${
+                      isActive ? 'text-white' : 'text-[#ACACAC] hover:text-white'
                     }`}
+                    id={`menu-${id}`}
                   >
-                    {label}
-                  </span>
-                </Link>
+                    {isActive && (
+                      <motion.div
+                        layoutId="sidebar-active-pill"
+                        className={`absolute rounded-xl bg-[#FF6537] ${isCollapsed ? 'inset-y-0 left-3 right-3' : 'inset-0'}`}
+                        transition={{ type: 'spring', stiffness: 320, damping: 28, mass: 0.8 }}
+                      />
+                    )}
+                    {!isActive && (
+                      <div className={`absolute rounded-xl bg-[rgba(255,91,38,0)] group-hover:bg-[rgba(255,91,38,0.1)] transition-colors duration-150 ease-out ${isCollapsed ? 'inset-y-0 left-3 right-3' : 'inset-0'}`} />
+                    )}
+
+                    <span className="relative z-10 w-5 h-5 shrink-0 flex items-center justify-center">
+                      {IconComponent ? (
+                        <IconComponent size={19} strokeWidth={1.75} />
+                      ) : (
+                        <>
+                          <img
+                            src={iconInactive}
+                            alt=""
+                            className={`absolute inset-0 w-5 h-5 object-contain transition-opacity duration-150 ease-out ${isActive ? 'opacity-0' : 'opacity-100 group-hover:opacity-0'}`}
+                          />
+                          {hasHoverIcon && !isActive && (
+                            <img
+                              src={iconHover}
+                              alt=""
+                              className="absolute inset-0 w-5 h-5 object-contain opacity-0 group-hover:opacity-100 transition-opacity duration-150 ease-out"
+                            />
+                          )}
+                          <img
+                            src={iconActive}
+                            alt=""
+                            className={`absolute inset-0 w-5 h-5 object-contain transition-opacity duration-150 ease-out ${
+                              isActive ? 'opacity-100' : hasHoverIcon ? 'opacity-0' : 'opacity-0 group-hover:opacity-100'
+                            }`}
+                          />
+                        </>
+                      )}
+                    </span>
+                    <span
+                      className={`relative z-10 whitespace-nowrap overflow-hidden transition-all duration-300 ease-in-out ${
+                        isCollapsed ? 'max-w-0 opacity-0' : 'max-w-45 opacity-100'
+                      }`}
+                    >
+                      {label}
+                    </span>
+                  </Link>
+                </Tooltip>
               );
             })}
           </nav>
         </div>
 
         <div className="px-2 pb-4">
-          <button
-            onClick={() => setShowLogoutConfirm(true)}
-            className="w-full min-w-0 flex items-center gap-3 pl-6 pr-3.5 py-3 rounded-xl text-sm font-medium text-[#FF4E4E] hover:text-white hover:bg-white/5 transition-all cursor-pointer"
-            id="btn-logout"
-            title={isCollapsed ? 'ออกจากระบบ' : undefined}
-          >
-            <img src={logoutIcon} alt="" className="w-5 h-5 object-contain shrink-0" />
-            <span
-              className={`whitespace-nowrap overflow-hidden transition-all duration-300 ease-in-out ${
-                isCollapsed ? 'max-w-0 opacity-0' : 'max-w-45 opacity-100'
-              }`}
+          <Tooltip content={isCollapsed ? 'ออกจากระบบ' : undefined} placement="right">
+            <button
+              onClick={() => setShowLogoutConfirm(true)}
+              className="w-full min-w-0 flex items-center gap-3 pl-6 pr-3.5 py-3 rounded-xl text-sm font-medium text-[#FF4E4E] hover:text-white hover:bg-white/5 transition-all cursor-pointer"
+              id="btn-logout"
+              aria-label={isCollapsed ? 'ออกจากระบบ' : undefined}
             >
-              ออกจากระบบ
-            </span>
-          </button>
+              <img src={logoutIcon} alt="" className="w-5 h-5 object-contain shrink-0" />
+              <span
+                className={`whitespace-nowrap overflow-hidden transition-all duration-300 ease-in-out ${
+                  isCollapsed ? 'max-w-0 opacity-0' : 'max-w-45 opacity-100'
+                }`}
+              >
+                ออกจากระบบ
+              </span>
+            </button>
+          </Tooltip>
         </div>
       </aside>
 

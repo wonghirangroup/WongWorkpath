@@ -18,6 +18,7 @@ import ProjectGantt from './projectBoard/ProjectGantt';
 import TaskDetailModal from './projectBoard/TaskDetailModal';
 import SubmitTaskModal from './projectBoard/SubmitTaskModal';
 import ReviewTaskModal from './projectBoard/ReviewTaskModal';
+import Tooltip from './Tooltip';
 
 type WorkTab = 'my_tasks' | 'to_review' | 'my_projects' | 'gantt';
 
@@ -189,7 +190,9 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
                         <td className="px-4 py-4 whitespace-nowrap">
                           <TaskStatusPill status={task.status} />
                           {task.status === 'in_progress' && task.reviewNote && (
-                            <p className="text-[10px] text-red-600 mt-1 max-w-40 truncate" title={task.reviewNote}>ตีกลับ: {task.reviewNote}</p>
+                            <Tooltip content={task.reviewNote}>
+                              <p className="text-[10px] text-red-600 mt-1 max-w-40 truncate">ตีกลับ: {task.reviewNote}</p>
+                            </Tooltip>
                           )}
                         </td>
                         <td className="px-4 py-4 text-[#272220] whitespace-nowrap">{task.dueDate ?? 'ยังไม่มี'}</td>

@@ -1,5 +1,5 @@
-import { Bell, ChevronDown, Menu, X, Pencil, Eye, EyeOff, Crown } from 'lucide-react';
-import { ReactNode, useState } from 'react';
+import { Bell, CheckCheck, ChevronDown, Menu, X, Pencil, Eye, EyeOff, Crown } from 'lucide-react';
+import { ReactNode, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { useAppData } from '../../context/AppDataContext';
@@ -10,6 +10,10 @@ import { ACCOUNT_TYPE_LABELS } from '../../lib/permissions';
 import LogoutConfirmModal from './LogoutConfirmModal';
 import logo from '../../../images/pp.png';
 import logoutIcon from '../../../images/new side bar/logout icon active.png';
+import { formatRelativeTimeTh } from '../../lib/datetime';
+import { getNotificationVisual } from './notificationVisual';
+import { useOpenNotification } from './useOpenNotification';
+import Tooltip from '../Tooltip';
 
 // Intl's 'short' weekday for th-TH falls back to the full name (e.g. "พุธ"), not the
 // period-abbreviated form ("พ.") used elsewhere in the app, so it's mapped by hand here.
@@ -51,6 +55,30 @@ interface HeaderProps {
 export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobileMenu }: HeaderProps) {
   const { currentUser, notifications, unreadCount, handleLogout, handleMarkAllNotificationsRead, handleUpdateEmployee } = useAppData();
   const [showNotificationPane, setShowNotificationPane] = useState(false);
+  const [notificationFilter, setNotificationFilter] = useState<'all' | 'unread'>('all');
+  const bellButtonRef = useRef<HTMLButtonElement>(null);
+  const notificationPaneRef = useRef<HTMLDivElement>(null);
+  const openNotification = useOpenNotification();
+
+  // Outside click / Escape closes the bell panel. The bell button itself is excluded so its own
+  // toggle click doesn't close-then-reopen the panel in the same press.
+  useEffect(() => {
+    if (!showNotificationPane) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (notificationPaneRef.current?.contains(target) || bellButtonRef.current?.contains(target)) return;
+      setShowNotificationPane(false);
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowNotificationPane(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showNotificationPane]);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
@@ -123,6 +151,10 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
     ? `${displayRoleFull.slice(0, ROLE_MAX_CHARS)}...`
     : displayRoleFull;
 
+  const visibleNotifications = notificationFilter === 'unread'
+    ? notifications.filter((n) => !n.read)
+    : notifications;
+
   return (
     <header className="bg-[#F6F6F6] text-[#272220] h-16 sm:h-20 px-4 sm:px-6 lg:px-8 flex items-center lg:items-start lg:pt-7 justify-between shrink-0 sticky top-0 z-40">
       <div className="flex items-center gap-2 sm:gap-3 min-w-0">
@@ -173,14 +205,16 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
 
         {/* Unread count badge */}
         <button
+          ref={bellButtonRef}
           onClick={() => { setShowNotificationPane(!showNotificationPane); setShowUserMenu(false); }}
           className="p-1.5 hover:bg-orange-50 rounded-xl relative cursor-pointer"
           id="btn-bell-toggle"
+          aria-label={unreadCount > 0 ? `การแจ้งเตือน (ยังไม่อ่าน ${unreadCount} รายการ)` : 'การแจ้งเตือน'}
         >
           <Bell size={24} className="text-[#272220]" />
           {unreadCount > 0 && (
-            <span className="absolute -top-1 -right-1 bg-rose-600 text-xs font-bold text-white w-[18px] h-[18px] rounded-full flex items-center justify-center ring-2 ring-white">
-              {unreadCount}
+            <span className="absolute -top-1 -right-1 min-w-4.5 h-4.5 px-1 bg-[#F50C0C] text-[10px] font-bold text-white rounded-full flex items-center justify-center ring-2 ring-[#F6F6F6]">
+              {unreadCount > 9 ? '9+' : unreadCount}
             </span>
           )}
         </button>
@@ -253,49 +287,105 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
         )}
 
         {/* Notifications Dropdown Panel */}
-        {showNotificationPane && (
-          <div className="absolute right-0 top-16 bg-white border border-slate-200 w-80 rounded-2xl shadow-xl p-4 text-xs text-slate-800 z-50 animate-in fade-in slide-in-from-top-3 duration-200">
-            <div className="flex justify-between items-center pb-2 border-b border-slate-100 mb-3">
-              <h4 className="font-bold text-slate-900">🔔 การแจ้งเตือนล่าสุด ({unreadCount})</h4>
-              <button
-                onClick={handleMarkAllNotificationsRead}
-                className="text-[10px] text-indigo-600 font-semibold hover:underline cursor-pointer"
-              >
-                ทำเครื่องหมายอ่านแล้ว
-              </button>
-            </div>
-
-            <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
-              {notifications.length === 0 ? (
-                <p className="text-center py-6 text-slate-400 italic">ไม่มีการแจ้งเตือนค้างอยู่</p>
-              ) : (
-                notifications.map(notif => (
-                  <div
-                    key={notif.id}
-                    className={`p-2.5 rounded-lg border transition-all ${
-                      notif.read ? 'bg-slate-50 border-slate-100 text-slate-600' : 'bg-indigo-50/40 border-indigo-100 font-medium'
-                    }`}
-                  >
-                    <div className="flex justify-between">
-                      <span className="font-semibold text-slate-800 text-[11px]">{notif.title}</span>
-                      <span className="text-[9px] text-slate-400">{notif.timestamp.split(' ')[1]}</span>
-                    </div>
-                    <p className={`text-[10px] mt-0.5 ${notif.read ? 'text-slate-600' : 'text-slate-700'}`}>{notif.message}</p>
+        {/* Brand-orange panel in the same popover shell as the app's other menus (white rounded-2xl,
+            motion fade+slide). Each row: a type icon, title, 2-line message, relative time, and an
+            orange unread dot; clicking opens the linked project (see useOpenNotification). */}
+        <AnimatePresence>
+          {showNotificationPane && (
+            <motion.div
+              ref={notificationPaneRef}
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.15 }}
+              className="absolute right-0 top-16 w-96 max-w-[calc(100vw-2rem)] bg-white border border-slate-200 rounded-2xl shadow-xl z-50 overflow-hidden"
+            >
+              <div className="px-4 pt-4 pb-3 border-b border-[#EDEEEF] space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-bold text-[#272220]">การแจ้งเตือน</h4>
+                    {unreadCount > 0 && (
+                      <span className="text-[10px] font-semibold text-[#E04D1D] bg-[#FFF1EC] px-2 py-0.5 rounded-full">
+                        ใหม่ {unreadCount}
+                      </span>
+                    )}
                   </div>
-                ))
-              )}
-            </div>
+                  <button
+                    type="button"
+                    onClick={handleMarkAllNotificationsRead}
+                    disabled={unreadCount === 0}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-[#E04D1D] hover:underline cursor-pointer disabled:text-[#A0A0A0] disabled:no-underline disabled:cursor-default"
+                  >
+                    <CheckCheck size={14} />
+                    อ่านทั้งหมดแล้ว
+                  </button>
+                </div>
+                <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-xl p-1 w-fit">
+                  {([['all', 'ทั้งหมด'], ['unread', 'ยังไม่อ่าน']] as const).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setNotificationFilter(value)}
+                      className={`px-3.5 h-7 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
+                        notificationFilter === value ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-            <div className="pt-2 border-t border-slate-100 text-center mt-3">
-              <button
-                onClick={() => setShowNotificationPane(false)}
-                className="text-[10px] text-slate-400 font-semibold cursor-pointer"
-              >
-                ปิดแผงแจ้งเตือน
-              </button>
-            </div>
-          </div>
-        )}
+              <div className="max-h-[min(26rem,60vh)] overflow-y-auto">
+                {visibleNotifications.length === 0 ? (
+                  <div className="flex flex-col items-center text-center px-6 py-10">
+                    <div className="w-12 h-12 rounded-full bg-[#F4F4F5] flex items-center justify-center mb-3">
+                      <Bell size={20} className="text-[#6F6F6F]" />
+                    </div>
+                    <p className="text-sm font-semibold text-[#272220]">
+                      {notificationFilter === 'unread' ? 'อ่านครบทุกรายการแล้ว' : 'ยังไม่มีการแจ้งเตือน'}
+                    </p>
+                    <p className="text-xs text-[#6F6F6F] mt-1">งานที่ได้รับมอบหมาย ผลตรวจงาน และนัดประชุม จะแสดงที่นี่</p>
+                  </div>
+                ) : (
+                  <ul className="divide-y divide-[#F4F4F4]">
+                    {visibleNotifications.map((notif) => {
+                      const { Icon, bg, fg } = getNotificationVisual(notif);
+                      return (
+                        <li key={notif.id}>
+                          <button
+                            type="button"
+                            onClick={() => { openNotification(notif); setShowNotificationPane(false); }}
+                            className={`w-full text-left flex items-start gap-3 px-4 py-3 cursor-pointer transition-colors ${
+                              notif.read ? 'bg-white hover:bg-slate-50' : 'bg-[#FEFAF9] hover:bg-[#FFF1EC]'
+                            }`}
+                          >
+                            <span className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: bg, color: fg }}>
+                              <Icon size={17} />
+                            </span>
+                            <span className="flex-1 min-w-0">
+                              <span className={`block text-[13px] leading-snug ${notif.read ? 'font-medium text-[#515151]' : 'font-semibold text-[#272220]'}`}>
+                                {notif.title}
+                              </span>
+                              <span className="block text-xs text-[#6F6F6F] mt-0.5 line-clamp-2">{notif.message}</span>
+                              <span className="block text-[11px] text-[#6F6F6F] mt-1">{formatRelativeTimeTh(notif.timestamp)}</span>
+                            </span>
+                            {!notif.read && (
+                              <>
+                                <span className="w-2 h-2 rounded-full bg-[#FF6537] mt-1.5 shrink-0" aria-hidden="true" />
+                                <span className="sr-only">ยังไม่อ่าน</span>
+                              </>
+                            )}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
       </div>
 
@@ -356,14 +446,16 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
                         className="flex-1 min-w-0 text-xs file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#FFF1EC] file:text-[#FF6537] file:font-bold file:cursor-pointer cursor-pointer"
                       />
                       {editAvatar.trim() && (
-                        <button
-                          type="button"
-                          onClick={() => setEditAvatar('')}
-                          className="text-slate-400 hover:text-slate-600 cursor-pointer shrink-0"
-                          title="ลบรูปโปรไฟล์"
-                        >
-                          <X size={16} />
-                        </button>
+                        <Tooltip content="ลบรูปโปรไฟล์">
+                          <button
+                            type="button"
+                            onClick={() => setEditAvatar('')}
+                            className="text-slate-400 hover:text-slate-600 cursor-pointer shrink-0"
+                            aria-label="ลบรูปโปรไฟล์"
+                          >
+                            <X size={16} />
+                          </button>
+                        </Tooltip>
                       )}
                     </div>
                     {avatarFileError && <p className="text-red-500 mt-1">{avatarFileError}</p>}

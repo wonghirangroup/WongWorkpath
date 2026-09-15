@@ -1,6 +1,6 @@
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
-import { LogOut, X } from 'lucide-react';
+import { X } from 'lucide-react';
 
 interface LogoutConfirmModalProps {
   open: boolean;
@@ -50,9 +50,9 @@ export default function LogoutConfirmModal({ open, onConfirm, onCancel }: Logout
               <button
                 type="button"
                 onClick={onConfirm}
-                className="px-5 py-2 rounded-lg text-xs font-bold bg-rose-600 text-white hover:bg-rose-700 cursor-pointer flex items-center gap-1.5"
+                className="px-5 py-2 rounded-lg text-xs font-bold bg-rose-600 text-white hover:bg-rose-700 cursor-pointer"
               >
-                <LogOut size={13} /> ออกจากระบบ
+                ออกจากระบบ
               </button>
             </div>
           </motion.div>
