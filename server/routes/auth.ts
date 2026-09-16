@@ -126,7 +126,7 @@ authRouter.post('/forgot-password', async (req, res) => {
     );
 
     try {
-      await getResendClient().emails.send({
+      const { error: sendError } = await getResendClient().emails.send({
         from: process.env.RESEND_FROM_EMAIL ?? 'onboarding@resend.dev',
         to: email,
         subject: `รหัส OTP สำหรับรีเซ็ตรหัสผ่าน: ${otp}`,
@@ -136,6 +136,15 @@ authRouter.post('/forgot-password', async (req, res) => {
           <p>รหัสนี้จะหมดอายุใน ${OTP_TTL_MINUTES} นาที หากคุณไม่ได้เป็นผู้ขอ กรุณาเพิกเฉยต่ออีเมลนี้</p>
         </div>`,
       });
+      // The Resend SDK resolves (never throws) on an API-level failure — invalid key, unverified
+      // domain, sandbox restrictions — returning { data: null, error } instead of rejecting. A
+      // plain try/catch around the call above only ever catches a thrown exception (e.g.
+      // getResendClient() itself throwing on a missing key, or a network-level fetch failure), so
+      // this explicit check is required or a real send failure would silently report success.
+      if (sendError) {
+        console.error('Resend send failed:', sendError);
+        return res.status(502).json({ message: 'ส่งอีเมล OTP ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' });
+      }
     } catch (sendErr) {
       console.error('Resend send failed:', sendErr);
       return res.status(502).json({ message: 'ส่งอีเมล OTP ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' });
