@@ -78,12 +78,14 @@ employeesRouter.post('/', async (req, res) => {
   const phone = typeof e.phone === 'string' && e.phone.trim() ? e.phone.trim() : null;
   const address = typeof e.address === 'string' && e.address.trim() ? e.address.trim() : null;
 
-  // ผู้บริหาร sits over the whole ฝ่าย, not one แผนก under it — required everywhere else, but this
-  // one role is exempt so an executive doesn't get pinned to a department they don't belong to.
-  const isExecutiveRole = typeof e.role === 'string' && e.role.trim() === 'ผู้บริหาร';
+  // ผู้บริหาร and หัวหน้าฝ่าย both sit over the whole ฝ่าย, not one แผนก under it — required
+  // everywhere else, but these two roles are exempt so they don't get pinned to a department they
+  // don't belong to. หัวหน้าแผนก still belongs to exactly one แผนก, so it's not exempt.
+  const roleTrim = typeof e.role === 'string' ? e.role.trim() : '';
+  const isDepartmentExempt = roleTrim === 'ผู้บริหาร' || roleTrim === 'หัวหน้าฝ่าย';
   const hasDepartment = typeof e.department === 'string' && e.department.trim();
   const hasDivision = typeof e.division === 'string' && e.division.trim();
-  if (!e.id || !e.name || !email || !username || !e.role || !hasDivision || !password || (!isExecutiveRole && !hasDepartment)) {
+  if (!e.id || !e.name || !email || !username || !e.role || !hasDivision || !password || (!isDepartmentExempt && !hasDepartment)) {
     return res.status(400).json({ message: 'ข้อมูลไม่ครบถ้วนหรือไม่ถูกต้อง' });
   }
   if (!EMAIL_PATTERN.test(email)) {
@@ -168,9 +170,12 @@ employeesRouter.put('/:id', async (req, res) => {
     employeeFields.push('avatar = ?');
     employeeValues.push(e.avatar || null);
   }
-  if (typeof e.department === 'string' && e.department.trim()) {
+  if ('department' in e) {
+    // Explicit-presence check (not a truthy check) so switching a role to an exempt one (ผู้บริหาร/
+    // หัวหน้าฝ่าย) can actually clear a stale department value — a truthy check would silently keep
+    // the old department in place whenever the client sends '' to clear it.
     employeeFields.push('department = ?');
-    employeeValues.push(e.department.trim());
+    employeeValues.push(typeof e.department === 'string' && e.department.trim() ? e.department.trim() : '');
   }
   if (typeof e.division === 'string' && e.division.trim()) {
     employeeFields.push('division = ?');

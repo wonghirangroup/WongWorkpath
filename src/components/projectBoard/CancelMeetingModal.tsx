@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { X, Ban } from 'lucide-react';
 import { Meeting } from '../../types';
+import { useEscapeToClose } from '../../lib/useEscapeToClose';
 
 interface CancelMeetingModalProps {
   meeting: Meeting | null;
@@ -14,6 +15,7 @@ interface CancelMeetingModalProps {
 // than hard-deleting the row, so the meeting still shows up (with its reason) instead of just
 // disappearing from the project's "การประชุม" tab.
 export default function CancelMeetingModal({ meeting, onClose, onConfirm }: CancelMeetingModalProps) {
+  useEscapeToClose(Boolean(meeting), onClose);
   const [reason, setReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');

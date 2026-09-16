@@ -7,6 +7,7 @@ import { ProjectTaskItem } from './types';
 import { displayName } from './CreateProjectModal';
 import { getAvatarColor } from '../../lib/avatarColor';
 import { getItemVisual } from '../DocVault';
+import { useEscapeToClose } from '../../lib/useEscapeToClose';
 
 interface ReviewTaskModalProps {
   task: ProjectTaskItem | null;
@@ -20,6 +21,7 @@ interface ReviewTaskModalProps {
 // files, then either passes it (-> 'done') or bounces it back (-> 'in_progress' with a required
 // reason in reviewNote, which the assignee sees on the task and can address before resubmitting).
 export default function ReviewTaskModal({ task, employees, documents, onReview, onClose }: ReviewTaskModalProps) {
+  useEscapeToClose(Boolean(task), onClose);
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectField, setShowRejectField] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);

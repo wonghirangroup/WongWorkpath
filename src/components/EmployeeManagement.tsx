@@ -19,8 +19,11 @@ import {
   MenuRestrictionChecklist,
   assignableAccountTypes,
   restrictableNavItemsFor,
+  roleExemptFromDepartment,
 } from './EmployeeFormShared';
 import Tooltip from './Tooltip';
+import ThaiDatePicker from './ThaiDatePicker';
+import { useEscapeToClose } from '../lib/useEscapeToClose';
 
 const DEFAULT_PASSWORD = 'Wongwork2026!';
 
@@ -195,6 +198,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  useEscapeToClose(Boolean(deleteTarget), () => setDeleteTarget(null));
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
@@ -227,9 +231,12 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
     setShowAddForm(false);
   };
 
-  // ผู้บริหาร sits over the whole ฝ่าย, not one แผนก under it — this is the one role that doesn't
-  // need a department pinned to it (see server/routes/employees.ts for the matching relaxed check).
-  const isExecutiveRole = newRole.trim() === 'ผู้บริหาร';
+  useEscapeToClose(showAddForm, resetForm);
+
+  // ผู้บริหาร and หัวหน้าฝ่าย both sit over a whole ฝ่าย, not one แผนก under it — these are the
+  // roles that don't need a department pinned to them (see server/routes/employees.ts for the
+  // matching relaxed check). หัวหน้าแผนก still belongs to exactly one แผนก, so it's not exempt.
+  const hidesDepartmentField = roleExemptFromDepartment(newRole);
 
   const isFormValid = !!(
     newName.trim() && newEmail.trim() && newUsername.trim() && newRole.trim() && newPassword.trim()
@@ -248,7 +255,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
         email: newEmail.trim(),
         username: newUsername.trim(),
         role: newRole.trim(),
-        department: isExecutiveRole ? '' : newDepartment,
+        department: hidesDepartmentField ? '' : newDepartment,
         division: newDivision,
         avatar: newAvatar.trim(),
         accountType: newAccountType,
@@ -301,7 +308,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
           the viewport, so it lands at (header height + <main>'s own top padding + this value) —
           the negative value here is exactly what cancels <main>'s own padding back out so this
           sits flush against the header with no gap for table rows to show through. */}
-      <div className="sticky -top-4 sm:-top-6 lg:-top-8 z-30 bg-[#F6F6F6] pt-1 space-y-4">
+      <div className="sticky -top-4 sm:-top-6 lg:-top-3.75 z-30 bg-[#F6F6F6] pt-1 space-y-4">
       {activeTab === 'employees' ? (
       <div className="flex flex-col lg:flex-row gap-3 lg:items-center">
         <div className="relative w-full lg:w-137.5 lg:flex-none">
@@ -333,7 +340,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
               <button
                 type="button"
                 onClick={() => setViewMode('grid')}
-                className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'grid' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
+                className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1 ${viewMode === 'grid' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
                 aria-label="มุมมองการ์ด"
               >
                 <LayoutGrid size={15} />
@@ -343,7 +350,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
               <button
                 type="button"
                 onClick={() => setViewMode('list')}
-                className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'list' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
+                className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1 ${viewMode === 'list' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
                 aria-label="มุมมองรายการ"
               >
                 <List size={15} />
@@ -396,15 +403,9 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <Tooltip content="กรองตามวันที่">
-              <input
-                type="date"
-                value={logDateFilter}
-                onChange={(e) => setLogDateFilter(e.target.value)}
-                className="h-10 px-3 bg-white border border-slate-200 rounded-xl text-[13px] font-normal focus:outline-none focus:border-[#FF6537] cursor-pointer"
-                aria-label="กรองตามวันที่"
-              />
-            </Tooltip>
+            <div className="w-40">
+              <ThaiDatePicker value={logDateFilter} onChange={setLogDateFilter} compact placeholder="กรองตามวันที่" />
+            </div>
             <div className="w-36 h-10">
               <Dropdown<string>
                 value={logDepartmentFilter}
@@ -794,7 +795,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                     />
                   </div>
 
-                  {!isExecutiveRole && (
+                  {!hidesDepartmentField && (
                   <div>
                     <label className="block text-[#272220] font-bold text-[11px] mb-1">แผนก *</label>
                     <Dropdown<string>

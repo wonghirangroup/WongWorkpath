@@ -7,7 +7,6 @@ const WIDGET_LABELS: { key: keyof DashboardWidgetVisibility; label: string }[] =
   { key: 'summaryTable', label: 'สรุปโครงการ (ตาราง)' },
   { key: 'statusChart', label: 'สัดส่วนสถานะโครงการ (กราฟวงกลม)' },
   { key: 'myTasks', label: 'งานของฉันที่ใกล้ครบกำหนด' },
-  { key: 'workload', label: 'ใครทำอะไรอยู่บ้าง' },
 ];
 
 interface WidgetSettingsMenuProps {

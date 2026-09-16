@@ -96,7 +96,15 @@ export default function ProjectTable({ rows, employees, onViewDetail, canDelete,
                 </td>
                 <td className="px-4 py-4 text-[#6F6F6F]">{index + 1}</td>
                 <td className="px-4 py-4 text-[#6F6F6F] whitespace-nowrap">{row.code}</td>
-                <td className="px-4 py-4 font-medium text-[#272220]">{row.title}</td>
+                <td className="px-4 py-4 font-medium text-[#272220]">
+                  <button
+                    type="button"
+                    onClick={() => onViewDetail(row)}
+                    className="text-left hover:text-[#FF6537] hover:underline cursor-pointer"
+                  >
+                    {row.title}
+                  </button>
+                </td>
                 <td className="px-4 py-4 text-[#6F6F6F] max-w-55 truncate"><Tooltip content={row.description}><span className="block truncate">
                   {row.description || 'ยังไม่มี'}
                 </span></Tooltip></td>

@@ -156,7 +156,7 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
     : notifications;
 
   return (
-    <header className="bg-[#F6F6F6] text-[#272220] h-16 sm:h-20 px-4 sm:px-6 lg:px-8 flex items-center lg:items-start lg:pt-7 justify-between shrink-0 sticky top-0 z-40">
+    <header className="bg-[#F6F6F6] text-[#272220] h-16 sm:h-20 lg:h-auto px-4 sm:px-6 lg:px-8 flex items-center lg:items-start lg:pt-7 justify-between shrink-0 sticky top-0 z-40">
       <div className="flex items-center gap-2 sm:gap-3 min-w-0">
         <button
           onClick={onToggleMobileMenu}

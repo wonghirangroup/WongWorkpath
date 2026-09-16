@@ -6,6 +6,7 @@ import { ProjectTaskItem } from './types';
 import { TASK_STATUS_LABEL, TASK_STATUS_COLOR } from './statusMeta';
 import { displayName, PRIORITY_OPTIONS } from './CreateProjectModal';
 import { getAvatarColor } from '../../lib/avatarColor';
+import { useEscapeToClose } from '../../lib/useEscapeToClose';
 
 function PersonRow({ label, employee }: { label: string; employee: Employee | undefined }) {
   return (
@@ -72,6 +73,7 @@ interface TaskDetailModalProps {
 // Read-only — opened from the "การกระทำ" column's "ดูรายละเอียด" button so a truncated row
 // (long description, etc.) can still be read in full without leaving the table.
 export default function TaskDetailModal({ task, employees, onClose }: TaskDetailModalProps) {
+  useEscapeToClose(Boolean(task), onClose);
   const assignees = task ? employees.filter((e) => task.assigneeEmployeeIds.includes(e.id)) : [];
   const creator = task?.creatorEmployeeId ? employees.find((e) => e.id === task.creatorEmployeeId) : undefined;
   const reviewers = task ? employees.filter((e) => (task.reviewerEmployeeIds ?? []).includes(e.id)) : [];

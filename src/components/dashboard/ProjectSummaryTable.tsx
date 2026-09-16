@@ -1,10 +1,8 @@
-import { useState } from 'react';
 import { Employee } from '../../types';
-import { ProjectRow, ProjectStatus } from '../projectBoard/types';
+import { ProjectRow } from '../projectBoard/types';
 import { STATUS_LABEL, STATUS_PILL, STATUS_ICON, STATUS_DOT } from '../projectBoard/statusMeta';
 import { displayName } from '../projectBoard/CreateProjectModal';
 import { getAvatarColor } from '../../lib/avatarColor';
-import Dropdown from '../Dropdown';
 import Tooltip from '../Tooltip';
 
 function formatBaht(n: number): string {
@@ -49,41 +47,19 @@ interface ProjectSummaryTableProps {
   titleOverride?: string;
 }
 
-const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
-  { value: 'All', label: 'ทุกสถานะ' },
-  { value: 'in_progress', label: STATUS_LABEL.in_progress },
-  { value: 'on_hold', label: STATUS_LABEL.on_hold },
-  { value: 'completed', label: STATUS_LABEL.completed },
-  { value: 'draft', label: STATUS_LABEL.draft },
-  { value: 'cancelled', label: STATUS_LABEL.cancelled },
-];
-
 export default function ProjectSummaryTable({ projects, employees, onSelectProject, titleOverride }: ProjectSummaryTableProps) {
-  const [statusFilter, setStatusFilter] = useState('All');
-  const [managerFilter, setManagerFilter] = useState('All');
-
   const employeeById = new Map(employees.map((e) => [e.id, e]));
-  const managerOptions = [
-    { value: 'All', label: 'ทุกผู้รับผิดชอบ' },
-    ...Array.from(new Set(projects.map((p) => p.ownerEmployeeId).filter((id): id is string => !!id)))
-      .map((id) => ({ value: id, label: employeeById.get(id) ? displayName(employeeById.get(id)!) : id })),
-  ];
 
-  const filtered = projects
-    .filter((p) => statusFilter === 'All' || p.status === statusFilter)
-    .filter((p) => managerFilter === 'All' || p.ownerEmployeeId === managerFilter)
-    .sort((a, b) => (a.daysUntilDue ?? Infinity) - (b.daysUntilDue ?? Infinity));
+  // No status/responsible-person filters here — the dashboard's own toolbar (department/project)
+  // already scopes this list once; a second, independent filter layer on top just added clicks
+  // without a clear reason to filter this widget differently from every other one on the page.
+  const filtered = [...projects].sort((a, b) => (a.daysUntilDue ?? Infinity) - (b.daysUntilDue ?? Infinity));
 
   return (
     <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] h-full flex flex-col">
       <div className="mb-4">
         <h3 className="text-base font-bold text-[#272220]">{titleOverride ?? 'สรุปโครงการ (Project Summary)'}</h3>
         <p className="text-xs text-[#6F6F6F]">ภาพรวมโครงการ ผู้รับผิดชอบ และความคืบหน้าล่าสุด</p>
-      </div>
-
-      <div className="flex items-center gap-2 mb-3">
-        <div className="w-36"><Dropdown value={statusFilter} onChange={setStatusFilter} options={STATUS_FILTER_OPTIONS} /></div>
-        <div className="w-44"><Dropdown value={managerFilter} onChange={setManagerFilter} options={managerOptions} /></div>
       </div>
 
       {filtered.length === 0 ? (

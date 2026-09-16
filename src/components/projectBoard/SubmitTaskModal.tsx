@@ -7,6 +7,7 @@ import { ProjectTaskItem } from './types';
 import { EmployeeMultiSelect } from './CreateProjectModal';
 import { readFileAsDataUrl, MAX_FILE_BYTES, formatFileSize, getItemVisual, suggestLinkName } from '../DocVault';
 import { nowTimestamp } from '../../lib/datetime';
+import { useEscapeToClose } from '../../lib/useEscapeToClose';
 
 interface SubmitTaskModalProps {
   task: ProjectTaskItem | null;
@@ -24,6 +25,7 @@ interface SubmitTaskModalProps {
 // it shows up in "เอกสาร Drive" too, filed alongside the task's own folder when it has one). This
 // moves the task to 'review'; ReviewTaskModal is the other half of the loop.
 export default function SubmitTaskModal({ task, employees, documents, projectDocFolderId, currentUserName, onAddDocument, onSubmit, onClose }: SubmitTaskModalProps) {
+  useEscapeToClose(Boolean(task), onClose);
   const [reviewerIds, setReviewerIds] = useState<string[]>([]);
   const [note, setNote] = useState('');
   const [pickedFiles, setPickedFiles] = useState<globalThis.File[]>([]);

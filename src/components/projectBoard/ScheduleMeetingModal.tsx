@@ -6,6 +6,8 @@ import { Employee, Meeting } from '../../types';
 import { ProjectRow } from './types';
 import { EmployeeMultiSelect, formatThaiDateShort } from './CreateProjectModal';
 import Dropdown from '../Dropdown';
+import ThaiDatePicker from '../ThaiDatePicker';
+import { useEscapeToClose } from '../../lib/useEscapeToClose';
 
 interface ScheduleMeetingModalProps {
   isOpen: boolean;
@@ -198,15 +200,12 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
                   <div className="grid grid-cols-3 gap-3">
                     <div className="col-span-1">
                       <label className="block text-[#A0A0A0] text-[10px] mb-1">วันที่</label>
-                      <input
-                        type="date"
+                      <ThaiDatePicker
                         value={meetingDate}
+                        onChange={setMeetingDate}
                         min={projectStartDate || undefined}
                         max={projectEndDate || undefined}
-                        onChange={(e) => setMeetingDate(e.target.value)}
-                        className={`w-full p-2.5 text-sm border rounded-lg focus:outline-none focus:border-[#FF6537] ${
-                          meetingDateInRange ? 'border-[#E5E5E5]' : 'border-red-400'
-                        }`}
+                        hasError={!meetingDateInRange}
                       />
                     </div>
                     <div>

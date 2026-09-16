@@ -8,6 +8,7 @@ import { Employee } from '../../types';
 import { canDeleteProject } from '../../lib/permissions';
 import { ApiError } from '../../lib/api';
 import { buildCsv, downloadCsv } from '../../lib/csv';
+import { useEscapeToClose } from '../../lib/useEscapeToClose';
 import { ProjectRow, ProjectStatus } from './types';
 import { STATUS_LABEL, PROJECT_PRIORITY_META, PROJECT_TYPE_META, PROJECT_STATUS_OPTIONS } from './statusMeta';
 import { displayName } from './CreateProjectModal';
@@ -51,7 +52,7 @@ function SortMenu({ value, onChange }: { value: SortBy; onChange: (v: SortBy) =>
       <button
         type="button"
         onClick={() => setIsOpen((prev) => !prev)}
-        className="flex items-center gap-2 cursor-pointer"
+        className="flex items-center gap-2 cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1"
       >
         <span className="text-sm text-[#6F6F6F] leading-none mt-1">•</span>
         <span className="text-sm text-[#6F6F6F] leading-none mt-0.5">เรียงตาม: {selectedLabel}</span>
@@ -115,6 +116,7 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [actionToast, setActionToast] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
+  useEscapeToClose(Boolean(deleteTarget), () => setDeleteTarget(null));
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   // Lives in AppDataContext (not local state) so the Header can render the current project's
@@ -261,7 +263,7 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
     <div className="space-y-6">
       {/* Sticky under Header (same pattern as EmployeeManagement/Dashboard) so the search/toolbar
           row stays put while the status cards and table scroll under it. */}
-      <div className="sticky -top-4 sm:-top-6 lg:-top-8 z-30 bg-[#F6F6F6] pt-1">
+      <div className="sticky -top-4 sm:-top-6 lg:-top-3.75 z-30 bg-[#F6F6F6] pt-1">
       <div className="flex flex-col lg:flex-row gap-3 lg:items-center">
         {/* Search grows up to its old fixed 550px but yields width first — the button group
             (min-w-max) never shrinks below its content, so all 4 actions stay on one line. */}
@@ -294,7 +296,7 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
               <button
                 type="button"
                 onClick={() => setView('list')}
-                className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${
+                className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1 ${
                   view === 'list' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'
                 }`}
                 aria-label="มุมมองตาราง"
@@ -306,7 +308,7 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
               <button
                 type="button"
                 onClick={() => setView('grid')}
-                className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${
+                className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1 ${
                   view === 'grid' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'
                 }`}
                 aria-label="มุมมองการ์ด"
@@ -358,7 +360,7 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
             <button
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
-              className="w-9 h-9 lg:w-8 lg:h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-[#FF6537] hover:bg-orange-50 disabled:text-slate-300 disabled:hover:bg-white disabled:cursor-not-allowed cursor-pointer transition-colors"
+              className="w-9 h-9 lg:w-8 lg:h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-[#FF6537] hover:bg-orange-50 disabled:text-slate-300 disabled:hover:bg-white disabled:cursor-not-allowed cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1"
             >
               <ChevronLeft size={16} />
             </button>
@@ -366,7 +368,7 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
               <button
                 key={pageNum}
                 onClick={() => setCurrentPage(pageNum)}
-                className={`w-9 h-9 lg:w-8 lg:h-8 rounded-lg text-sm font-bold cursor-pointer transition-colors ${
+                className={`w-9 h-9 lg:w-8 lg:h-8 rounded-lg text-sm font-bold cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1 ${
                   pageNum === currentPage
                     ? 'bg-[#FF6537] text-white shadow-sm'
                     : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
@@ -378,7 +380,7 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
             <button
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
-              className="w-9 h-9 lg:w-8 lg:h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-[#FF6537] hover:bg-orange-50 disabled:text-slate-300 disabled:hover:bg-white disabled:cursor-not-allowed cursor-pointer transition-colors"
+              className="w-9 h-9 lg:w-8 lg:h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-[#FF6537] hover:bg-orange-50 disabled:text-slate-300 disabled:hover:bg-white disabled:cursor-not-allowed cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1"
             >
               <ChevronRight size={16} />
             </button>

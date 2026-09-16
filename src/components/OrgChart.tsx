@@ -7,6 +7,7 @@ import { COMPANY_NAME, OrgDivisionData, resolveOrgPlacement } from '../data/orgS
 import { getAvatarColor } from '../lib/avatarColor';
 import Dropdown from './Dropdown';
 import Tooltip from './Tooltip';
+import { useEscapeToClose } from '../lib/useEscapeToClose';
 
 function displayName(emp: Employee) {
   return emp.nickname || emp.name;
@@ -125,6 +126,7 @@ function NamePromptModal({
   onClose: () => void;
 }) {
   const [value, setValue] = useState(initialValue);
+  useEscapeToClose(true, onClose);
   return createPortal(
     <AnimatePresence>
       <motion.div className="fixed inset-0 z-50 flex items-center justify-center">

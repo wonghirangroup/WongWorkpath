@@ -7,6 +7,7 @@ import { nowTimestamp } from '../lib/datetime';
 import { getDepartmentTagClass } from '../lib/departmentColors';
 import { useAppData } from '../context/AppDataContext';
 import { ProjectRow, ProjectTaskItem } from './projectBoard/types';
+import { formatThaiDateShort } from './projectBoard/CreateProjectModal';
 import {
   Plus,
   Copy,
@@ -33,6 +34,7 @@ import {
   X
 } from 'lucide-react';
 import Dropdown from './Dropdown';
+import { useEscapeToClose } from '../lib/useEscapeToClose';
 import firstCreateDocIcon from '../../images/frist create doc icon.png';
 import searchIcon from '../../images/icon/Search pass.png';
 import editIcon from '../../images/icon menu/edit.png';
@@ -156,12 +158,6 @@ export function readFileAsDataUrl(file: globalThis.File): Promise<string> {
 }
 
 // Formats "2026-06-22 11:15" as the Thai short date "22/6/2569" (Buddhist Era year)
-function formatThaiShortDate(dateStr: string) {
-  const [datePart] = dateStr.split(' ');
-  const [year, month, day] = datePart.split('-').map(Number);
-  return `${day}/${month}/${year + 543}`;
-}
-
 // Per-card "..." menu — portals to document.body (positioned from the trigger button's own rect)
 // so it floats above the page instead of getting clipped by the table's horizontal-scroll wrapper.
 // Each action is only rendered when its handler is supplied, so folder/file/link cards each show
@@ -392,7 +388,14 @@ export default function DocVault({
       uploadFilesToFolder(Array.from(e.dataTransfer.files), folder.id);
       return;
     }
-    if (draggedDocId && isValidDropTarget(folder)) onMoveDocument(draggedDocId, folder.id);
+    if (draggedDocId && isValidDropTarget(folder)) {
+      const movedDoc = documents.find((d) => d.id === draggedDocId);
+      onMoveDocument(draggedDocId, folder.id);
+      // Every other mutation in this file confirms itself with a toast — a drag-drop move stayed
+      // silent, which read as "did that actually work?" since nothing else visibly changes at the
+      // drop target (the item just vanishes from view into the folder).
+      showActionToast(movedDoc ? `ย้าย "${movedDoc.name}" ไปที่ "${folder.name}" แล้ว` : 'ย้ายรายการสำเร็จแล้ว');
+    }
     setDraggedDocId(null);
   };
 
@@ -569,10 +572,12 @@ export default function DocVault({
 
   // Delete confirmation modal
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; hasChildren: boolean } | null>(null);
+  useEscapeToClose(Boolean(deleteTarget), () => setDeleteTarget(null));
 
   // Preview modal — real in-browser rendering for PDFs (printable) and images, with an
   // open/download fallback for other file types. Also what a deep-linked doc opens into.
   const [previewDocId, setPreviewDocId] = useState<string | null>(initialSelectedDocId || null);
+  useEscapeToClose(Boolean(previewDocId), () => setPreviewDocId(null));
   const previewIframeRef = useRef<HTMLIFrameElement>(null);
   const previewDoc = documents.find(d => d.id === previewDocId);
 
@@ -664,6 +669,8 @@ export default function DocVault({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [addMenuOpen]);
 
+  useEscapeToClose(addMode !== null, () => closeAddForm());
+
   const closeAddForm = () => {
     setAddMode(null);
     setNewName('');
@@ -687,6 +694,8 @@ export default function DocVault({
   const editSiblingNames = documents
     .filter((d) => d.parentId === editDoc?.parentId && d.id !== editDocId)
     .map((d) => d.name);
+
+  useEscapeToClose(Boolean(editDoc), () => closeEdit());
 
   const closeEdit = () => {
     setEditDocId(null);
@@ -964,7 +973,7 @@ export default function DocVault({
 
       {/* Sticky under Header, same pattern as EmployeeManagement/ProjectBoard/Dashboard, so this
           row stays put while the file grid scrolls under it. */}
-      <div className="sticky -top-4 sm:-top-6 lg:-top-8 z-30 bg-[#F6F6F6] pt-1">
+      <div className="sticky -top-4 sm:-top-6 lg:-top-3.75 z-30 bg-[#F6F6F6] pt-1">
       {/* Search, view toggle, kind filter & create — single controls row, same layout as the Credential Vault */}
       <div className="flex flex-col lg:flex-row gap-3 lg:items-center">
         <div className="relative w-full lg:w-137.5 lg:flex-none">
@@ -997,7 +1006,7 @@ export default function DocVault({
               <button
                 type="button"
                 onClick={() => setViewMode('grid')}
-                className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'grid' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
+                className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1 ${viewMode === 'grid' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
                 aria-label="มุมมองตาราง"
               >
                 <LayoutGrid size={15} />
@@ -1007,7 +1016,7 @@ export default function DocVault({
               <button
                 type="button"
                 onClick={() => setViewMode('list')}
-                className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'list' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
+                className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1 ${viewMode === 'list' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
                 aria-label="มุมมองรายการ"
               >
                 <List size={15} />
@@ -1086,7 +1095,7 @@ export default function DocVault({
           <button
             type="button"
             onClick={() => setIsSortOpen((prev) => !prev)}
-            className="flex items-center gap-2 cursor-pointer"
+            className="flex items-center gap-2 cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1"
           >
             <span className="text-sm text-[#6F6F6F] leading-none mt-1">•</span>
             <span className="text-sm text-[#6F6F6F] leading-none mt-0.5">
@@ -1197,7 +1206,7 @@ export default function DocVault({
                         {creatorName === currentUserName ? 'คุณ' : creatorName}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-[12px] font-normal text-[#6F6F6F]">
-                        {formatThaiShortDate(createdDate)}
+                        {formatThaiDateShort(createdDate)}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
@@ -1261,7 +1270,7 @@ export default function DocVault({
               const footer = (
                 <div className="flex justify-between items-center text-[11px] font-normal text-[#6F6F6F] pt-2 border-t border-[#EDEEEF]">
                   <span>สร้างโดย: {creatorName === currentUserName ? 'คุณ' : creatorName}</span>
-                  <span>สร้างเมื่อ: {formatThaiShortDate(createdDate)}</span>
+                  <span>สร้างเมื่อ: {formatThaiDateShort(createdDate)}</span>
                 </div>
               );
 

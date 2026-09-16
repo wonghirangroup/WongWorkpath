@@ -2,6 +2,8 @@ import { useState, FormEvent, KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { X, ArrowRight } from 'lucide-react';
+import { useEscapeToClose } from '../../lib/useEscapeToClose';
+import ThaiDatePicker from '../ThaiDatePicker';
 import { Employee } from '../../types';
 import { ProjectRow, ProjectType, CustomProjectStatus } from './types';
 import { STATUS_LABEL, PROJECT_TYPE_META, PROJECT_TYPE_OPTIONS } from './statusMeta';
@@ -15,6 +17,8 @@ import {
   displayName,
 } from './CreateProjectModal';
 import { ApiError } from '../../lib/api';
+import { formatThousands } from '../../lib/numberFormat';
+import Dropdown from '../Dropdown';
 import Tooltip from '../Tooltip';
 
 interface EditProjectModalProps {
@@ -32,6 +36,7 @@ interface EditProjectModalProps {
 // create wizard itself collects are editable here (see CreateProjectModal's own note on why
 // "department" has no field yet) — this stays a straight edit of what's already there.
 export default function EditProjectModal({ isOpen, onClose, row, employees, onSave, existingTitles, customStatuses }: EditProjectModalProps) {
+  useEscapeToClose(isOpen, onClose);
   const [title, setTitle] = useState(row.title);
   const [renameNotice, setRenameNotice] = useState('');
   // Renaming to the project's own current title is never a "collision" with itself.
@@ -116,7 +121,7 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ type: 'spring', stiffness: 300, damping: 24, mass: 0.9 }}
-            className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-md mx-4 max-h-[85vh] overflow-hidden flex flex-col"
+            className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-lg mx-4 max-h-[85vh] overflow-hidden flex flex-col"
           >
             <div className="flex justify-between items-center px-5 pt-5 pb-3 shrink-0 border-b border-slate-100">
               <div>
@@ -170,16 +175,14 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[#272220] font-bold text-[11px] mb-1">ประเภทโครงการ</label>
-                    <select
+                    <Dropdown<ProjectType | ''>
                       value={type ?? ''}
-                      onChange={(e) => setType((e.target.value || null) as ProjectType | null)}
-                      className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg bg-white focus:outline-none focus:border-[#FF6537]"
-                    >
-                      <option value="">ไม่ระบุ</option>
-                      {PROJECT_TYPE_OPTIONS.map((t) => (
-                        <option key={t} value={t}>{PROJECT_TYPE_META[t].label} ({t})</option>
-                      ))}
-                    </select>
+                      onChange={(v) => setType((v || null) as ProjectType | null)}
+                      options={[
+                        { value: '', label: 'ไม่ระบุ' },
+                        ...PROJECT_TYPE_OPTIONS.map((t) => ({ value: t, label: `${PROJECT_TYPE_META[t].label} (${t})` })),
+                      ]}
+                    />
                   </div>
                   <div>
                     <label className="block text-[#272220] font-bold text-[11px] mb-1">ตัวย่อโครงการ</label>
@@ -270,59 +273,43 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-[#272220] font-bold text-[11px] mb-1">สถานะ</label>
-                  <select
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value)}
-                    className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg bg-white focus:outline-none focus:border-[#FF6537]"
-                  >
-                    {STATUS_OPTIONS.map((s) => (
-                      <option key={s} value={s}>{STATUS_LABEL[s]}</option>
-                    ))}
-                    {customStatuses.map((s) => (
-                      <option key={s.id} value={s.id}>{s.label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[#272220] font-bold text-[11px] mb-1">งบประมาณ (บาท)</label>
-                  <div className="relative">
-                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-[#B0B0B0]">฿</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="1000"
-                      placeholder="เช่น 500000"
-                      value={budget}
-                      onChange={(e) => setBudget(e.target.value)}
-                      className="w-full p-2.5 pl-6 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[#272220] font-bold text-[11px] mb-1">สถานะ</label>
+                    <Dropdown<string>
+                      value={status}
+                      onChange={setStatus}
+                      options={[
+                        ...STATUS_OPTIONS.map((s) => ({ value: s, label: STATUS_LABEL[s] })),
+                        ...customStatuses.map((s) => ({ value: s.id, label: s.label })),
+                      ]}
                     />
+                  </div>
+
+                  <div>
+                    <label className="block text-[#272220] font-bold text-[11px] mb-1">งบประมาณ (บาท)</label>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-[#B0B0B0]">฿</span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="เช่น 500,000"
+                        value={formatThousands(budget)}
+                        onChange={(e) => setBudget(e.target.value.replace(/[^\d]/g, ''))}
+                        className="w-full p-2.5 pl-6 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                      />
+                    </div>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[#272220] font-bold text-[11px] mb-1">วันที่เริ่ม</label>
-                    <input
-                      type="date"
-                      value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
-                      className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg focus:outline-none focus:border-[#FF6537]"
-                    />
+                    <ThaiDatePicker value={startDate} onChange={setStartDate} />
                   </div>
                   <div>
                     <label className="block text-[#272220] font-bold text-[11px] mb-1">วันที่สิ้นสุด</label>
-                    <input
-                      type="date"
-                      value={endDate}
-                      min={startDate || undefined}
-                      onChange={(e) => setEndDate(e.target.value)}
-                      className={`w-full p-2.5 text-sm border rounded-lg focus:outline-none focus:border-[#FF6537] ${
-                        dateOrderValid ? 'border-[#E5E5E5]' : 'border-red-400'
-                      }`}
-                    />
+                    <ThaiDatePicker value={endDate} onChange={setEndDate} min={startDate || undefined} hasError={!dateOrderValid} />
                   </div>
                 </div>
                 {!dateOrderValid && (

@@ -1,6 +1,7 @@
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { X } from 'lucide-react';
+import { useEscapeToClose } from '../../lib/useEscapeToClose';
 
 interface LogoutConfirmModalProps {
   open: boolean;
@@ -11,6 +12,7 @@ interface LogoutConfirmModalProps {
 // Shared by both logout buttons (Header's user menu, Sidebar's own button) so there's exactly
 // one confirmation experience regardless of which one was clicked.
 export default function LogoutConfirmModal({ open, onConfirm, onCancel }: LogoutConfirmModalProps) {
+  useEscapeToClose(open, onCancel);
   return createPortal(
     <AnimatePresence>
       {open && (

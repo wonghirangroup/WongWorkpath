@@ -2,7 +2,6 @@ export interface DashboardWidgetVisibility {
   summaryTable: boolean;
   statusChart: boolean;
   myTasks: boolean;
-  workload: boolean;
 }
 
 export interface DashboardWidgetPrefs {
@@ -12,7 +11,7 @@ export interface DashboardWidgetPrefs {
 const STORAGE_KEY = 'unityspace_dashboard_widget_prefs';
 
 export const DEFAULT_WIDGET_PREFS: DashboardWidgetPrefs = {
-  visible: { summaryTable: true, statusChart: true, myTasks: true, workload: true },
+  visible: { summaryTable: true, statusChart: true, myTasks: true },
 };
 
 // Best-effort load — a corrupted or pre-migration value in localStorage should never break the

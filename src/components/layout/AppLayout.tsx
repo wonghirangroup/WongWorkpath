@@ -8,6 +8,7 @@ import AddTaskModal from '../projectBoard/AddTaskModal';
 import NotificationToast from './NotificationToast';
 import { createDocFolder } from '../../lib/docFolder';
 import Tooltip from '../Tooltip';
+import { STATUS_LABEL, STATUS_PILL, STATUS_ICON } from '../projectBoard/statusMeta';
 
 // Title/subtitle shown in the Header for each route — kept separate from NAV_ITEMS' short
 // sidebar labels since some pages (e.g. docs) use different, longer wording for their page title.
@@ -54,14 +55,14 @@ export default function AppLayout() {
   const handleCreateFolder = (name: string, parentId: string | null = null, taskId?: string) =>
     createDocFolder(name, parentId, taskId, documents, saveDocuments, currentUser?.name || 'ผู้ใช้งานปัจจุบัน');
 
-  // On the Tasks page, once a project's detail view is open, the Header swaps to a generic
-  // "รายละเอียด" title with a back arrow to return to the list. The project's own title,
-  // status pill, and code now render once, inside ProjectDetail's own page body — repeating
-  // them again up here doubled the same info and, being in the Header, disappeared from view
-  // entirely once ProjectDetail's toolbar/tabs became sticky and scrolled underneath it.
+  // On the Tasks page, once a project's detail view is open, the Header swaps to the project's
+  // own title (with status pill + code as its subtitle) plus a back arrow to return to the list —
+  // this stays visible even once ProjectDetail's own toolbar/tabs become sticky and scroll
+  // underneath it, unlike the in-body copy that used to live down there.
   const selectedProject = activeId === 'tasks'
     ? projects.find((p) => p.id === taskSelectedProjectId)
     : undefined;
+  const SelectedProjectStatusIcon = selectedProject ? STATUS_ICON[selectedProject.status] : undefined;
 
   // On the Docs Drive page, once you've navigated into a folder, the Header's subtitle line
   // becomes a breadcrumb ("เอกสาร Drive > Grow Store") instead of the page's normal static
@@ -157,8 +158,29 @@ export default function AppLayout() {
         </Fragment>
       ))}
     </span>
-  ) : selectedProject ? undefined : pageMeta?.subtitle;
+  ) : selectedProject ? (
+    // The title row has a back-arrow button (28px) + gap-3 (12px) = 40px before its text starts,
+    // but this subtitle row has no such icon — ml-10 lines this row's visible left edge up with
+    // the TITLE TEXT above it, not with the row's own container edge (under the arrow icon).
+    <span className="flex items-center gap-2.5 ml-10 min-w-0 overflow-hidden">
+      <span
+        className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-sm font-medium whitespace-nowrap shrink-0"
+        style={{
+          backgroundColor: STATUS_PILL[selectedProject.status].bg,
+          color: STATUS_PILL[selectedProject.status].text,
+          borderColor: `${STATUS_PILL[selectedProject.status].text}33`,
+        }}
+      >
+        {SelectedProjectStatusIcon && <SelectedProjectStatusIcon size={13} strokeWidth={2} />}
+        {STATUS_LABEL[selectedProject.status]}
+      </span>
+      <span className="px-2 py-0.5 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-[#6F6F6F] min-w-0 truncate">{selectedProject.code}</span>
+    </span>
+  ) : pageMeta?.subtitle;
 
+  // Project name + status + code moved up here from ProjectDetail's own page body — that way
+  // they stay visible in the Header even after ProjectDetail's own toolbar/tabs become sticky
+  // and scroll underneath it, instead of disappearing along with the rest of the page content.
   const headerTitle = selectedProject ? (
     <span className="inline-flex items-center gap-3 min-w-0">
       <Tooltip content="กลับไปหน้ารายการโครงการ">
@@ -171,7 +193,7 @@ export default function AppLayout() {
           <ArrowLeft size={28} />
         </button>
       </Tooltip>
-      <span className="truncate">รายละเอียดโครงการ</span>
+      <span className="truncate">{selectedProject.title}</span>
     </span>
   ) : (pageMeta?.title ?? '');
 
@@ -200,7 +222,7 @@ export default function AppLayout() {
           />
         </div>
 
-        <main className="flex-1 overflow-y-auto bg-[#F6F6F6] print:overflow-visible print:p-0 p-4 sm:p-6 lg:px-8 lg:pt-8 lg:pb-4">
+        <main className="flex-1 overflow-y-auto bg-[#F6F6F6] print:overflow-visible print:p-0 p-4 sm:p-6 lg:px-8 lg:pt-3.75 lg:pb-4">
           <Outlet />
         </main>
       </div>

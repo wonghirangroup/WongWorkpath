@@ -6,8 +6,45 @@ import { TASK_STATUS_COLOR, TASK_STATUS_LABEL } from './statusMeta';
 import { displayName } from './CreateProjectModal';
 import { getAvatarColor } from '../../lib/avatarColor';
 import Tooltip from '../Tooltip';
+import EmployeeAvatar from '../EmployeeAvatar';
+
+// Overlapping avatar stack trailing each bar — up to 3 faces plus a "+N" pill, ring-bordered so
+// they read as a group against whatever color the bar/background happens to be.
+function AvatarStack({ people, sizePx = 22 }: { people: Employee[]; sizePx?: number }) {
+  if (people.length === 0) return null;
+  const shown = people.slice(0, 3);
+  const extra = people.length - shown.length;
+  return (
+    <div className="flex items-center -space-x-2 shrink-0">
+      {shown.map((p) =>
+        p.avatar ? (
+          <img
+            key={p.id}
+            src={p.avatar}
+            alt=""
+            className="rounded-full object-cover ring-2 ring-white shrink-0"
+            style={{ width: sizePx, height: sizePx }}
+          />
+        ) : (
+          <div key={p.id} className="ring-2 ring-white rounded-full shrink-0">
+            <EmployeeAvatar name={displayName(p)} sizePx={sizePx} />
+          </div>
+        )
+      )}
+      {extra > 0 && (
+        <span
+          className="rounded-full bg-slate-200 text-slate-600 text-[9px] font-bold flex items-center justify-center ring-2 ring-white shrink-0"
+          style={{ width: sizePx, height: sizePx }}
+        >
+          +{extra}
+        </span>
+      )}
+    </div>
+  );
+}
 
 const THAI_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+const THAI_WEEKDAY_SHORT = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
 
 // Reverses formatThaiDateShort ("24 ส.ค. 2569" -> Date) so the chart can position bars on a
 // real time axis — the task data only carries pre-formatted Thai display strings, not ISO dates.
@@ -22,22 +59,26 @@ function parseThaiDate(value: string | null | undefined): Date | null {
   return new Date(buddhistYear - 543, monthIndex, day);
 }
 
-// "วัน" shows 5 evenly time-spaced points across the actual task date range; "เดือน"/"ปี" instead
-// tick at real calendar-month/year boundaries within that same range — only the tick granularity
-// changes with zoom, never the bars' own coordinate system (still true percentage-of-range).
+function startOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function isSameDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+// The coordinate system stays real calendar days at every zoom level (never percentage-of-range)
+// — only the pixel width given to one day changes, which is what actually makes "เดือน"/"ปี" feel
+// zoomed out. That keeps bar-position math identical across zoom levels instead of needing a
+// separate month/year unit system.
 type GanttZoom = 'day' | 'month' | 'year';
 const ZOOM_OPTIONS: { value: GanttZoom; label: string }[] = [
   { value: 'day', label: 'วัน' },
   { value: 'month', label: 'เดือน' },
   { value: 'year', label: 'ปี' },
 ];
-
-function formatAxisLabel(d: Date, zoom: GanttZoom): string {
-  if (zoom === 'year') return `${d.getFullYear() + 543}`;
-  if (zoom === 'month') return `${THAI_MONTHS[d.getMonth()]} ${(d.getFullYear() + 543) % 100}`;
-  return `${d.getDate()} ${THAI_MONTHS[d.getMonth()]}`;
-}
-
+const PX_PER_DAY: Record<GanttZoom, number> = { day: 48, month: 8, year: 2.2 };
+const LABEL_COL_WIDTH = 210;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 interface ProjectGanttProps {
@@ -47,6 +88,7 @@ interface ProjectGanttProps {
 
 export default function ProjectGantt({ tasks, employees }: ProjectGanttProps) {
   const [zoom, setZoom] = useState<GanttZoom>('day');
+  const pxPerDay = PX_PER_DAY[zoom];
 
   const employeeById = useMemo(() => {
     const map = new Map<string, Employee>();
@@ -76,10 +118,10 @@ export default function ProjectGantt({ tasks, employees }: ProjectGanttProps) {
       if (b.start < min) min = b.start;
       if (b.end > max) max = b.end;
     });
-    min = new Date(min.getTime() - 2 * DAY_MS);
-    max = new Date(max.getTime() + 2 * DAY_MS);
-    const totalMs = Math.max(max.getTime() - min.getTime(), DAY_MS);
-    return { min, max, totalMs };
+    min = startOfDay(new Date(min.getTime() - 2 * DAY_MS));
+    max = startOfDay(new Date(max.getTime() + 2 * DAY_MS));
+    const totalDays = Math.max(Math.round((max.getTime() - min.getTime()) / DAY_MS), 1);
+    return { min, max, totalDays };
   }, [bars]);
 
   if (!range) {
@@ -93,27 +135,43 @@ export default function ProjectGantt({ tasks, employees }: ProjectGanttProps) {
     );
   }
 
-  // "วัน": 5 evenly time-spaced points across the range. "เดือน"/"ปี": one tick per real calendar
-  // boundary within the range instead — a natural month/year grid reads better than 5 arbitrary
-  // fractional points once the range spans that long. Positions still use the same
-  // percentage-of-range math as the "วัน" ticks and the bars, just clamped to [0,100] since a
-  // month/year boundary can fall right at (or just outside) the range's own edges.
-  let ticks: Date[];
-  if (zoom === 'day') {
-    const axisTicks = 5;
-    ticks = Array.from({ length: axisTicks }, (_, i) => new Date(range.min.getTime() + (i / (axisTicks - 1)) * range.totalMs));
-  } else {
-    ticks = [];
-    const cursor = zoom === 'month'
-      ? new Date(range.min.getFullYear(), range.min.getMonth(), 1)
-      : new Date(range.min.getFullYear(), 0, 1);
-    while (cursor <= range.max) {
-      ticks.push(new Date(cursor));
-      if (zoom === 'month') cursor.setMonth(cursor.getMonth() + 1);
-      else cursor.setFullYear(cursor.getFullYear() + 1);
+  const dayOffset = (d: Date) => (d.getTime() - range.min.getTime()) / DAY_MS;
+  const totalWidth = range.totalDays * pxPerDay;
+
+  // Day-zoom header: one bordered cell per real calendar day (weekday + day number), shaded for
+  // Saturday/Sunday and ringed for today — this is the "จัดวันเป็นช่องๆ" grid the reference asked for.
+  const dayColumns = Array.from({ length: range.totalDays }, (_, i) => {
+    const date = new Date(range.min.getTime() + i * DAY_MS);
+    const weekday = date.getDay();
+    return { date, isWeekend: weekday === 0 || weekday === 6, isToday: isSameDay(date, new Date()) };
+  });
+
+  // Month/year zoom headers: one cell per real calendar boundary within the range, widened to
+  // match however many days of that month/year actually fall inside the visible range.
+  const groupedColumns = useMemo(() => {
+    if (zoom === 'day') return [];
+    const cols: { label: string; days: number; isToday: boolean }[] = [];
+    let cursor = new Date(range.min);
+    const now = new Date();
+    while (cursor < range.max) {
+      const next = zoom === 'month'
+        ? new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1)
+        : new Date(cursor.getFullYear() + 1, 0, 1);
+      const segmentEnd = next < range.max ? next : range.max;
+      const days = Math.max(Math.round((segmentEnd.getTime() - cursor.getTime()) / DAY_MS), 1);
+      const label = zoom === 'month'
+        ? `${THAI_MONTHS[cursor.getMonth()]} ${(cursor.getFullYear() + 543) % 100}`
+        : `${cursor.getFullYear() + 543}`;
+      const isToday = now >= cursor && now < segmentEnd;
+      cols.push({ label, days, isToday });
+      cursor = next;
     }
-    if (ticks.length === 0) ticks = [range.min];
-  }
+    return cols;
+  }, [zoom, range]);
+
+  const nowInRange = new Date() >= range.min && new Date() <= range.max;
+  const nowLeftPx = nowInRange ? dayOffset(new Date()) * pxPerDay : null;
+  const nowLabel = `วันนี้ ${new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`;
 
   return (
     <div className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] overflow-hidden">
@@ -134,45 +192,90 @@ export default function ProjectGantt({ tasks, employees }: ProjectGanttProps) {
           ))}
         </div>
       </div>
+
+      {/* The one scroll container for the whole chart — sliding it horizontally is how you move
+          through the timeline at any zoom level, since both the header row and every task row
+          below share this exact same scroll position. */}
       <div className="overflow-x-auto">
-        <div className="min-w-175">
-          <div className="flex border-b border-[#F4F4F4]">
-            <div className="w-52.5 shrink-0 px-5 py-3 text-xs font-medium text-[#A0A0A0] border-r border-[#F4F4F4]">
+        <div style={{ width: LABEL_COL_WIDTH + totalWidth }}>
+          {/* Header row — day zoom draws one cell per real day; month/year zoom draws one wider
+              cell per calendar month/year instead, sized to how many days of it are in view. */}
+          <div className="flex border-b border-[#F4F4F4] sticky top-0 z-20 bg-white">
+            <div
+              className="shrink-0 px-5 py-3 text-xs font-medium text-[#A0A0A0] border-r border-[#F4F4F4] sticky left-0 z-20 bg-white"
+              style={{ width: LABEL_COL_WIDTH }}
+            >
               งาน / ผู้รับผิดชอบ
             </div>
-            {/* Each label sits at its own true leftPct — same coordinate system the bars below use
-                (percentage-of-date-range) — instead of being centered inside an equal-width flex
-                column, which put every label at (idx+0.5)/ticks worth of space regardless of the
-                date it actually represented, visibly misaligning them from the bars underneath. */}
-            <div className="flex-1 relative py-3">
-              {ticks.map((d, idx) => {
-                const rawPct = ((d.getTime() - range.min.getTime()) / range.totalMs) * 100;
-                const pct = Math.max(0, Math.min(100, rawPct));
-                const xShift = pct <= 0 ? '0%' : pct >= 100 ? '-100%' : '-50%';
-                return (
+            {zoom === 'day' ? (
+              dayColumns.map((col, idx) => (
+                <div
+                  key={idx}
+                  className={`shrink-0 flex flex-col items-center justify-center py-1.5 border-r border-[#F4F4F4] ${
+                    col.isWeekend ? 'bg-[#FBFBFB]' : ''
+                  }`}
+                  style={{ width: pxPerDay }}
+                >
+                  <span className="text-[9px] text-[#A0A0A0]">{THAI_WEEKDAY_SHORT[col.date.getDay()]}</span>
                   <span
-                    key={idx}
-                    className="absolute top-1/2 text-[11px] text-[#A0A0A0] whitespace-nowrap"
-                    style={{ left: `${pct}%`, transform: `translate(${xShift}, -50%)` }}
+                    className={`text-[11px] font-semibold ${
+                      col.isToday ? 'w-5 h-5 rounded-full bg-[#FF6537] text-white flex items-center justify-center' : 'text-[#272220]'
+                    }`}
                   >
-                    {formatAxisLabel(d, zoom)}
+                    {col.date.getDate()}
                   </span>
-                );
-              })}
-            </div>
+                </div>
+              ))
+            ) : (
+              groupedColumns.map((col, idx) => (
+                <div
+                  key={idx}
+                  className={`shrink-0 flex items-center justify-center text-[11px] font-semibold border-r border-[#F4F4F4] ${
+                    col.isToday ? 'text-[#FF6537]' : 'text-[#272220]'
+                  }`}
+                  style={{ width: col.days * pxPerDay }}
+                >
+                  {col.label}
+                </div>
+              ))
+            )}
           </div>
 
-          <div className="divide-y divide-[#F9F9F9]">
+          <div className="divide-y divide-[#F9F9F9] relative">
+            {/* Vertical day-cell gridlines behind every row, at day zoom only — month/year zoom
+                keeps just the header's own boundary lines, since a line per day would be too
+                dense to read once each day is only 2-8px wide. */}
+            {zoom === 'day' && (
+              <div className="absolute inset-y-0 pointer-events-none" style={{ left: LABEL_COL_WIDTH, width: totalWidth }}>
+                {dayColumns.map((col, idx) => (
+                  <div
+                    key={idx}
+                    className={`absolute inset-y-0 border-r border-[#F4F4F4] ${col.isWeekend ? 'bg-[#FBFBFB]' : ''}`}
+                    style={{ left: idx * pxPerDay, width: pxPerDay }}
+                  />
+                ))}
+              </div>
+            )}
+            {nowLeftPx !== null && (
+              <div
+                className="absolute top-0 bottom-0 border-l-2 border-dashed border-[#FF6537]/40 z-10 pointer-events-none"
+                style={{ left: LABEL_COL_WIDTH + nowLeftPx }}
+              />
+            )}
+
             {bars.map(({ task: t, start, end }) => {
               const assignees = t.assigneeEmployeeIds.map((id) => employeeById.get(id)).filter((e): e is Employee => Boolean(e));
               const firstAssignee = assignees[0];
-              const leftPct = ((start.getTime() - range.min.getTime()) / range.totalMs) * 100;
-              const widthPct = Math.max(((end.getTime() - start.getTime()) / range.totalMs) * 100, 3);
+              const leftPx = dayOffset(start) * pxPerDay;
+              const widthPx = Math.max(dayOffset(end) * pxPerDay - leftPx, pxPerDay * 0.6);
               const color = TASK_STATUS_COLOR[t.status];
 
               return (
-                <div key={t.id} className="flex hover:bg-[#FAFAFA]">
-                  <div className="w-52.5 shrink-0 px-5 py-3 border-r border-[#F4F4F4]">
+                <div key={t.id} className="flex hover:bg-[#FAFAFA] relative">
+                  <div
+                    className="shrink-0 px-5 py-3 border-r border-[#F4F4F4] sticky left-0 z-10 bg-white"
+                    style={{ width: LABEL_COL_WIDTH }}
+                  >
                     <p className="text-sm font-medium text-[#272220] truncate">{t.title}</p>
                     <div className="flex items-center gap-1.5 mt-1">
                       {firstAssignee ? (
@@ -197,16 +300,18 @@ export default function ProjectGantt({ tasks, employees }: ProjectGanttProps) {
                     </div>
                   </div>
 
-                  <div className="flex-1 relative min-h-14">
+                  <div className="relative min-h-14" style={{ width: totalWidth }}>
                     <Tooltip content={`${t.title} · ${TASK_STATUS_LABEL[t.status]} · ${t.progress}%`}>
                       <div
-                        className="absolute top-1/2 -translate-y-1/2 h-6 rounded-md flex items-center px-2 overflow-hidden"
-                        style={{ left: `${leftPct}%`, width: `${widthPct}%`, backgroundColor: color }}
+                        className="absolute top-1/2 -translate-y-1/2 h-7 rounded-full overflow-hidden shadow-sm"
+                        style={{ left: leftPx, width: widthPx, backgroundColor: color }}
                       >
                         <div className="absolute inset-y-0 left-0 bg-white/25" style={{ width: `${t.progress}%` }} />
-                        <span className="relative text-[10px] font-semibold text-white truncate">{t.progress}%</span>
                       </div>
                     </Tooltip>
+                    <div className="absolute top-1/2 -translate-y-1/2" style={{ left: leftPx + widthPx + 6 }}>
+                      <AvatarStack people={assignees} />
+                    </div>
                   </div>
                 </div>
               );
@@ -214,6 +319,9 @@ export default function ProjectGantt({ tasks, employees }: ProjectGanttProps) {
           </div>
         </div>
       </div>
+      {nowInRange && (
+        <p className="px-5 py-2 text-[10px] text-[#A0A0A0] border-t border-[#F4F4F4]">{nowLabel}</p>
+      )}
     </div>
   );
 }

@@ -6,8 +6,10 @@ import { Employee, Meeting } from '../../types';
 import { ProjectRow, ProjectTaskItem, ProjectTaskStatus } from './types';
 import { EmployeeMultiSelect, displayName, formatThaiDateShort, PRIORITY_OPTIONS, Priority } from './CreateProjectModal';
 import { TASK_STATUS_LABEL } from './statusMeta';
-import { getAvatarColor } from '../../lib/avatarColor';
 import Dropdown from '../Dropdown';
+import EmployeeAvatar from '../EmployeeAvatar';
+import ThaiDatePicker from '../ThaiDatePicker';
+import { useEscapeToClose } from '../../lib/useEscapeToClose';
 
 type ModalMode = 'task' | 'meeting';
 
@@ -159,6 +161,8 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
     onClose();
   };
 
+  useEscapeToClose(isOpen, resetAndClose);
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!isFormValid || isSubmitting) return;
@@ -225,6 +229,22 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
     }
   };
 
+  // Shared between the task and meeting branches below, each pairing it with a different field
+  // to fill out a balanced 2-column row instead of leaving it stranded alone in a wider modal.
+  const creatorField = (
+    <div>
+      <label className="block text-[#272220] font-bold text-[11px] mb-1">ผู้สร้าง</label>
+      <div className="flex items-center gap-2.5 p-2 text-sm border border-[#E5E5E5] rounded-lg bg-slate-50">
+        {creator?.avatar ? (
+          <img src={creator.avatar} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
+        ) : (
+          <EmployeeAvatar name={creator ? displayName(creator) : '?'} sizePx={28} />
+        )}
+        <span className="text-slate-700">{creator ? displayName(creator) : 'ไม่ทราบผู้ใช้งาน'}</span>
+      </div>
+    </div>
+  );
+
   return createPortal(
     <AnimatePresence>
       {isOpen && (
@@ -242,9 +262,9 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ type: 'spring', stiffness: 300, damping: 24, mass: 0.9 }}
-            className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-md mx-4 max-h-[85vh] overflow-hidden flex flex-col"
+            className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-2xl mx-4 max-h-[88vh] overflow-hidden flex flex-col"
           >
-            <div className="flex justify-between items-center px-5 pt-5 pb-2 shrink-0">
+            <div className="flex justify-between items-center px-6 pt-5 pb-2 shrink-0">
               <div>
                 <h3 className="text-sm font-bold text-slate-800">
                   {isEditing ? 'แก้ไขงาน' : mode === 'task' ? 'เพิ่มงานใหม่' : 'นัดประชุมใหม่'}
@@ -263,7 +283,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
             </div>
 
             {!isEditing && !needsProjectPicker && (
-            <div className="flex items-center gap-1 px-5 pb-3 shrink-0">
+            <div className="flex items-center gap-1 px-6 pb-3 shrink-0">
               <button
                 type="button"
                 onClick={() => setMode('task')}
@@ -286,8 +306,9 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
             )}
 
             <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
-              <div className="flex-1 min-h-0 overflow-y-auto px-5 pt-4 pb-1 space-y-3">
-                <div>
+              <div className="flex-1 min-h-0 overflow-y-auto px-6 pt-4 pb-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
+                <div className="sm:col-span-2">
                   <label className="block text-[#272220] font-bold text-[11px] mb-1">
                     {mode === 'task' ? 'ชื่องาน' : 'ชื่อการประชุม'} <span className="text-[#FF6537]">*</span>
                   </label>
@@ -302,7 +323,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                 </div>
 
                 {needsProjectPicker && (
-                  <div>
+                  <div className="sm:col-span-2">
                     <label className="block text-[#272220] font-bold text-[11px] mb-1">
                       โครงการ <span className="text-[#FF6537]">*</span>
                     </label>
@@ -315,7 +336,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                   </div>
                 )}
 
-                <div>
+                <div className="sm:col-span-2">
                   <label className="block text-[#272220] font-bold text-[11px] mb-1">รายละเอียด (ไม่บังคับ)</label>
                   <textarea
                     rows={3}
@@ -326,25 +347,10 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                   />
                 </div>
 
-                <div>
-                  <label className="block text-[#272220] font-bold text-[11px] mb-1">ผู้สร้าง</label>
-                  <div className="flex items-center gap-2.5 p-2 text-sm border border-[#E5E5E5] rounded-lg bg-slate-50">
-                    {creator?.avatar ? (
-                      <img src={creator.avatar} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
-                    ) : (
-                      <span
-                        className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
-                        style={{ backgroundColor: getAvatarColor(creator ? displayName(creator) : '?') }}
-                      >
-                        {creator ? displayName(creator).trim().charAt(0).toUpperCase() : '?'}
-                      </span>
-                    )}
-                    <span className="text-slate-700">{creator ? displayName(creator) : 'ไม่ทราบผู้ใช้งาน'}</span>
-                  </div>
-                </div>
-
                 {mode === 'task' ? (
                   <>
+                    {creatorField}
+
                     <div>
                       <label className="block text-[#272220] font-bold text-[11px] mb-1">ผู้รับผิดชอบ (เลือกได้มากกว่า 1)</label>
                       <EmployeeMultiSelect
@@ -385,39 +391,33 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                     </div>
 
                     {isEditing && (
-                      <div>
+                      <div className="sm:col-span-2">
                         <label className="block text-[#272220] font-bold text-[11px] mb-1">สถานะงาน</label>
                         <Dropdown<ProjectTaskStatus> value={status} onChange={setStatus} options={TASK_STATUS_OPTIONS} />
                       </div>
                     )}
 
-                    <div>
+                    <div className="sm:col-span-2">
                       <label className="block text-[#272220] font-bold text-[11px] mb-1">ระยะเวลา</label>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
                           <label className="block text-[#A0A0A0] text-[10px] mb-1">วันที่เริ่ม</label>
-                          <input
-                            type="date"
+                          <ThaiDatePicker
                             value={startDate}
+                            onChange={setStartDate}
                             min={effectiveProjectStartDate || undefined}
                             max={effectiveProjectEndDate || undefined}
-                            onChange={(e) => setStartDate(e.target.value)}
-                            className={`w-full p-2.5 text-sm border rounded-lg focus:outline-none focus:border-[#FF6537] ${
-                              taskStartInRange ? 'border-[#E5E5E5]' : 'border-red-400'
-                            }`}
+                            hasError={!taskStartInRange}
                           />
                         </div>
                         <div>
                           <label className="block text-[#A0A0A0] text-[10px] mb-1">กำหนดส่ง</label>
-                          <input
-                            type="date"
+                          <ThaiDatePicker
                             value={dueDate}
+                            onChange={setDueDate}
                             min={startDate || effectiveProjectStartDate || undefined}
                             max={effectiveProjectEndDate || undefined}
-                            onChange={(e) => setDueDate(e.target.value)}
-                            className={`w-full p-2.5 text-sm border rounded-lg focus:outline-none focus:border-[#FF6537] ${
-                              taskDateOrderValid && taskDueInRange ? 'border-[#E5E5E5]' : 'border-red-400'
-                            }`}
+                            hasError={!taskDateOrderValid || !taskDueInRange}
                           />
                         </div>
                       </div>
@@ -430,7 +430,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                     </div>
 
                     {!isEditing && (
-                    <div className="border-t border-slate-100 pt-3">
+                    <div className="sm:col-span-2 border-t border-slate-100 pt-3">
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input
                           type="checkbox"
@@ -461,22 +461,19 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                   </>
                 ) : (
                   <>
-                    <div>
+                    <div className="sm:col-span-2">
                       <label className="block text-[#272220] font-bold text-[11px] mb-1">
                         วัน-เวลานัดประชุม <span className="text-[#FF6537]">*</span>
                       </label>
                       <div className="grid grid-cols-3 gap-3">
                         <div className="col-span-1">
                           <label className="block text-[#A0A0A0] text-[10px] mb-1">วันที่</label>
-                          <input
-                            type="date"
+                          <ThaiDatePicker
                             value={meetingDate}
+                            onChange={setMeetingDate}
                             min={effectiveProjectStartDate || undefined}
                             max={effectiveProjectEndDate || undefined}
-                            onChange={(e) => setMeetingDate(e.target.value)}
-                            className={`w-full p-2.5 text-sm border rounded-lg focus:outline-none focus:border-[#FF6537] ${
-                              meetingDateInRange ? 'border-[#E5E5E5]' : 'border-red-400'
-                            }`}
+                            hasError={!meetingDateInRange}
                           />
                         </div>
                         <div>
@@ -508,6 +505,8 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                       )}
                     </div>
 
+                    {creatorField}
+
                     <div>
                       <label className="block text-[#272220] font-bold text-[11px] mb-1">ผู้เข้าร่วมประชุม (ไม่บังคับ)</label>
                       <EmployeeMultiSelect
@@ -518,7 +517,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                       />
                     </div>
 
-                    <div>
+                    <div className="sm:col-span-2">
                       <label className="block text-[#272220] font-bold text-[11px] mb-1">สถานที่ / ลิงก์ประชุมออนไลน์ (ไม่บังคับ)</label>
                       <input
                         type="text"
@@ -532,11 +531,12 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                 )}
 
                 {formError && (
-                  <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{formError}</p>
+                  <p className="sm:col-span-2 text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{formError}</p>
                 )}
               </div>
+              </div>
 
-              <div className="shrink-0 px-5 pt-4 pb-5 flex items-center gap-3">
+              <div className="shrink-0 px-6 pt-4 pb-5 flex items-center gap-3">
                 <button
                   type="button"
                   onClick={resetAndClose}

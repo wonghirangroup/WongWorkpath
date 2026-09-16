@@ -45,11 +45,26 @@ export function readFileAsDataUrl(file: globalThis.File): Promise<string> {
 
 const ADD_NEW_ROLE = '__add_new_role__';
 
-// ตำแหน่ง picker: a dropdown built from every role already in use, plus an "add new" entry
-// that swaps in a free-text input — so admins reuse existing job titles by default but can
-// still introduce a brand-new one without leaving the form.
+// Two reserved ตำแหน่ง values that carry structural meaning beyond a plain job title: picking
+// either one ties the employee to a ฝ่าย (and, for a department head, a แผนก within it) instead
+// of the usual freeform department assignment — see roleExemptFromDepartment below.
+export const DIVISION_HEAD_ROLE = 'หัวหน้าฝ่าย';
+export const DEPARTMENT_HEAD_ROLE = 'หัวหน้าแผนก';
+const RESERVED_ROLES = [DIVISION_HEAD_ROLE, DEPARTMENT_HEAD_ROLE];
+
+// A division head oversees the whole ฝ่าย, not one แผนก under it — same exemption already given
+// to ผู้บริหาร, since pinning either to a single department would misrepresent their actual scope.
+// A department head still belongs to exactly one แผนก (within one ฝ่าย), so they're NOT exempt.
+export function roleExemptFromDepartment(role: string): boolean {
+  const trimmed = role.trim();
+  return trimmed === 'ผู้บริหาร' || trimmed === DIVISION_HEAD_ROLE;
+}
+
+// ตำแหน่ง picker: a dropdown built from the 2 reserved structural roles plus every plain job
+// title already in use, plus an "add new" entry that swaps in a free-text input — so admins reuse
+// existing titles by default but can still introduce a brand-new one without leaving the form.
 export function RoleField({ value, onChange, roleOptions }: { value: string; onChange: (v: string) => void; roleOptions: string[] }) {
-  const [isCustom, setIsCustom] = useState(() => value !== '' && !roleOptions.includes(value));
+  const [isCustom, setIsCustom] = useState(() => value !== '' && !roleOptions.includes(value) && !RESERVED_ROLES.includes(value));
 
   if (isCustom) {
     return (
@@ -85,7 +100,8 @@ export function RoleField({ value, onChange, roleOptions }: { value: string; onC
         else onChange(v);
       }}
       options={[
-        ...roleOptions.map((r) => ({ value: r, label: r })),
+        ...RESERVED_ROLES.map((r) => ({ value: r, label: r })),
+        ...roleOptions.filter((r) => !RESERVED_ROLES.includes(r)).map((r) => ({ value: r, label: r })),
         { value: ADD_NEW_ROLE, label: '+ เพิ่มตำแหน่งใหม่' }
       ]}
     />

@@ -29,7 +29,7 @@ export default function ProjectFilterTabs({ active, onChange, hasNearDeadline, c
           key={tab.value}
           type="button"
           onClick={() => onChange(tab.value)}
-          className={`flex items-center gap-1.5 px-3.5 h-8 rounded-lg text-xs font-semibold cursor-pointer transition-colors whitespace-nowrap ${
+          className={`flex items-center gap-1.5 px-3.5 h-8 rounded-lg text-xs font-semibold cursor-pointer transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1 ${
             active === tab.value ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'
           }`}
         >

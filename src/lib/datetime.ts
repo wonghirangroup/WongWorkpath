@@ -1,3 +1,16 @@
+const THAI_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+
+// "01 ก.ย. 2569"-style short Thai date (Buddhist-Era year) from a plain ISO/`yyyy-mm-dd`-prefixed
+// string — the one shared formatter every date display in the app is meant to funnel through, so
+// a single spot fixes format drift instead of each screen growing its own slightly different one
+// (this used to live in CreateProjectModal.tsx; moved here so lib/ code — like ThaiDatePicker —
+// can import it too without CreateProjectModal.tsx importing back from a would-be circular caller).
+export function formatThaiDateShort(iso: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return `${String(d.getDate()).padStart(2, '0')} ${THAI_MONTHS_SHORT[d.getMonth()]} ${d.getFullYear() + 543}`;
+}
+
 // toISOString() reports UTC, which drifted 7 hours behind local Thai time in every
 // recorded timestamp (audit log, task history, doc/credential timestamps). This formats
 // the same "YYYY-MM-DD HH:mm" shape using the browser's local time instead.

@@ -7,14 +7,18 @@ import { ProjectPriority, ProjectStatus, ProjectType, CustomProjectStatus } from
 import { STATUS_LABEL, STATUS_PILL, PROJECT_TYPE_META, PROJECT_TYPE_OPTIONS } from './statusMeta';
 import { getAvatarColor } from '../../lib/avatarColor';
 import { ApiError, CreateProjectPayload } from '../../lib/api';
+import { formatThaiDateShort } from '../../lib/datetime';
+import { formatThousands } from '../../lib/numberFormat';
 import Tooltip from '../Tooltip';
+import EmployeeAvatar from '../EmployeeAvatar';
+import ThaiDatePicker from '../ThaiDatePicker';
+import Dropdown from '../Dropdown';
+import { useEscapeToClose } from '../../lib/useEscapeToClose';
 
-export function formatThaiDateShort(iso: string): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-  return `${String(d.getDate()).padStart(2, '0')} ${months[d.getMonth()]} ${d.getFullYear() + 543}`;
-}
+// Re-exported for backward compatibility — every other file that formats a Thai date already
+// imports this from here; the implementation itself now lives in lib/datetime.ts so ThaiDatePicker
+// (and other lib/ code) can use it without importing back from this component.
+export { formatThaiDateShort };
 
 export const STATUS_OPTIONS: ProjectStatus[] = ['draft', 'pending_review', 'in_progress', 'on_hold', 'completed', 'cancelled', 'idea'];
 
@@ -47,7 +51,11 @@ export function displayName(emp: Employee): string {
 function EmployeeOptionRow({ emp }: { emp: Employee }) {
   return (
     <span className="flex items-center gap-2.5 min-w-0">
-      <img src={emp.avatar} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
+      {emp.avatar ? (
+        <img src={emp.avatar} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
+      ) : (
+        <EmployeeAvatar name={displayName(emp)} sizePx={28} />
+      )}
       <span className="min-w-0">
         <span className="block truncate text-slate-800">{displayName(emp)}</span>
         <span className="block truncate text-[11px] text-slate-400">{emp.role} · {emp.department}</span>
@@ -208,7 +216,11 @@ export function EmployeeMultiSelect({
               <span
                 className="inline-flex items-center gap-1.5 bg-[#FFF1EC] text-[#FF6537] text-xs font-medium pl-1 pr-2.5 py-1 rounded-full"
               >
-                <img src={emp.avatar} alt="" className="w-5 h-5 rounded-full object-cover" />
+                {emp.avatar ? (
+                  <img src={emp.avatar} alt="" className="w-5 h-5 rounded-full object-cover" />
+                ) : (
+                  <EmployeeAvatar name={displayName(emp)} sizePx={20} />
+                )}
                 {displayName(emp)}
                 <button
                   type="button"
@@ -405,7 +417,9 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
     onClose();
   };
 
-  const step1Valid = title.trim() !== '';
+  useEscapeToClose(isOpen, resetAndClose);
+
+  const step1Valid = title.trim() !== '' && type !== null;
   // Only meaningful once both dates are set — an open-ended start or end date has nothing to
   // compare against yet.
   const dateOrderValid = !(startDate && endDate && endDate < startDate);
@@ -488,7 +502,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ type: 'spring', stiffness: 300, damping: 24, mass: 0.9 }}
-            className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-md mx-4 max-h-[85vh] overflow-hidden flex flex-col"
+            className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-lg mx-4 max-h-[85vh] overflow-hidden flex flex-col"
           >
             <div className="flex justify-between items-center px-5 pt-5 pb-2 shrink-0">
               <div>
@@ -540,20 +554,20 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-[#272220] font-bold text-[11px] mb-1">ประเภทโครงการ</label>
-                        <select
+                        <label className="block text-[#272220] font-bold text-[11px] mb-1">
+                          ประเภทโครงการ <span className="text-[#FF6537]">*</span>
+                        </label>
+                        <Dropdown<ProjectType | ''>
                           value={type ?? ''}
-                          onChange={(e) => setType((e.target.value || null) as ProjectType | null)}
-                          className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg bg-white focus:outline-none focus:border-[#FF6537]"
-                        >
-                          <option value="">ไม่ระบุ</option>
-                          {PROJECT_TYPE_OPTIONS.map((t) => (
-                            <option key={t} value={t}>{PROJECT_TYPE_META[t].label} ({t})</option>
-                          ))}
-                        </select>
+                          onChange={(v) => setType((v || null) as ProjectType | null)}
+                          placeholder="เลือกประเภทโครงการ"
+                          options={PROJECT_TYPE_OPTIONS.map((t) => ({ value: t, label: `${PROJECT_TYPE_META[t].label} (${t})` }))}
+                        />
                       </div>
                       <div>
-                        <label className="block text-[#272220] font-bold text-[11px] mb-1">ตัวย่อโครงการ</label>
+                        <label className="block text-[#272220] font-bold text-[11px] mb-1">
+                          ตัวย่อโครงการ <span className="text-[#FF6537]">*</span>
+                        </label>
                         <input
                           type="text"
                           readOnly
@@ -648,35 +662,32 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                       </div>
                     </div>
 
-                    <div>
-                      <label className="block text-[#272220] font-bold text-[11px] mb-1">สถานะ</label>
-                      <select
-                        value={status}
-                        onChange={(e) => setStatus(e.target.value)}
-                        className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg bg-white focus:outline-none focus:border-[#FF6537]"
-                      >
-                        {STATUS_OPTIONS.map((s) => (
-                          <option key={s} value={s}>{STATUS_LABEL[s]}</option>
-                        ))}
-                        {customStatuses.map((s) => (
-                          <option key={s.id} value={s.id}>{s.label}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-[#272220] font-bold text-[11px] mb-1">งบประมาณ (บาท)</label>
-                      <div className="relative">
-                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-[#B0B0B0]">฿</span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="1000"
-                          placeholder="เช่น 500000"
-                          value={budget}
-                          onChange={(e) => setBudget(e.target.value)}
-                          className="w-full p-2.5 pl-6 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[#272220] font-bold text-[11px] mb-1">สถานะ</label>
+                        <Dropdown<string>
+                          value={status}
+                          onChange={setStatus}
+                          options={[
+                            ...STATUS_OPTIONS.map((s) => ({ value: s, label: STATUS_LABEL[s] })),
+                            ...customStatuses.map((s) => ({ value: s.id, label: s.label })),
+                          ]}
                         />
+                      </div>
+
+                      <div>
+                        <label className="block text-[#272220] font-bold text-[11px] mb-1">งบประมาณ (บาท)</label>
+                        <div className="relative">
+                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-[#B0B0B0]">฿</span>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            placeholder="เช่น 500,000"
+                            value={formatThousands(budget)}
+                            onChange={(e) => setBudget(e.target.value.replace(/[^\d]/g, ''))}
+                            className="w-full p-2.5 pl-6 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                          />
+                        </div>
                       </div>
                     </div>
 
@@ -713,24 +724,11 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-[#272220] font-bold text-[11px] mb-1">วันที่เริ่ม</label>
-                        <input
-                          type="date"
-                          value={startDate}
-                          onChange={(e) => setStartDate(e.target.value)}
-                          className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg focus:outline-none focus:border-[#FF6537]"
-                        />
+                        <ThaiDatePicker value={startDate} onChange={setStartDate} />
                       </div>
                       <div>
                         <label className="block text-[#272220] font-bold text-[11px] mb-1">วันที่สิ้นสุด</label>
-                        <input
-                          type="date"
-                          value={endDate}
-                          min={startDate || undefined}
-                          onChange={(e) => setEndDate(e.target.value)}
-                          className={`w-full p-2.5 text-sm border rounded-lg focus:outline-none focus:border-[#FF6537] ${
-                            dateOrderValid ? 'border-[#E5E5E5]' : 'border-red-400'
-                          }`}
-                        />
+                        <ThaiDatePicker value={endDate} onChange={setEndDate} min={startDate || undefined} hasError={!dateOrderValid} />
                       </div>
                     </div>
                     {!dateOrderValid && (

@@ -32,15 +32,29 @@ export default function Dropdown<T extends string>({ value, options, onChange, p
     : { padding: 'px-3.5 py-2', text: 'text-sm' };
   const [isOpen, setIsOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
-  const [panelRect, setPanelRect] = useState({ top: 0, left: 0, width: 0 });
+  const [panelRect, setPanelRect] = useState<{ left: number; width: number; top?: number; bottom?: number; openUpward: boolean }>({
+    left: 0, width: 0, openUpward: false,
+  });
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const listboxId = useId();
 
+  // Flips the panel above the trigger instead of below it whenever there isn't room to open
+  // downward (e.g. a field near the bottom of a tall scrollable modal) but there IS room above —
+  // otherwise the panel's own max-h-60 would render partly off-screen with no way to reach the
+  // lower options. `panelMaxHeight` mirrors the panel's own `max-h-60` (15rem = 240px).
   useLayoutEffect(() => {
     if (!isOpen || !triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
-    setPanelRect({ top: rect.bottom + 2, left: rect.left, width: rect.width });
+    const panelMaxHeight = 240;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    const openUpward = spaceBelow < panelMaxHeight && spaceAbove > spaceBelow;
+    setPanelRect(
+      openUpward
+        ? { bottom: window.innerHeight - rect.top + 2, left: rect.left, width: rect.width, openUpward }
+        : { top: rect.bottom + 2, left: rect.left, width: rect.width, openUpward }
+    );
   }, [isOpen]);
 
   useEffect(() => {
@@ -117,7 +131,7 @@ export default function Dropdown<T extends string>({ value, options, onChange, p
         onClick={() => (isOpen ? setIsOpen(false) : openDropdown())}
         onKeyDown={handleTriggerKeyDown}
         className={`w-full ${trigger.height} flex items-center justify-between ${trigger.padding} bg-white border border-[#BAB7B7] ${trigger.text} font-normal cursor-pointer focus:outline-none focus:border-[#FF6537] ${
-          isOpen ? 'rounded-t-xl rounded-b-none' : 'rounded-xl'
+          isOpen ? (panelRect.openUpward ? 'rounded-b-xl rounded-t-none' : 'rounded-t-xl rounded-b-none') : 'rounded-xl'
         }`}
       >
         <span className={`whitespace-nowrap ${selectedLabel ? '' : 'text-slate-400'}`}>{selectedLabel || placeholder}</span>
@@ -134,12 +148,20 @@ export default function Dropdown<T extends string>({ value, options, onChange, p
               ref={panelRef}
               id={listboxId}
               role="listbox"
-              initial={{ opacity: 0, scaleY: 0.9, y: -4 }}
+              initial={{ opacity: 0, scaleY: 0.9, y: panelRect.openUpward ? 4 : -4 }}
               animate={{ opacity: 1, scaleY: 1, y: 0 }}
-              exit={{ opacity: 0, scaleY: 0.9, y: -4 }}
+              exit={{ opacity: 0, scaleY: 0.9, y: panelRect.openUpward ? 4 : -4 }}
               transition={{ duration: 0.18, ease: 'easeOut' }}
-              style={{ position: 'fixed', top: panelRect.top, left: panelRect.left, width: panelRect.width }}
-              className="z-60 origin-top bg-white rounded-t-none rounded-b-2xl shadow-xl overflow-y-auto max-h-60"
+              style={{
+                position: 'fixed',
+                top: panelRect.top,
+                bottom: panelRect.bottom,
+                left: panelRect.left,
+                width: panelRect.width,
+              }}
+              className={`z-60 bg-white shadow-xl overflow-y-auto max-h-60 ${
+                panelRect.openUpward ? 'origin-bottom rounded-b-none rounded-t-2xl' : 'origin-top rounded-t-none rounded-b-2xl'
+              }`}
             >
               {options.map((option, index) => (
                 <button

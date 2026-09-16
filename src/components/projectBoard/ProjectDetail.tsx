@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { motion } from 'motion/react';
 import { Clock, ListChecks, Users2, Plus, Eye, CalendarClock, Pencil, Trash2, X, Maximize2, Minimize2, Ban } from 'lucide-react';
 import { Employee, Meeting } from '../../types';
 import { ProjectRow, ProjectTaskItem, ProjectTaskStatus, CustomProjectStatus } from './types';
-import { STATUS_DOT, STATUS_LABEL, STATUS_PILL, STATUS_ICON, TASK_STATUS_LABEL, TASK_STATUS_COLOR, PROJECT_PRIORITY_META } from './statusMeta';
-import { getAvatarColor } from '../../lib/avatarColor';
+import { STATUS_DOT, TASK_STATUS_LABEL, TASK_STATUS_COLOR, PROJECT_PRIORITY_META } from './statusMeta';
 import { displayName, PRIORITY_OPTIONS } from './CreateProjectModal';
+import EmployeeAvatar from '../EmployeeAvatar';
 import Dropdown from '../Dropdown';
 import Tooltip from '../Tooltip';
 import AddTaskModal from './AddTaskModal';
@@ -49,6 +50,25 @@ function InlineDeleteConfirm({ onConfirm, label }: { onConfirm: () => void; labe
   );
 }
 
+// First person's avatar + name, plus a "+N" badge for the rest — shared by the overview table's
+// ผู้รับผิดชอบ and ผู้ตรวจ columns so both read the same way when a task has more than one.
+function PeopleCell({ people }: { people: Employee[] }) {
+  if (people.length === 0) return <span className="text-xs text-[#A0A0A0]">ยังไม่มี</span>;
+  const [first, ...rest] = people;
+  return (
+    <span className="flex items-center gap-1.5 min-w-0">
+      {first.avatar ? (
+        <img src={first.avatar} alt="" className="w-5 h-5 rounded-full object-cover shrink-0" />
+      ) : (
+        <EmployeeAvatar name={displayName(first)} sizePx={20} />
+      )}
+      <span className="truncate text-xs text-[#272220]">
+        {displayName(first)}{rest.length > 0 ? ` +${rest.length}` : ''}
+      </span>
+    </span>
+  );
+}
+
 type DetailTab = 'overview' | 'tasks' | 'team' | 'meetings' | 'timeline';
 type TaskFilter = 'all' | ProjectTaskStatus;
 
@@ -72,17 +92,6 @@ const TASK_FILTER_OPTIONS: { value: TaskFilter; label: string }[] = [
 function formatBudget(budget: number | null): string {
   if (budget === null) return 'ยังไม่มี';
   return `฿${budget.toLocaleString('th-TH')}`;
-}
-
-function EmployeeAvatar({ name, sizePx = 32 }: { name: string; sizePx?: number }) {
-  return (
-    <div
-      className="rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
-      style={{ backgroundColor: getAvatarColor(name), width: sizePx, height: sizePx }}
-    >
-      {name.trim().charAt(0).toUpperCase()}
-    </div>
-  );
 }
 
 interface ProjectDetailProps {
@@ -111,18 +120,53 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
   const [selectedTask, setSelectedTask] = useState<ProjectTaskItem | null>(null);
   const [editingMeeting, setEditingMeeting] = useState<Meeting | null>(null);
   const [cancellingMeeting, setCancellingMeeting] = useState<Meeting | null>(null);
-  // "ขยาย" maximizes just the workspace (tabs row + the active tab's content) into a full-viewport
-  // overlay, applying across all 5 tabs. Escape drops back, unless a modal on top is the one open.
+  // "ขยาย" maximizes just the workspace (tabs row + the active tab's content) to fill the page's
+  // own content area — the Sidebar and Header stay put, only this card grows into the space
+  // beneath/beside them, sliding up to fill it and back down to its normal in-flow size. Escape
+  // drops back, unless a modal on top is the one open.
   const [isWorkspaceExpanded, setIsWorkspaceExpanded] = useState(false);
+  // `layout` only stays on for the brief moment the expand/collapse toggle itself is animating —
+  // left on permanently, Framer Motion also spring-animates every ordinary height change this
+  // element goes through (e.g. switching to a tab with a shorter/taller task table), which made
+  // routine tab switches feel like they were bouncing/resizing instead of changing instantly.
+  const [isAnimatingExpandToggle, setIsAnimatingExpandToggle] = useState(false);
+  const toggleWorkspaceExpanded = () => {
+    setIsAnimatingExpandToggle(true);
+    setIsWorkspaceExpanded((prev) => !prev);
+  };
   const isAnyModalOpen = isAddTaskOpen || isEditProjectOpen || Boolean(selectedTask || editingMeeting || cancellingMeeting);
   useEffect(() => {
     if (!isWorkspaceExpanded || isAnyModalOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setIsWorkspaceExpanded(false);
+      if (e.key === 'Escape') { setIsAnimatingExpandToggle(true); setIsWorkspaceExpanded(false); }
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isWorkspaceExpanded, isAnyModalOpen]);
+
+  // Measured against <main> itself (the one scrollable content area the Sidebar/Header shell
+  // already carves out) rather than the viewport — <main>'s own box already excludes the Sidebar's
+  // width (which varies: hidden on mobile, collapsed/expanded on desktop, user-toggled) and the
+  // Header's height, so "expand" fills exactly the remaining workspace instead of covering them.
+  // Re-measures on any resize of <main> itself (a ResizeObserver, not a window 'resize' listener,
+  // since a Sidebar collapse toggle changes <main>'s box via flexbox with no window resize event).
+  const [expandedRect, setExpandedRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!isWorkspaceExpanded) {
+      setExpandedRect(null);
+      return;
+    }
+    const mainEl = document.querySelector('main');
+    if (!mainEl) return;
+    const update = () => {
+      const rect = mainEl.getBoundingClientRect();
+      setExpandedRect({ top: rect.top, left: rect.left, width: rect.width, height: rect.height });
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(mainEl);
+    return () => observer.disconnect();
+  }, [isWorkspaceExpanded]);
 
   const openAddTask = () => { setEditingTask(null); setIsAddTaskOpen(true); };
   const openEditTask = (task: ProjectTaskItem) => { setEditingTask(task); setIsAddTaskOpen(true); };
@@ -198,30 +242,13 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
     : undefined;
   const childMembers = ownerMatch ? teamMembers.filter((t) => t.member.id !== ownerMatch.member.id) : teamMembers;
 
-  const StatusIcon = STATUS_ICON[row.status];
-
   return (
     <div className="space-y-5">
-      {/* Title/status/code — moved back down here from the Header's breadcrumb (see
-          AppLayout.tsx's selectedProject branch), which now just shows a generic back-arrow
-          title, so this page reads correctly with its own info block instead of relying on
-          chrome above it that scrolls out of view. */}
+      {/* Project name/status/code now live up in the shared Header (see AppLayout.tsx's
+          selectedProject branch) so they stay visible even once this page's own toolbar/tabs
+          scroll underneath it — this in-body heading just labels the workspace below it. */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="min-w-0 flex items-center gap-3 flex-wrap">
-          <h2 className="text-2xl font-bold text-[#272220] truncate">{row.title}</h2>
-          <span
-            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-sm font-medium whitespace-nowrap shrink-0"
-            style={{
-              backgroundColor: STATUS_PILL[row.status].bg,
-              color: STATUS_PILL[row.status].text,
-              borderColor: `${STATUS_PILL[row.status].text}33`,
-            }}
-          >
-            <StatusIcon size={14} strokeWidth={2} />
-            {STATUS_LABEL[row.status]}
-          </span>
-          <span className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-[#6F6F6F] whitespace-nowrap shrink-0">{row.code}</span>
-        </div>
+        <h2 className="text-2xl font-bold text-[#272220] truncate">รายละเอียดโครงการ</h2>
         <div className="flex gap-2.5 shrink-0">
           <button
             type="button"
@@ -241,6 +268,12 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
           </button>
         </div>
       </div>
+
+      {/* Project description — was captured at create/edit time but never actually shown anywhere
+          on this page until now. */}
+      <p className="text-sm text-[#6F6F6F] whitespace-pre-wrap -mt-2">
+        {row.description || 'ยังไม่มีรายละเอียดโครงการ'}
+      </p>
 
       <div className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] p-5 space-y-4">
         <div className="flex items-center justify-between">
@@ -299,13 +332,24 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
         </div>
       </div>
 
-      <div className={isWorkspaceExpanded ? 'fixed inset-0 mt-0! z-50 bg-[#F6F6F6] overflow-y-auto p-4 sm:p-6 space-y-4' : 'space-y-5'}>
-      {isWorkspaceExpanded && (
-        <div className="flex items-center gap-2.5 min-w-0">
-          <h2 className="text-lg font-bold text-[#272220] truncate">{row.title}</h2>
-          <span className="text-xs font-semibold text-[#6F6F6F] whitespace-nowrap shrink-0">{row.code}</span>
-        </div>
-      )}
+      <motion.div
+        layout={isAnimatingExpandToggle}
+        onLayoutAnimationComplete={() => setIsAnimatingExpandToggle(false)}
+        transition={{ type: 'spring', stiffness: 320, damping: 32, mass: 0.9 }}
+        style={isWorkspaceExpanded && expandedRect ? {
+          position: 'fixed',
+          top: expandedRect.top,
+          left: expandedRect.left,
+          width: expandedRect.width,
+          height: expandedRect.height,
+          zIndex: 30,
+        } : undefined}
+        className={isWorkspaceExpanded ? 'bg-[#F6F6F6] overflow-y-auto p-4 sm:p-6 space-y-4' : 'space-y-5'}
+      >
+      {/* Sticky under the shared Header, same offset trick as every other module's own
+          toolbar/filter row — otherwise this tabs+filter row scrolls away with the task list
+          underneath it instead of staying put like ProjectBoard/DocVault/etc. already do. */}
+      <div className="sticky -top-4 sm:-top-6 lg:-top-3.75 z-30 bg-[#F6F6F6] pt-1">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="shrink-0 flex items-center gap-0.5 bg-white border border-slate-200 rounded-xl p-1 w-fit max-w-full overflow-x-auto scrollbar-none">
           {TABS.map((t) => (
@@ -323,6 +367,15 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          <Tooltip content={isWorkspaceExpanded ? 'ย่อพื้นที่ทำงาน (Esc)' : 'ขยายพื้นที่ทำงาน'} placement="bottom">
+            <button
+              type="button"
+              onClick={toggleWorkspaceExpanded}
+              className="w-10 h-10 flex items-center justify-center rounded-xl border border-slate-200 bg-white text-[#6F6F6F] hover:text-[#FF6537] hover:border-[#FF6537] cursor-pointer transition-colors shrink-0"
+            >
+              {isWorkspaceExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            </button>
+          </Tooltip>
           <div className="w-36 shrink-0">
             <Dropdown<TaskFilter>
               value={taskFilter}
@@ -330,16 +383,8 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
               options={TASK_FILTER_OPTIONS}
             />
           </div>
-          <Tooltip content={isWorkspaceExpanded ? 'ย่อพื้นที่ทำงาน (Esc)' : 'ขยายพื้นที่ทำงาน'} placement="bottom">
-            <button
-              type="button"
-              onClick={() => setIsWorkspaceExpanded((prev) => !prev)}
-              className="w-10 h-10 flex items-center justify-center rounded-xl border border-slate-200 bg-white text-[#6F6F6F] hover:text-[#FF6537] hover:border-[#FF6537] cursor-pointer transition-colors shrink-0"
-            >
-              {isWorkspaceExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-            </button>
-          </Tooltip>
         </div>
+      </div>
       </div>
 
       {tab === 'overview' && (
@@ -349,36 +394,41 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
             <p className="text-sm text-[#A0A0A0] px-5 pb-5">ไม่มีงานที่ตรงกับตัวกรอง</p>
           ) : (
             <div className="overflow-x-auto">
-              {/* table-fixed + explicit column widths — without them, the browser was handing
-                  every last pixel of unused space to "ชื่องาน" while the other 3 columns got
-                  squeezed together at the far right instead of spreading out evenly. */}
-              <table className="w-full text-sm border-collapse table-fixed">
+              {/* No table-fixed / percentage widths here on purpose — every column takes its
+                  natural width (so ผู้รับผิดชอบ/ผู้ตรวจ/dates never get squeezed) except
+                  รายละเอียด, which is the one column capped with a max-width + ellipsis, since
+                  it's the only field with genuinely unbounded free-text length. */}
+              <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr className="bg-[#F9F9F9] text-[12px] font-semibold text-[#000000] border-b border-[#EDEEEF]">
-                    <th className="px-5 py-2 w-[28%]">ชื่องาน</th>
-                    <th className="px-5 py-2 w-[22%]">รายละเอียด</th>
-                    <th className="px-5 py-2 w-[15%]">ผู้รับผิดชอบ</th>
-                    <th className="px-5 py-2 w-[13%]">วันที่</th>
-                    <th className="px-5 py-2 w-[12%]">สถานะ</th>
-                    <th className="px-5 py-2 w-[10%]">การกระทำ</th>
+                    <th className="px-5 py-2 text-left whitespace-nowrap">ชื่องาน</th>
+                    <th className="px-5 py-2 text-left">รายละเอียด</th>
+                    <th className="px-5 py-2 text-left whitespace-nowrap">ผู้รับผิดชอบ</th>
+                    <th className="px-5 py-2 text-left whitespace-nowrap">ผู้ตรวจ</th>
+                    <th className="px-5 py-2 text-left whitespace-nowrap">วันที่เริ่ม</th>
+                    <th className="px-5 py-2 text-left whitespace-nowrap">กำหนดส่ง</th>
+                    <th className="px-5 py-2 text-left whitespace-nowrap">สถานะ</th>
+                    <th className="px-5 py-2 text-left whitespace-nowrap">การกระทำ</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredTasks.map((t) => {
                     const taskAssignees = t.assigneeEmployeeIds.map((id) => employeeById.get(id)).filter((e): e is Employee => Boolean(e));
-                    const assigneeLabel = taskAssignees.length > 0
-                      ? `${displayName(taskAssignees[0])}${taskAssignees.length > 1 ? ` +${taskAssignees.length - 1}` : ''}`
-                      : 'ยังไม่มี';
+                    const taskReviewers = (t.reviewerEmployeeIds ?? []).map((id) => employeeById.get(id)).filter((e): e is Employee => Boolean(e));
                     return (
                       <tr key={t.id} className="border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50">
-                        <td className="px-5 py-3 font-medium text-[#272220]">
+                        <td className="px-5 py-3 font-medium text-[#272220] whitespace-nowrap">
                           <span className="flex items-center gap-2 min-w-0">
                             <ListChecks size={14} className="text-[#A0A0A0] shrink-0" />
-                            <span className="truncate">{t.title}</span>
+                            <span>{t.title}</span>
                           </span>
                         </td>
-                        <td className="px-5 py-3 text-[#6F6F6F] truncate"><Tooltip content={t.description}><span className="block truncate">{t.description || 'ยังไม่มี'}</span></Tooltip></td>
-                        <td className="px-5 py-3 text-[#6F6F6F] whitespace-nowrap">{assigneeLabel}</td>
+                        <td className="px-5 py-3 text-[#6F6F6F] max-w-50">
+                          <Tooltip content={t.description}><span className="block truncate">{t.description || 'ยังไม่มี'}</span></Tooltip>
+                        </td>
+                        <td className="px-5 py-3 whitespace-nowrap"><PeopleCell people={taskAssignees} /></td>
+                        <td className="px-5 py-3 whitespace-nowrap"><PeopleCell people={taskReviewers} /></td>
+                        <td className="px-5 py-3 text-[#6F6F6F] whitespace-nowrap">{t.startDate ?? 'ยังไม่มี'}</td>
                         <td className="px-5 py-3 text-[#6F6F6F] whitespace-nowrap">{t.dueDate ?? 'ยังไม่มีกำหนด'}</td>
                         <td className="px-5 py-3 whitespace-nowrap">
                           <span
@@ -720,7 +770,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
       )}
 
       {tab === 'timeline' && <ProjectGantt tasks={filteredTasks} employees={employees} />}
-      </div>
+      </motion.div>
 
       <AddTaskModal
         isOpen={isAddTaskOpen}

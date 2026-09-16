@@ -10,6 +10,7 @@ import {
   Users2,
   Briefcase,
   RefreshCw,
+  Ban,
   X
 } from 'lucide-react';
 import Dropdown from './Dropdown';
@@ -17,6 +18,7 @@ import ProjectsGanttChart from './projectBoard/ProjectsGanttChart';
 import ScheduleMeetingModal from './projectBoard/ScheduleMeetingModal';
 import { ProjectRow } from './projectBoard/types';
 import { STATUS_DOT, STATUS_LABEL, STATUS_ICON, TASK_STATUS_COLOR, TASK_STATUS_LABEL } from './projectBoard/statusMeta';
+import { formatThaiDateShort } from './projectBoard/CreateProjectModal';
 import Tooltip from './Tooltip';
 
 interface CalendarViewProps {
@@ -383,7 +385,7 @@ export default function CalendarView({
                         {item.task.recurringPattern !== 'None' && <RefreshCw size={10} className="shrink-0 text-[#FF6537]" />}
                         {item.task.title}
                       </p>
-                      <p className="text-[11px] text-[#A0A0A0] truncate">{item.task.dueDateISO} · {item.task.projectLabel}</p>
+                      <p className="text-[11px] text-[#A0A0A0] truncate">{formatThaiDateShort(item.task.dueDateISO)} · {item.task.projectLabel}</p>
                     </div>
                   );
                 }
@@ -409,19 +411,21 @@ export default function CalendarView({
                   );
                 }
                 const project = item.meeting.projectId ? projectById.get(item.meeting.projectId) : undefined;
+                const isCancelled = item.meeting.status === 'cancelled';
                 return (
                   <button
                     key={`m-${item.meeting.id}`}
                     type="button"
                     onClick={() => project && goToProject(project.id)}
                     disabled={!project}
-                    className={`w-full text-left text-xs min-w-0 group ${project ? 'cursor-pointer' : 'cursor-default'}`}
+                    className={`w-full text-left text-xs min-w-0 group ${project ? 'cursor-pointer' : 'cursor-default'} ${isCancelled ? 'opacity-60' : ''}`}
                   >
                     <p className="font-semibold text-[#272220] truncate flex items-center gap-1">
-                      <Users2 size={10} className="shrink-0 text-purple-600" /> {item.meeting.title}
+                      {isCancelled ? <Ban size={10} className="shrink-0 text-red-500" /> : <Users2 size={10} className="shrink-0 text-purple-600" />}
+                      <span className={isCancelled ? 'line-through' : ''}>{item.meeting.title}</span>
                     </p>
-                    <p className={`text-[11px] truncate ${project ? 'text-[#FF6537] group-hover:underline' : 'text-[#A0A0A0]'}`}>
-                      {item.meeting.date} {item.meeting.startTime}{project ? ` · ${project.title}` : ''}
+                    <p className={`text-[11px] truncate ${isCancelled ? 'text-red-500' : project ? 'text-[#FF6537] group-hover:underline' : 'text-[#A0A0A0]'}`}>
+                      {isCancelled ? 'ยกเลิกแล้ว' : `${formatThaiDateShort(item.meeting.date)} ${item.meeting.startTime}${project ? ` · ${project.title}` : ''}`}
                     </p>
                   </button>
                 );
@@ -588,16 +592,21 @@ export default function CalendarView({
                   ))}
 
                   {/* Meetings scheduled */}
-                  {hasMeetings.slice(0, 2).map(meeting => (
-                    <Tooltip key={meeting.id} content={`${meeting.startTime} ${meeting.title}`}>
-                      <div
-                        className="text-[9px] px-1.5 py-0.5 rounded-md border bg-purple-50 text-purple-700 border-purple-200 truncate font-medium flex items-center gap-0.5"
-                      >
-                        <Users2 size={9} className="shrink-0" />
-                        {meeting.startTime} {meeting.title}
-                      </div>
-                    </Tooltip>
-                  ))}
+                  {hasMeetings.slice(0, 2).map(meeting => {
+                    const isCancelled = meeting.status === 'cancelled';
+                    return (
+                      <Tooltip key={meeting.id} content={isCancelled ? `ยกเลิกแล้ว: ${meeting.title}` : `${meeting.startTime} ${meeting.title}`}>
+                        <div
+                          className={`text-[9px] px-1.5 py-0.5 rounded-md border truncate font-medium flex items-center gap-0.5 ${
+                            isCancelled ? 'bg-slate-50 text-slate-400 border-slate-200' : 'bg-purple-50 text-purple-700 border-purple-200'
+                          }`}
+                        >
+                          {isCancelled ? <Ban size={9} className="shrink-0" /> : <Users2 size={9} className="shrink-0" />}
+                          <span className={isCancelled ? 'line-through' : ''}>{meeting.startTime} {meeting.title}</span>
+                        </div>
+                      </Tooltip>
+                    );
+                  })}
 
                   {/* Project deadlines */}
                   {hasProjectDeadlines.slice(0, 1).map(project => (
@@ -674,6 +683,7 @@ export default function CalendarView({
                           <p className="text-[10px] font-bold text-[#A0A0A0] uppercase tracking-wide px-0.5">การประชุม</p>
                           {hasMeetings.map((meeting) => {
                             const project = meeting.projectId ? projectById.get(meeting.projectId) : undefined;
+                            const isCancelled = meeting.status === 'cancelled';
                             return (
                               <button
                                 key={meeting.id}
@@ -681,21 +691,25 @@ export default function CalendarView({
                                 onClick={() => project && goToProject(project.id)}
                                 disabled={!project}
                                 className={`w-full flex items-start gap-2 p-2 rounded-lg bg-slate-50 text-left transition-colors ${
-                                  project ? 'hover:bg-purple-50 cursor-pointer group' : 'cursor-default'
+                                  isCancelled ? 'opacity-60' : project ? 'hover:bg-purple-50 cursor-pointer group' : 'cursor-default'
                                 }`}
                               >
-                                <span className="w-6 h-6 rounded-md bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
-                                  <Users2 size={12} />
+                                <span className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${isCancelled ? 'bg-red-50 text-red-500' : 'bg-purple-50 text-purple-600'}`}>
+                                  {isCancelled ? <Ban size={12} /> : <Users2 size={12} />}
                                 </span>
                                 <div className="min-w-0 flex-1 text-xs">
-                                  <p className="font-semibold text-[#272220]">{meeting.startTime} {meeting.title}</p>
-                                  {project ? (
+                                  <p className={`font-semibold text-[#272220] ${isCancelled ? 'line-through' : ''}`}>{meeting.startTime} {meeting.title}</p>
+                                  {isCancelled ? (
+                                    <p className="text-[11px] text-red-500 font-medium mt-0.5">
+                                      ยกเลิกแล้ว{meeting.cancellationReason ? `: ${meeting.cancellationReason}` : ''}
+                                    </p>
+                                  ) : project ? (
                                     <p className="text-[11px] text-[#FF6537] font-medium mt-0.5 group-hover:underline">โครงการ: {project.title}</p>
                                   ) : (
                                     <p className="text-[11px] text-[#A0A0A0] mt-0.5">ไม่ได้ผูกกับโครงการ</p>
                                   )}
                                 </div>
-                                {project && <ChevronRight size={14} className="shrink-0 text-purple-400 mt-1 group-hover:text-purple-600" />}
+                                {project && !isCancelled && <ChevronRight size={14} className="shrink-0 text-purple-400 mt-1 group-hover:text-purple-600" />}
                               </button>
                             );
                           })}

@@ -9,6 +9,7 @@ import { ACCOUNT_TYPE_LABELS, isNavAllowedByRole } from '../lib/permissions';
 import { useAppData } from '../context/AppDataContext';
 import { OrgDivisionData } from '../data/orgStructure';
 import Dropdown from './Dropdown';
+import { useEscapeToClose } from '../lib/useEscapeToClose';
 import {
   RoleField,
   MenuRestrictionChecklist,
@@ -17,6 +18,7 @@ import {
   readFileAsDataUrl,
   MAX_AVATAR_BYTES,
   formatFileSize,
+  roleExemptFromDepartment,
 } from './EmployeeFormShared';
 
 type EmployeeUpdatePayload = Partial<Pick<Employee, 'name' | 'nickname' | 'role' | 'avatar' | 'department' | 'division' | 'username' | 'accountType' | 'restrictedMenuIds' | 'phone' | 'address'>> & { password?: string };
@@ -72,6 +74,9 @@ export default function EmployeeProfileModal({
   onSaved,
 }: EmployeeProfileModalProps) {
   const { documents } = useAppData();
+  // Always mounted-means-open here — the parent (EmployeeManagement) conditionally renders this
+  // whole component rather than passing an isOpen flag, so presence in the tree is the signal.
+  useEscapeToClose(true, onClose);
 
   const [mode, setMode] = useState<'view' | 'edit'>(initialMode);
   const [name, setName] = useState(employee.name);
@@ -100,9 +105,9 @@ export default function EmployeeProfileModal({
   // Admin-like accounts (admin/superadmin) keep a fixed username — same rule the server enforces.
   const targetIsAdminLike = accountType === 'admin' || accountType === 'superadmin';
   const isFormValid = !!(name.trim() && nickname.trim() && username.trim() && role.trim());
-  // ผู้บริหาร sits over the whole ฝ่าย, not one แผนก under it — see EmployeeManagement's create
-  // form and server/routes/employees.ts for the same rule.
-  const isExecutiveRole = role.trim() === 'ผู้บริหาร';
+  // ผู้บริหาร and หัวหน้าฝ่าย both sit over a whole ฝ่าย, not one แผนก under it — see
+  // EmployeeManagement's create form and server/routes/employees.ts for the same rule.
+  const hidesDepartmentField = roleExemptFromDepartment(role);
 
   const startEdit = () => setMode('edit');
 
@@ -148,7 +153,7 @@ export default function EmployeeProfileModal({
         ...(targetIsAdminLike ? {} : { username: username.trim() }),
         ...(password.trim() ? { password: password.trim() } : {}),
         role: role.trim(),
-        department: isExecutiveRole ? '' : department,
+        department: hidesDepartmentField ? '' : department,
         division,
         avatar: avatar.trim(),
         accountType,
@@ -306,7 +311,7 @@ export default function EmployeeProfileModal({
                     </InfoRow>
                   </div>
 
-                  {!isExecutiveRole && (
+                  {!hidesDepartmentField && (
                   <InfoRow label="แผนก" value={department} editing={mode === 'edit'}>
                     <Dropdown<string>
                       value={department}

@@ -653,7 +653,7 @@ export default function CredentialVault({
           <>
           {/* Sticky under Header, same pattern as EmployeeManagement/ProjectBoard/Dashboard, so
               this row stays put while the list/grid scrolls under it. */}
-          <div className="sticky -top-4 sm:-top-6 lg:-top-8 z-30 bg-[#F6F6F6] pt-1">
+          <div className="sticky -top-4 sm:-top-6 lg:-top-3.75 z-30 bg-[#F6F6F6] pt-1">
           {/* Search, view toggle, scope filter & create — single controls row */}
           <div className="flex flex-col lg:flex-row gap-3 lg:items-center">
             <div className="relative w-full lg:w-137.5 lg:flex-none">
@@ -687,7 +687,7 @@ export default function CredentialVault({
                   <button
                     type="button"
                     onClick={() => { setViewMode('grid'); setCurrentPage(1); }}
-                    className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'grid' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
+                    className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1 ${viewMode === 'grid' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
                     aria-label="มุมมองตาราง"
                   >
                     <LayoutGrid size={15} />
@@ -697,7 +697,7 @@ export default function CredentialVault({
                   <button
                     type="button"
                     onClick={() => { setViewMode('list'); setCurrentPage(1); }}
-                    className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${viewMode === 'list' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
+                    className={`w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1 ${viewMode === 'list' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'}`}
                     aria-label="มุมมองรายการ"
                   >
                     <List size={15} />
@@ -735,7 +735,7 @@ export default function CredentialVault({
               <button
                 type="button"
                 onClick={() => setIsResultFilterOpen((prev) => !prev)}
-                className="flex items-center gap-2 cursor-pointer"
+                className="flex items-center gap-2 cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1"
               >
                 <span className="text-sm text-[#6F6F6F] leading-none mt-1">•</span>
                 <span className="text-sm text-[#6F6F6F] leading-none mt-0.5">
@@ -785,7 +785,7 @@ export default function CredentialVault({
                 <button
                   onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
-                  className="w-9 h-9 lg:w-8 lg:h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-[#FF6537] hover:bg-orange-50 disabled:text-slate-300 disabled:hover:bg-white disabled:cursor-not-allowed cursor-pointer transition-colors"
+                  className="w-9 h-9 lg:w-8 lg:h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-[#FF6537] hover:bg-orange-50 disabled:text-slate-300 disabled:hover:bg-white disabled:cursor-not-allowed cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1"
                 >
                   <ChevronLeft size={16} />
                 </button>
@@ -793,7 +793,7 @@ export default function CredentialVault({
                   <button
                     key={pageNum}
                     onClick={() => setCurrentPage(pageNum)}
-                    className={`w-9 h-9 lg:w-8 lg:h-8 rounded-lg text-sm font-bold cursor-pointer transition-colors ${
+                    className={`w-9 h-9 lg:w-8 lg:h-8 rounded-lg text-sm font-bold cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1 ${
                       pageNum === currentPage
                         ? 'bg-[#FF6537] text-white shadow-sm'
                         : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
@@ -805,7 +805,7 @@ export default function CredentialVault({
                 <button
                   onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                   disabled={currentPage === totalPages}
-                  className="w-9 h-9 lg:w-8 lg:h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-[#FF6537] hover:bg-orange-50 disabled:text-slate-300 disabled:hover:bg-white disabled:cursor-not-allowed cursor-pointer transition-colors"
+                  className="w-9 h-9 lg:w-8 lg:h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-[#FF6537] hover:bg-orange-50 disabled:text-slate-300 disabled:hover:bg-white disabled:cursor-not-allowed cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1"
                 >
                   <ChevronRight size={16} />
                 </button>
