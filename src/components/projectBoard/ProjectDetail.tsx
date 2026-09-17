@@ -1,10 +1,13 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { Clock, ListChecks, Users2, Plus, Eye, CalendarClock, Pencil, Trash2, X, Maximize2, Minimize2, Ban } from 'lucide-react';
-import { Employee, Meeting } from '../../types';
+import { Clock, ListChecks, Users2, Plus, Eye, CalendarClock, Pencil, Trash2, X, Maximize2, Minimize2, Ban, Send, ClipboardCheck, ChevronDown, ChevronRight, CornerDownRight } from 'lucide-react';
+import { Employee, Meeting, LinkedDoc } from '../../types';
 import { ProjectRow, ProjectTaskItem, ProjectTaskStatus, CustomProjectStatus } from './types';
 import { STATUS_DOT, TASK_STATUS_LABEL, TASK_STATUS_COLOR, PROJECT_PRIORITY_META } from './statusMeta';
 import { displayName, PRIORITY_OPTIONS } from './CreateProjectModal';
+import { ChangeRequest } from '../../lib/api';
+import { isOwner } from '../../lib/ownership';
+import { isUrl } from '../../lib/url';
 import EmployeeAvatar from '../EmployeeAvatar';
 import Dropdown from '../Dropdown';
 import Tooltip from '../Tooltip';
@@ -12,17 +15,83 @@ import AddTaskModal from './AddTaskModal';
 import EditProjectModal from './EditProjectModal';
 import ScheduleMeetingModal from './ScheduleMeetingModal';
 import CancelMeetingModal from './CancelMeetingModal';
+import SubmitTaskModal from './SubmitTaskModal';
+import ReviewTaskModal from './ReviewTaskModal';
 import ProjectGantt from './ProjectGantt';
 import TaskDetailModal from './TaskDetailModal';
 import { ForkRow } from '../OrgChart';
+import PeopleCell from './PeopleCell';
+import PendingRequestCard from './PendingRequestCard';
+import DeleteRequestModal, { DeleteRequestTarget } from './DeleteRequestModal';
+
+// Clamps long free-text to 3 lines with a "แสดงเพิ่มเติม"/"ย่อ" toggle — the toggle itself only
+// renders when the text actually overflows 3 lines (measured via scrollHeight vs clientHeight
+// right after mount), so a short description never gets a pointless toggle button under it.
+function ExpandableText({ text, className }: { text: string; className?: string }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+  const ref = useRef<HTMLParagraphElement>(null);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    setIsOverflowing(el.scrollHeight > el.clientHeight + 1);
+  }, [text]);
+
+  return (
+    <div>
+      <p ref={ref} className={`${className ?? ''} ${isExpanded ? '' : 'line-clamp-3'}`}>
+        {text}
+      </p>
+      {isOverflowing && (
+        <button
+          type="button"
+          onClick={() => setIsExpanded((prev) => !prev)}
+          className="text-xs font-semibold text-[#FF6537] hover:text-[#e6572c] cursor-pointer mt-2"
+        >
+          {isExpanded ? 'ย่อ' : 'แสดงเพิ่มเติม'}
+        </button>
+      )}
+    </div>
+  );
+}
 
 // Two-step inline confirm (click once to arm, click again to confirm) — same idea as OrgChart's
 // own DeleteButton, just laid out inline for a table cell instead of pinned to a card corner.
-function InlineDeleteConfirm({ onConfirm, label }: { onConfirm: () => void; label: string }) {
+// `requiresReason` routes straight to a DeleteRequestModal (via `onRequestReason`) instead of the
+// two-step arm/confirm — a modal already IS the confirmation step, and gives the reason field real
+// room instead of a cramped inline input. `disabled` covers "a request is already pending for this
+// row" so a second one can't be filed on top of it.
+function InlineDeleteConfirm({ onConfirm, label, requiresReason, disabled, onRequestReason }: { onConfirm: (reason?: string) => void; label: string; requiresReason?: boolean; disabled?: boolean; onRequestReason?: () => void }) {
   const [armed, setArmed] = useState(false);
+
+  if (disabled) {
+    return (
+      <Tooltip content="มีคำขอรออนุมัติอยู่แล้ว">
+        <span className="text-slate-300 cursor-not-allowed">
+          <Trash2 size={14} />
+        </span>
+      </Tooltip>
+    );
+  }
+
+  if (requiresReason) {
+    return (
+      <Tooltip content="ขอลบ (ต้องขออนุมัติ)">
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onRequestReason?.(); }}
+          aria-label={label}
+          className="text-[#A0A0A0] hover:text-red-600 cursor-pointer transition-colors"
+        >
+          <Trash2 size={14} />
+        </button>
+      </Tooltip>
+    );
+  }
   if (armed) {
     return (
-      <span className="inline-flex items-center gap-1">
+      <span className="inline-flex items-center gap-1" role="status">
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onConfirm(); setArmed(false); }}
@@ -30,14 +99,14 @@ function InlineDeleteConfirm({ onConfirm, label }: { onConfirm: () => void; labe
         >
           {label}?
         </button>
-        <button type="button" onClick={(e) => { e.stopPropagation(); setArmed(false); }} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+        <button type="button" onClick={(e) => { e.stopPropagation(); setArmed(false); }} aria-label="ยกเลิก" className="text-slate-400 hover:text-slate-600 cursor-pointer">
           <X size={12} />
         </button>
       </span>
     );
   }
   return (
-    <Tooltip content={label}>
+    <Tooltip content={requiresReason ? 'ขอลบ (ต้องขออนุมัติ)' : label}>
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); setArmed(true); }}
@@ -47,25 +116,6 @@ function InlineDeleteConfirm({ onConfirm, label }: { onConfirm: () => void; labe
         <Trash2 size={14} />
       </button>
     </Tooltip>
-  );
-}
-
-// First person's avatar + name, plus a "+N" badge for the rest — shared by the overview table's
-// ผู้รับผิดชอบ and ผู้ตรวจ columns so both read the same way when a task has more than one.
-function PeopleCell({ people }: { people: Employee[] }) {
-  if (people.length === 0) return <span className="text-xs text-[#A0A0A0]">ยังไม่มี</span>;
-  const [first, ...rest] = people;
-  return (
-    <span className="flex items-center gap-1.5 min-w-0">
-      {first.avatar ? (
-        <img src={first.avatar} alt="" className="w-5 h-5 rounded-full object-cover shrink-0" />
-      ) : (
-        <EmployeeAvatar name={displayName(first)} sizePx={20} />
-      )}
-      <span className="truncate text-xs text-[#272220]">
-        {displayName(first)}{rest.length > 0 ? ` +${rest.length}` : ''}
-      </span>
-    </span>
   );
 }
 
@@ -109,17 +159,52 @@ interface ProjectDetailProps {
   onUpdateProject: (updates: Partial<ProjectRow>) => Promise<void>;
   existingProjectTitles: string[];
   customStatuses: CustomProjectStatus[];
+  changeRequests: ChangeRequest[];
+  onRequestChange: (
+    entityType: 'project' | 'project_task',
+    entityId: string,
+    requestType: 'edit' | 'delete',
+    proposedChanges: Record<string, unknown> | undefined,
+    reason: string
+  ) => Promise<void>;
+  onDecideChangeRequest: (requestId: string, decision: 'approve' | 'reject', note?: string) => Promise<void>;
+  documents: LinkedDoc[];
+  onAddDocument: (doc: LinkedDoc) => void;
+  // One-shot deep-link (e.g. from the Calendar page's meeting click) — which tab to open on first
+  // mount instead of the usual "ภาพรวม" default. Any value outside DetailTab's own set is ignored.
+  initialTab?: string | null;
 }
 
-export default function ProjectDetail({ row, tasks, meetings, employees, currentUserId, onAddTask, onUpdateTask, onDeleteTask, onAddMeeting, onUpdateMeeting, onCreateFolder, onUpdateProject, existingProjectTitles, customStatuses }: ProjectDetailProps) {
-  const [tab, setTab] = useState<DetailTab>('overview');
+const DETAIL_TABS: DetailTab[] = ['overview', 'tasks', 'team', 'meetings', 'timeline'];
+
+export default function ProjectDetail({ row, tasks, meetings, employees, currentUserId, onAddTask, onUpdateTask, onDeleteTask, onAddMeeting, onUpdateMeeting, onCreateFolder, onUpdateProject, existingProjectTitles, customStatuses, changeRequests, onRequestChange, onDecideChangeRequest, documents, onAddDocument, initialTab }: ProjectDetailProps) {
+  const [tab, setTab] = useState<DetailTab>(() => (
+    initialTab && (DETAIL_TABS as string[]).includes(initialTab) ? (initialTab as DetailTab) : 'overview'
+  ));
   const [isAddTaskOpen, setIsAddTaskOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<ProjectTaskItem | null>(null);
+  // งานย่อย — which task (if any) AddTaskModal is currently creating a new subtask under, and
+  // which top-level tasks currently have their subtask rows expanded in the overview table.
+  const [addingSubtaskFor, setAddingSubtaskFor] = useState<ProjectTaskItem | null>(null);
+  const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(new Set());
+  const toggleTaskExpanded = (id: string) => setExpandedTaskIds((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
   const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
   const [taskFilter, setTaskFilter] = useState<TaskFilter>('all');
   const [selectedTask, setSelectedTask] = useState<ProjectTaskItem | null>(null);
   const [editingMeeting, setEditingMeeting] = useState<Meeting | null>(null);
   const [cancellingMeeting, setCancellingMeeting] = useState<Meeting | null>(null);
+  // ส่งงาน/ตรวจงาน — the other half of the submit/review loop, previously only reachable from
+  // MyWorkspace ("งานของฉัน"), so working a task from inside its own project meant leaving the
+  // project entirely just to submit or review it.
+  const [submittingTask, setSubmittingTask] = useState<ProjectTaskItem | null>(null);
+  const [reviewingTask, setReviewingTask] = useState<ProjectTaskItem | null>(null);
+  // A gated delete's required reason now comes from a proper modal instead of a cramped inline
+  // text input squeezed into the table row — one shared instance for both task tables below.
+  const [deleteReasonTarget, setDeleteReasonTarget] = useState<DeleteRequestTarget | null>(null);
   // "ขยาย" maximizes just the workspace (tabs row + the active tab's content) to fill the page's
   // own content area — the Sidebar and Header stay put, only this card grows into the space
   // beneath/beside them, sliding up to fill it and back down to its normal in-flow size. Escape
@@ -134,7 +219,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
     setIsAnimatingExpandToggle(true);
     setIsWorkspaceExpanded((prev) => !prev);
   };
-  const isAnyModalOpen = isAddTaskOpen || isEditProjectOpen || Boolean(selectedTask || editingMeeting || cancellingMeeting);
+  const isAnyModalOpen = isAddTaskOpen || isEditProjectOpen || Boolean(selectedTask || editingMeeting || cancellingMeeting || submittingTask || reviewingTask || deleteReasonTarget);
   useEffect(() => {
     if (!isWorkspaceExpanded || isAnyModalOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -168,9 +253,10 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
     return () => observer.disconnect();
   }, [isWorkspaceExpanded]);
 
-  const openAddTask = () => { setEditingTask(null); setIsAddTaskOpen(true); };
-  const openEditTask = (task: ProjectTaskItem) => { setEditingTask(task); setIsAddTaskOpen(true); };
-  const closeTaskModal = () => { setIsAddTaskOpen(false); setEditingTask(null); };
+  const openAddTask = () => { setEditingTask(null); setAddingSubtaskFor(null); setIsAddTaskOpen(true); };
+  const openEditTask = (task: ProjectTaskItem) => { setEditingTask(task); setAddingSubtaskFor(null); setIsAddTaskOpen(true); };
+  const openAddSubtask = (parent: ProjectTaskItem) => { setEditingTask(null); setAddingSubtaskFor(parent); setIsAddTaskOpen(true); };
+  const closeTaskModal = () => { setIsAddTaskOpen(false); setEditingTask(null); setAddingSubtaskFor(null); };
 
   const counts = useMemo(() => {
     const base = { total: tasks.length, done: 0, in_progress: 0, review: 0, blocked: 0 };
@@ -183,9 +269,10 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
     return base;
   }, [tasks]);
 
-  const overallProgress = tasks.length > 0
-    ? Math.round(tasks.reduce((sum, t) => sum + t.progress, 0) / tasks.length)
-    : row.progress ?? 0;
+  // row.progress is computed once, centrally, in AppDataContext (เสร็จแล้ว ÷ ทั้งหมด across this
+  // project's tasks) — the same number ProjectCard/ProjectTable/MyWorkspace all read now too, so
+  // this card can't drift out of sync with them the way it used to.
+  const overallProgress = row.progress ?? 0;
 
   const employeeById = useMemo(() => {
     const map = new Map<string, Employee>();
@@ -213,6 +300,149 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
     [filteredTasks, currentUserId]
   );
 
+  // งานย่อย — the overview table groups subtasks directly under their parent task (one level
+  // deep only) instead of listing every row flat; ภาพรวม is the one place this hierarchy is
+  // worth showing — งาน/ทีม/Timeline still treat every row (task or subtask) as flat, matching
+  // how MyWorkspace and the project's overall progress already do.
+  const topLevelFilteredTasks = useMemo(() => filteredTasks.filter((t) => !t.parentTaskId), [filteredTasks]);
+  const subtasksByParent = useMemo(() => {
+    const map = new Map<string, ProjectTaskItem[]>();
+    filteredTasks.forEach((t) => {
+      if (!t.parentTaskId) return;
+      const list = map.get(t.parentTaskId) ?? [];
+      list.push(t);
+      map.set(t.parentTaskId, list);
+    });
+    return map;
+  }, [filteredTasks]);
+
+  // Shared by ภาพรวม's table for both a top-level task row and its indented งานย่อย rows — a
+  // subtask is otherwise rendered identically (same columns, same ส่งงาน/ตรวจงาน/แก้ไข/ลบ actions,
+  // same ownership-gate exemption already baked into InlineDeleteConfirm/AddTaskModal), so the only
+  // real differences here are indentation, the expand chevron, and the "+เพิ่มงานย่อย" button
+  // (only offered one level deep — a subtask doesn't get its own "+" to add a sub-subtask).
+  const renderOverviewTaskRow = (t: ProjectTaskItem, isSubtask: boolean) => {
+    const taskAssignees = t.assigneeEmployeeIds.map((id) => employeeById.get(id)).filter((e): e is Employee => Boolean(e));
+    const taskReviewers = (t.reviewerEmployeeIds ?? []).map((id) => employeeById.get(id)).filter((e): e is Employee => Boolean(e));
+    const subtaskCount = isSubtask ? 0 : (subtasksByParent.get(t.id)?.length ?? 0);
+    const isExpanded = expandedTaskIds.has(t.id);
+    return (
+      <tr key={t.id} className={`border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50 ${isSubtask ? 'bg-slate-50/40' : ''}`}>
+        <td className="px-5 py-3 font-medium text-[#272220] whitespace-nowrap">
+          <span className={`flex items-center gap-2 min-w-0 ${isSubtask ? 'pl-6' : ''}`}>
+            {subtaskCount > 0 ? (
+              <button
+                type="button"
+                onClick={() => toggleTaskExpanded(t.id)}
+                aria-label={isExpanded ? 'ย่องานย่อย' : 'ขยายงานย่อย'}
+                className="text-[#A0A0A0] hover:text-[#FF6537] cursor-pointer shrink-0"
+              >
+                {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              </button>
+            ) : isSubtask ? (
+              <CornerDownRight size={12} className="text-[#A0A0A0] shrink-0" />
+            ) : (
+              <span className="w-3.5 shrink-0" />
+            )}
+            <ListChecks size={14} className="text-[#A0A0A0] shrink-0" />
+            <span>{t.title}</span>
+            {subtaskCount > 0 && (
+              <span className="text-[10px] font-medium text-[#A0A0A0] bg-slate-100 rounded-full px-1.5 py-0.5 shrink-0">{subtaskCount}</span>
+            )}
+          </span>
+        </td>
+        <td className="px-5 py-3 text-[#6F6F6F] max-w-50">
+          <Tooltip content={t.description}><span className="block truncate">{t.description || 'ยังไม่มี'}</span></Tooltip>
+        </td>
+        <td className="px-5 py-3 whitespace-nowrap"><PeopleCell people={taskAssignees} /></td>
+        <td className="px-5 py-3 whitespace-nowrap"><PeopleCell people={taskReviewers} /></td>
+        <td className="px-5 py-3 text-[#6F6F6F] whitespace-nowrap">{t.startDate ?? 'ยังไม่มี'}</td>
+        <td className="px-5 py-3 text-[#6F6F6F] whitespace-nowrap">{t.dueDate ?? 'ยังไม่มีกำหนด'}</td>
+        <td className="px-5 py-3 whitespace-nowrap">
+          <Tooltip content={t.status === 'blocked' ? t.blockedReason : undefined}>
+            <span
+              className="text-[11px] font-medium px-2 py-0.5 rounded-full"
+              style={{ backgroundColor: `${TASK_STATUS_COLOR[t.status]}1A`, color: TASK_STATUS_COLOR[t.status] }}
+            >
+              {TASK_STATUS_LABEL[t.status]}
+            </span>
+          </Tooltip>
+        </td>
+        <td className="px-5 py-3 whitespace-nowrap">
+          <div className="flex items-center gap-2.5">
+            <Tooltip content="ดูรายละเอียด">
+              <button
+                type="button"
+                onClick={() => setSelectedTask(t)}
+                aria-label="ดูรายละเอียด"
+                className="text-[#A0A0A0] hover:text-[#FF6537] cursor-pointer transition-colors"
+              >
+                <Eye size={14} />
+              </button>
+            </Tooltip>
+            {t.assigneeEmployeeIds.includes(currentUserId) && (t.status === 'todo' || t.status === 'in_progress' || t.status === 'blocked') && (
+              <Tooltip content="ส่งงาน">
+                <button
+                  type="button"
+                  onClick={() => setSubmittingTask(t)}
+                  aria-label="ส่งงาน"
+                  className="text-[#A0A0A0] hover:text-[#FF6537] cursor-pointer transition-colors"
+                >
+                  <Send size={13} />
+                </button>
+              </Tooltip>
+            )}
+            {(t.reviewerEmployeeIds ?? []).includes(currentUserId) && t.status === 'review' && (
+              <Tooltip content="ตรวจงาน">
+                <button
+                  type="button"
+                  onClick={() => setReviewingTask(t)}
+                  aria-label="ตรวจงาน"
+                  className="text-[#A0A0A0] hover:text-[#0EA5E9] cursor-pointer transition-colors"
+                >
+                  <ClipboardCheck size={13} />
+                </button>
+              </Tooltip>
+            )}
+            {!isSubtask && (
+              <Tooltip content="เพิ่มงานย่อย">
+                <button
+                  type="button"
+                  onClick={() => openAddSubtask(t)}
+                  aria-label="เพิ่มงานย่อย"
+                  className="text-[#A0A0A0] hover:text-[#FF6537] cursor-pointer transition-colors"
+                >
+                  <Plus size={13} />
+                </button>
+              </Tooltip>
+            )}
+            <Tooltip content="แก้ไข">
+              <button
+                type="button"
+                onClick={() => openEditTask(t)}
+                aria-label="แก้ไข"
+                className="text-[#A0A0A0] hover:text-[#FF6537] cursor-pointer transition-colors"
+              >
+                <Pencil size={13} />
+              </button>
+            </Tooltip>
+            <InlineDeleteConfirm
+              label="ลบ"
+              disabled={!t.parentTaskId && changeRequests.some((r) => r.entityType === 'project_task' && r.entityId === t.id && r.status === 'pending')}
+              requiresReason={!t.parentTaskId && !isOwner(t.assigneeEmployeeIds, currentUserId)}
+              onConfirm={() => onDeleteTask(t.id)}
+              onRequestReason={() => setDeleteReasonTarget({
+                label: 'ลบงาน',
+                itemLabel: t.title,
+                onConfirm: (reason) => onRequestChange('project_task', t.id, 'delete', undefined, reason),
+              })}
+            />
+          </div>
+        </td>
+      </tr>
+    );
+  };
+
   const teamMembers = useMemo(() => {
     // "ผู้รับผิดชอบร่วม" (row.memberEmployeeIds) are project-level members declared up front at
     // create/edit time — they belong in this list even with zero tasks assigned yet, not just
@@ -233,14 +463,23 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
       .sort((a, b) => b.tasks.length - a.tasks.length);
   }, [filteredTasks, employeeById, row.memberEmployeeIds]);
 
-  const ownerEmployee = row.ownerEmployeeId ? employeeById.get(row.ownerEmployeeId) : undefined;
+  const owners = row.ownerEmployeeIds.map((id) => employeeById.get(id)).filter((e): e is Employee => Boolean(e));
 
-  // If the project's ผู้รับผิดชอบหลัก turns out to be one of the task assignees already listed
+  // If any of the project's ผู้รับผิดชอบหลัก turn out to also be task assignees already listed
   // below, show them once at the top (with their real tasks) instead of twice.
-  const ownerMatch = ownerEmployee
-    ? teamMembers.find(({ member }) => member.id === ownerEmployee.id)
-    : undefined;
-  const childMembers = ownerMatch ? teamMembers.filter((t) => t.member.id !== ownerMatch.member.id) : teamMembers;
+  const ownerMatches = owners.map((owner) => ({
+    owner,
+    match: teamMembers.find(({ member }) => member.id === owner.id),
+  }));
+  const matchedOwnerIds = new Set(ownerMatches.filter((o) => o.match).map((o) => o.owner.id));
+  const childMembers = teamMembers.filter((t) => !matchedOwnerIds.has(t.member.id));
+
+  // Pending requests against this project itself or any of its tasks — surfaced here regardless
+  // of which owner (project's or a task's) can actually decide each one (see canDecide per row).
+  const pendingRequests = changeRequests.filter((r) => r.status === 'pending' && (
+    (r.entityType === 'project' && r.entityId === row.id) ||
+    (r.entityType === 'project_task' && tasks.some((t) => t.id === r.entityId))
+  ));
 
   return (
     <div className="space-y-5">
@@ -270,10 +509,12 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
       </div>
 
       {/* Project description — was captured at create/edit time but never actually shown anywhere
-          on this page until now. */}
-      <p className="text-sm text-[#6F6F6F] whitespace-pre-wrap -mt-2">
-        {row.description || 'ยังไม่มีรายละเอียดโครงการ'}
-      </p>
+          on this page until now. Same card treatment (white/rounded-2xl/border/shadow, per
+          Design.md) as the progress card right below it, now that a long description with its
+          own "แสดงเพิ่มเติม" toggle needs real breathing room instead of floating bare on the page. */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] p-5">
+        <ExpandableText text={row.description || 'ยังไม่มีรายละเอียดโครงการ'} className="text-sm text-[#6F6F6F] whitespace-pre-wrap" />
+      </div>
 
       <div className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] p-5 space-y-4">
         <div className="flex items-center justify-between">
@@ -294,19 +535,10 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 pt-3 border-t border-slate-50 text-xs">
           <div>
             <p className="text-[#A0A0A0] mb-1">ผู้รับผิดชอบหลัก</p>
-            {ownerEmployee ? (
-              <span className="flex items-center gap-1.5 font-medium text-[#272220]">
-                {ownerEmployee.avatar ? (
-                  <img src={ownerEmployee.avatar} alt="" className="w-5 h-5 rounded-full object-cover shrink-0" />
-                ) : (
-                  <EmployeeAvatar name={displayName(ownerEmployee)} sizePx={20} />
-                )}
-                {displayName(ownerEmployee)}
-              </span>
-            ) : <span className="text-[#272220]">ยังไม่มี</span>}
+            <PeopleCell people={owners} />
           </div>
           <div>
-            <p className="text-[#A0A0A0] mb-1">ทีม</p>
+            <p className="text-[#A0A0A0] mb-1">แผนก</p>
             <p className="font-medium text-[#272220]">{row.department ?? 'ยังไม่มี'}</p>
           </div>
           <div>
@@ -331,6 +563,28 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
           </div>
         </div>
       </div>
+
+      {pendingRequests.length > 0 && (
+        <div className="bg-white rounded-2xl border border-amber-200 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] p-5 space-y-3">
+          <h3 className="font-bold text-[#272220]">คำขอที่รอดำเนินการ ({pendingRequests.length})</h3>
+          {pendingRequests.map((request) => {
+            const task = request.entityType === 'project_task' ? tasks.find((t) => t.id === request.entityId) : undefined;
+            const entityTitle = request.entityType === 'project' ? row.title : task?.title ?? 'งาน';
+            const ownerIds = request.entityType === 'project' ? row.ownerEmployeeIds : task?.assigneeEmployeeIds ?? [];
+            const requester = request.requestedBy ? employeeById.get(request.requestedBy) : undefined;
+            return (
+              <PendingRequestCard
+                key={request.id}
+                request={request}
+                entityTitle={entityTitle}
+                requesterLabel={requester ? displayName(requester) : 'ไม่ทราบผู้ใช้งาน'}
+                canDecide={isOwner(ownerIds, currentUserId) && ownerIds.length > 0}
+                onDecide={(decision, note) => onDecideChangeRequest(request.id, decision, note)}
+              />
+            );
+          })}
+        </div>
+      )}
 
       <motion.div
         layout={isAnimatingExpandToggle}
@@ -412,58 +666,14 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredTasks.map((t) => {
-                    const taskAssignees = t.assigneeEmployeeIds.map((id) => employeeById.get(id)).filter((e): e is Employee => Boolean(e));
-                    const taskReviewers = (t.reviewerEmployeeIds ?? []).map((id) => employeeById.get(id)).filter((e): e is Employee => Boolean(e));
+                  {topLevelFilteredTasks.map((t) => {
+                    const subtasks = subtasksByParent.get(t.id) ?? [];
+                    const isExpanded = expandedTaskIds.has(t.id);
                     return (
-                      <tr key={t.id} className="border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50">
-                        <td className="px-5 py-3 font-medium text-[#272220] whitespace-nowrap">
-                          <span className="flex items-center gap-2 min-w-0">
-                            <ListChecks size={14} className="text-[#A0A0A0] shrink-0" />
-                            <span>{t.title}</span>
-                          </span>
-                        </td>
-                        <td className="px-5 py-3 text-[#6F6F6F] max-w-50">
-                          <Tooltip content={t.description}><span className="block truncate">{t.description || 'ยังไม่มี'}</span></Tooltip>
-                        </td>
-                        <td className="px-5 py-3 whitespace-nowrap"><PeopleCell people={taskAssignees} /></td>
-                        <td className="px-5 py-3 whitespace-nowrap"><PeopleCell people={taskReviewers} /></td>
-                        <td className="px-5 py-3 text-[#6F6F6F] whitespace-nowrap">{t.startDate ?? 'ยังไม่มี'}</td>
-                        <td className="px-5 py-3 text-[#6F6F6F] whitespace-nowrap">{t.dueDate ?? 'ยังไม่มีกำหนด'}</td>
-                        <td className="px-5 py-3 whitespace-nowrap">
-                          <span
-                            className="text-[11px] font-medium px-2 py-0.5 rounded-full"
-                            style={{ backgroundColor: `${TASK_STATUS_COLOR[t.status]}1A`, color: TASK_STATUS_COLOR[t.status] }}
-                          >
-                            {TASK_STATUS_LABEL[t.status]}
-                          </span>
-                        </td>
-                        <td className="px-5 py-3 whitespace-nowrap">
-                          <div className="flex items-center gap-2.5">
-                            <Tooltip content="ดูรายละเอียด">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedTask(t)}
-                                aria-label="ดูรายละเอียด"
-                                className="text-[#A0A0A0] hover:text-[#FF6537] cursor-pointer transition-colors"
-                              >
-                                <Eye size={14} />
-                              </button>
-                            </Tooltip>
-                            <Tooltip content="แก้ไข">
-                              <button
-                                type="button"
-                                onClick={() => openEditTask(t)}
-                                aria-label="แก้ไข"
-                                className="text-[#A0A0A0] hover:text-[#FF6537] cursor-pointer transition-colors"
-                              >
-                                <Pencil size={13} />
-                              </button>
-                            </Tooltip>
-                            <InlineDeleteConfirm label="ลบ" onConfirm={() => onDeleteTask(t.id)} />
-                          </div>
-                        </td>
-                      </tr>
+                      <Fragment key={t.id}>
+                        {renderOverviewTaskRow(t, false)}
+                        {isExpanded && subtasks.map((st) => renderOverviewTaskRow(st, true))}
+                      </Fragment>
                     );
                   })}
                 </tbody>
@@ -501,12 +711,14 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                       <tr key={t.id} className="border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50 align-top">
                         <td className="px-5 py-3 whitespace-nowrap">
                           <div className="flex flex-col gap-1 items-start">
-                            <span
-                              className="text-[11px] font-medium px-2 py-0.5 rounded-full"
-                              style={{ backgroundColor: `${TASK_STATUS_COLOR[t.status]}1A`, color: TASK_STATUS_COLOR[t.status] }}
-                            >
-                              {TASK_STATUS_LABEL[t.status]}
-                            </span>
+                            <Tooltip content={t.status === 'blocked' ? t.blockedReason : undefined}>
+                              <span
+                                className="text-[11px] font-medium px-2 py-0.5 rounded-full"
+                                style={{ backgroundColor: `${TASK_STATUS_COLOR[t.status]}1A`, color: TASK_STATUS_COLOR[t.status] }}
+                              >
+                                {TASK_STATUS_LABEL[t.status]}
+                              </span>
+                            </Tooltip>
                             {isUrgent && (
                               <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-red-50 text-[#F50C0C] flex items-center gap-1">
                                 <Clock size={11} />
@@ -550,6 +762,16 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                               <Eye size={14} />
                               ดูรายละเอียด
                             </button>
+                            {(t.status === 'todo' || t.status === 'in_progress' || t.status === 'blocked') && (
+                              <button
+                                type="button"
+                                onClick={() => setSubmittingTask(t)}
+                                className="inline-flex items-center gap-1.5 text-[#FF6537] hover:text-[#e6572c] text-xs font-medium cursor-pointer transition-colors"
+                              >
+                                <Send size={13} />
+                                ส่งงาน
+                              </button>
+                            )}
                             <Tooltip content="แก้ไข">
                               <button
                                 type="button"
@@ -560,7 +782,17 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                                 <Pencil size={13} />
                               </button>
                             </Tooltip>
-                            <InlineDeleteConfirm label="ลบ" onConfirm={() => onDeleteTask(t.id)} />
+                            <InlineDeleteConfirm
+                              label="ลบ"
+                              disabled={!t.parentTaskId && changeRequests.some((r) => r.entityType === 'project_task' && r.entityId === t.id && r.status === 'pending')}
+                              requiresReason={!t.parentTaskId && !isOwner(t.assigneeEmployeeIds, currentUserId)}
+                              onConfirm={() => onDeleteTask(t.id)}
+                              onRequestReason={() => setDeleteReasonTarget({
+                                label: 'ลบงาน',
+                                itemLabel: t.title,
+                                onConfirm: (reason) => onRequestChange('project_task', t.id, 'delete', undefined, reason),
+                              })}
+                            />
                           </div>
                         </td>
                       </tr>
@@ -576,54 +808,49 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
       {tab === 'team' && (
         <div className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] p-8 overflow-x-auto">
           <div className="flex flex-col items-center min-w-fit">
-            {/* Lead node — always shown first regardless of the status filter, since it represents
-                the project's ownership, not a filtered task. If the owner turns out to also be one
-                of the task assignees below (ownerMatch), show their tasks here too. */}
-            <div className="flex flex-col items-center gap-2 bg-white border-2 border-[#FF6537] rounded-2xl px-6 py-4 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)]">
-              <span className="text-[10px] font-bold uppercase tracking-wide text-[#FF6537]">ผู้รับผิดชอบหลัก</span>
-              {ownerMatch ? (
-                <>
-                  {ownerMatch.member.avatar ? (
-                    <img src={ownerMatch.member.avatar} alt="" className="w-12 h-12 rounded-full object-cover shrink-0" />
-                  ) : (
-                    <EmployeeAvatar name={displayName(ownerMatch.member)} sizePx={48} />
-                  )}
-                  <div className="text-center">
-                    <p className="font-bold text-[#272220] text-sm">{displayName(ownerMatch.member)}</p>
-                    <p className="text-xs text-[#A0A0A0]">{ownerMatch.member.role}</p>
-                  </div>
-                  {ownerMatch.tasks.length > 0 && (
-                    <div className="w-full pt-3 mt-1 border-t border-slate-50 space-y-2 text-left">
-                      {ownerMatch.tasks.map((t) => (
-                        <div key={t.id} className="flex items-start gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: TASK_STATUS_COLOR[t.status] }} />
-                          <div className="min-w-0">
-                            <p className="text-xs text-[#272220] truncate">{t.title}</p>
-                            <p className="text-[10px] text-[#A0A0A0]">
-                              เริ่ม {t.startDate ?? 'ยังไม่มี'} · ส่ง {t.dueDate ?? 'ยังไม่มี'}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </>
-              ) : ownerEmployee ? (
-                <>
-                  {ownerEmployee.avatar ? (
-                    <img src={ownerEmployee.avatar} alt="" className="w-12 h-12 rounded-full object-cover shrink-0" />
-                  ) : (
-                    <EmployeeAvatar name={displayName(ownerEmployee)} sizePx={48} />
-                  )}
-                  <div className="text-center">
-                    <p className="font-bold text-[#272220] text-sm">{displayName(ownerEmployee)}</p>
-                    <p className="text-xs text-[#A0A0A0]">{ownerEmployee.role}</p>
-                  </div>
-                </>
-              ) : (
+            {/* Lead row — always shown first regardless of the status filter, since it represents
+                the project's ownership, not a filtered task. Owners are peers with equal authority
+                (not a hierarchy among themselves), so each gets its own box side by side rather
+                than one box picking a single "the" owner. Any owner who's also a task assignee
+                (ownerMatches) shows their real tasks inline instead of appearing twice below. */}
+            {owners.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 bg-white border-2 border-[#FF6537] rounded-2xl px-6 py-4 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)]">
+                <span className="text-[10px] font-bold uppercase tracking-wide text-[#FF6537]">ผู้รับผิดชอบหลัก</span>
                 <p className="text-sm text-[#A0A0A0] py-2">ยังไม่มีผู้รับผิดชอบหลัก</p>
-              )}
-            </div>
+              </div>
+            ) : (
+              <div className="flex flex-wrap justify-center gap-4">
+                {ownerMatches.map(({ owner, match }) => (
+                  <div key={owner.id} className="flex flex-col items-center gap-2 bg-white border-2 border-[#FF6537] rounded-2xl px-6 py-4 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] w-60">
+                    <span className="text-[10px] font-bold uppercase tracking-wide text-[#FF6537]">ผู้รับผิดชอบหลัก</span>
+                    {owner.avatar ? (
+                      <img src={owner.avatar} alt="" className="w-12 h-12 rounded-full object-cover shrink-0" />
+                    ) : (
+                      <EmployeeAvatar name={displayName(owner)} sizePx={48} />
+                    )}
+                    <div className="text-center">
+                      <p className="font-bold text-[#272220] text-sm">{displayName(owner)}</p>
+                      <p className="text-xs text-[#A0A0A0]">{owner.role}</p>
+                    </div>
+                    {match && match.tasks.length > 0 && (
+                      <div className="w-full pt-3 mt-1 border-t border-slate-50 space-y-2 text-left">
+                        {match.tasks.map((t) => (
+                          <div key={t.id} className="flex items-start gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: TASK_STATUS_COLOR[t.status] }} />
+                            <div className="min-w-0">
+                              <p className="text-xs text-[#272220] truncate">{t.title}</p>
+                              <p className="text-[10px] text-[#A0A0A0]">
+                                เริ่ม {t.startDate ?? 'ยังไม่มี'} · ส่ง {t.dueDate ?? 'ยังไม่มี'}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
 
             {childMembers.length === 0 ? (
               <p className="text-sm text-[#A0A0A0] flex items-center gap-2 mt-6">
@@ -716,7 +943,34 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                             {meeting.date} {meeting.startTime}{meeting.endTime ? ` - ${meeting.endTime}` : ''}
                           </span>
                         </td>
-                        <td className="px-5 py-3 text-[#6F6F6F] truncate"><Tooltip content={meeting.location}><span className="block truncate">{meeting.location || 'ยังไม่มี'}</span></Tooltip></td>
+                        <td className="px-5 py-3 text-[#6F6F6F]">
+                          {/* Pre-split meetings may still have a URL sitting in location alone —
+                              still link-ify that legacy case instead of regressing to plain text. */}
+                          {meeting.location && !meeting.meetingLink && isUrl(meeting.location) ? (
+                            <a
+                              href={meeting.location}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="block truncate text-[#FF6537] hover:underline"
+                            >
+                              {meeting.location}
+                            </a>
+                          ) : (
+                            <Tooltip content={meeting.location}><span className="block truncate">{meeting.location || (meeting.meetingLink ? '' : 'ยังไม่มี')}</span></Tooltip>
+                          )}
+                          {meeting.meetingLink && (
+                            <a
+                              href={meeting.meetingLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="block truncate text-[#FF6537] hover:underline text-[11px] mt-0.5"
+                            >
+                              {meeting.meetingLink}
+                            </a>
+                          )}
+                        </td>
                         <td className="px-5 py-3 text-[#6F6F6F] truncate"><Tooltip content={attendees.map((e) => displayName(e)).join(', ')}><span className="block truncate">
                           {attendees.length > 0 ? attendees.map((e) => displayName(e)).join(', ') : 'ยังไม่มี'}
                         </span></Tooltip></td>
@@ -742,6 +996,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                                 <button
                                   type="button"
                                   onClick={() => setEditingMeeting(meeting)}
+                                  aria-label="แก้ไขสถานที่/ลิงก์"
                                   className="text-[#A0A0A0] hover:text-[#FF6537] cursor-pointer transition-colors"
                                 >
                                   <Pencil size={14} />
@@ -751,6 +1006,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                                 <button
                                   type="button"
                                   onClick={() => setCancellingMeeting(meeting)}
+                                  aria-label="ยกเลิกประชุม"
                                   className="text-[#A0A0A0] hover:text-red-600 cursor-pointer transition-colors"
                                 >
                                   <Ban size={14} />
@@ -783,12 +1039,38 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
         projectDocFolderId={row.docFolderId}
         projectStartDate={row.startDateISO}
         projectEndDate={row.endDateISO}
+        projectMemberIds={[...row.ownerEmployeeIds, ...(row.memberEmployeeIds ?? [])]}
         employees={employees}
         currentUserId={currentUserId}
         editingTask={editingTask}
+        parentTask={addingSubtaskFor}
+        changeRequests={changeRequests}
+        onRequestChange={onRequestChange}
       />
 
       <TaskDetailModal task={selectedTask} employees={employees} onClose={() => setSelectedTask(null)} />
+
+      <SubmitTaskModal
+        task={submittingTask}
+        employees={employees}
+        documents={documents}
+        projectDocFolderId={row.docFolderId}
+        projectMemberIds={[...row.ownerEmployeeIds, ...(row.memberEmployeeIds ?? [])]}
+        currentUserName={employeeById.get(currentUserId) ? displayName(employeeById.get(currentUserId)!) : 'ผู้ใช้งานปัจจุบัน'}
+        onAddDocument={onAddDocument}
+        onSubmit={onUpdateTask}
+        onClose={() => setSubmittingTask(null)}
+      />
+
+      <ReviewTaskModal
+        task={reviewingTask}
+        employees={employees}
+        documents={documents}
+        onReview={onUpdateTask}
+        onClose={() => setReviewingTask(null)}
+      />
+
+      <DeleteRequestModal target={deleteReasonTarget} onClose={() => setDeleteReasonTarget(null)} />
 
       <EditProjectModal
         isOpen={isEditProjectOpen}
@@ -798,6 +1080,9 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
         onSave={onUpdateProject}
         existingTitles={existingProjectTitles}
         customStatuses={customStatuses}
+        currentUserId={currentUserId}
+        changeRequests={changeRequests}
+        onRequestChange={onRequestChange}
       />
 
       <ScheduleMeetingModal

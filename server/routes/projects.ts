@@ -3,6 +3,7 @@ import type { RowDataPacket } from 'mysql2';
 import { pool } from '../db.ts';
 import { nowBangkokDateTime, formatThaiDateShort } from '../lib/datetime.ts';
 import { customStatusIds } from './project-custom-statuses.ts';
+import { isOwner } from '../lib/ownership.ts';
 
 export const projectsRouter = Router();
 
@@ -29,9 +30,12 @@ function beYear2Digits(): string {
 }
 
 // New format: {abbreviation}-{2-digit BE year}-{type}-{sequence}, e.g. "WP-69-P-001" — sequence
-// restarts per {abbreviation, year, type} combination (scoped LIKE-prefix match + numeric MAX,
-// same collision-safe technique the old global PRJ-NNN counter used). Falls back to the old flat
-// scheme when abbreviation/type aren't supplied, so a project can still always get a valid code.
+// runs per {year, type} only (NOT per abbreviation): abbreviation is project-specific and almost
+// never repeats, so scoping the counter by abbreviation too made it always land on 001. Matches
+// on the "-{year}-{type}-" substring anywhere in the code and reads the trailing segment (the
+// sequence itself) via SUBSTRING_INDEX(code, '-', -1), so it doesn't care how many hyphens the
+// abbreviation itself contains. Falls back to the old flat scheme when abbreviation/type aren't
+// supplied, so a project can still always get a valid code.
 async function generateProjectCode(abbreviation: string, type: string | null): Promise<string> {
   // mysql2 returns a MAX(CAST(...AS UNSIGNED)) aggregate as a JS string (BIGINT precision
   // safety), not a number — `Number(maxNum)` actually converts it at runtime; the previous
@@ -39,12 +43,12 @@ async function generateProjectCode(abbreviation: string, type: string | null): P
   // instead of adding once any row existed (e.g. "1" + 1 -> "11" instead of 2), corrupting every
   // code after the first ("PRJ-001" -> "PRJ-011" -> "PRJ-111" -> ...).
   if (abbreviation && type) {
-    const prefix = `${abbreviation}-${beYear2Digits()}-${type}-`;
+    const yy = beYear2Digits();
     const [[{ maxNum }]] = await pool.query<RowDataPacket[]>(
-      `SELECT COALESCE(MAX(CAST(SUBSTRING(code, ?) AS UNSIGNED)), 0) as maxNum FROM project WHERE code LIKE ?`,
-      [prefix.length + 1, `${prefix}%`]
+      `SELECT COALESCE(MAX(CAST(SUBSTRING_INDEX(code, '-', -1) AS UNSIGNED)), 0) as maxNum FROM project WHERE code LIKE ?`,
+      [`%-${yy}-${type}-%`]
     );
-    return `${prefix}${String(Number(maxNum) + 1).padStart(3, '0')}`;
+    return `${abbreviation}-${yy}-${type}-${String(Number(maxNum) + 1).padStart(3, '0')}`;
   }
   const [[{ maxNum }]] = await pool.query<RowDataPacket[]>(
     `SELECT COALESCE(MAX(CAST(SUBSTRING(code, 5) AS UNSIGNED)), 0) as maxNum FROM project WHERE code LIKE 'PRJ-%'`
@@ -62,7 +66,7 @@ interface ProjectRowDb extends RowDataPacket {
   abbreviation: string | null;
   priority: string | null; // VARCHAR column storing '1'-'5' — converted to a number in toProjectRow
   budget: string | null; // DECIMAL comes back as a string from mysql2
-  owner_employee_id: string | null;
+  owner_employee_ids: string | null;
   member_employee_ids: string | null;
   member_duties: string | null;
   doc_folder_id: string | null;
@@ -74,8 +78,9 @@ interface ProjectRowDb extends RowDataPacket {
 }
 
 // Same JSON-array-as-TEXT convention as employee.restricted_menu_ids — filters out anything that
-// isn't a plain string id so a malformed body can't corrupt the stored list.
-function sanitizeMemberIds(raw: unknown): string[] {
+// isn't a plain string id so a malformed body can't corrupt the stored list. Shared by both
+// owner_employee_ids and member_employee_ids, which are stored identically.
+function sanitizeIds(raw: unknown): string[] {
   return Array.isArray(raw) ? raw.filter((id): id is string => typeof id === 'string') : [];
 }
 
@@ -115,7 +120,7 @@ function toProjectRow(r: ProjectRowDb) {
     abbreviation: r.abbreviation ?? undefined,
     priority: r.priority !== null ? Number(r.priority) : undefined,
     budget: r.budget !== null ? Number(r.budget) : null,
-    ownerEmployeeId: r.owner_employee_id,
+    ownerEmployeeIds: r.owner_employee_ids ? JSON.parse(r.owner_employee_ids) : [],
     memberEmployeeIds: r.member_employee_ids ? JSON.parse(r.member_employee_ids) : [],
     memberDuties: r.member_duties ? JSON.parse(r.member_duties) : undefined,
     docFolderId: r.doc_folder_id,
@@ -133,7 +138,7 @@ function toProjectRow(r: ProjectRowDb) {
 projectsRouter.get('/', async (_req, res) => {
   try {
     const [rows] = await pool.query<ProjectRowDb[]>(
-      `SELECT id, code, title, description, department, type, abbreviation, priority, budget, owner_employee_id,
+      `SELECT id, code, title, description, department, type, abbreviation, priority, budget, owner_employee_ids,
               member_employee_ids, member_duties, doc_folder_id, progress, start_date, end_date, status, created_at
        FROM project ORDER BY created_at DESC`
     );
@@ -156,7 +161,8 @@ projectsRouter.post('/', async (req, res) => {
   const priority = PRIORITIES.includes(p.priority) ? p.priority : null;
   const type = PROJECT_TYPES.includes(p.type) ? p.type : null;
   const abbreviation = typeof p.abbreviation === 'string' ? p.abbreviation.trim().toUpperCase() : '';
-  const memberEmployeeIds = sanitizeMemberIds(p.memberEmployeeIds);
+  const ownerEmployeeIds = sanitizeIds(p.ownerEmployeeIds);
+  const memberEmployeeIds = sanitizeIds(p.memberEmployeeIds);
   const memberDuties = sanitizeMemberDuties(p.memberDuties);
 
   try {
@@ -166,19 +172,19 @@ projectsRouter.post('/', async (req, res) => {
 
     await pool.query(
       `INSERT INTO project
-         (id, code, title, description, department, type, abbreviation, priority, budget, owner_employee_id,
+         (id, code, title, description, department, type, abbreviation, priority, budget, owner_employee_ids,
           member_employee_ids, member_duties, doc_folder_id, progress, start_date, end_date, status, created_by, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id, code, p.title.trim(), p.description?.trim() || null, p.department || null, type, abbreviation || null, priority,
-        p.budget ?? null, p.ownerEmployeeId || null, memberEmployeeIds.length ? JSON.stringify(memberEmployeeIds) : null,
+        p.budget ?? null, ownerEmployeeIds.length ? JSON.stringify(ownerEmployeeIds) : null, memberEmployeeIds.length ? JSON.stringify(memberEmployeeIds) : null,
         Object.keys(memberDuties).length ? JSON.stringify(memberDuties) : null,
         p.docFolderId || null, p.progress ?? 0, p.startDate || null, p.endDate || null, status, p.createdBy || null, now, now,
       ]
     );
 
     const [[row]] = await pool.query<ProjectRowDb[]>(
-      `SELECT id, code, title, description, department, type, abbreviation, priority, budget, owner_employee_id,
+      `SELECT id, code, title, description, department, type, abbreviation, priority, budget, owner_employee_ids,
               member_employee_ids, member_duties, doc_folder_id, progress, start_date, end_date, status, created_at
        FROM project WHERE id = ?`,
       [id]
@@ -190,14 +196,17 @@ projectsRouter.post('/', async (req, res) => {
   }
 });
 
-// Partial update — only touches fields actually present in the body.
-projectsRouter.put('/:id', async (req, res) => {
-  const p = req.body ?? {};
+// Shared by the public PUT route and change-requests.ts's approve-an-edit-request path, so the
+// exact same field-mapping logic applies a change whether it went through the instant path or the
+// approval path — only whichever CALLER is trusted differs (the public route re-checks ownership
+// each time; change-requests.ts applies straight through since a request only ever exists because
+// the ownership check already sent it there instead of here).
+export async function applyProjectFields(id: string, p: any) {
   const fields: string[] = [];
   const values: unknown[] = [];
 
   if (typeof p.title === 'string' && p.title.trim()) { fields.push('title = ?'); values.push(p.title.trim()); }
-  if ('description' in p) { fields.push('description = ?'); values.push(p.description?.trim() || null); }
+  if ('description' in p) { fields.push('description = ?'); values.push((p.description as string | undefined)?.trim() || null); }
   if ('department' in p) { fields.push('department = ?'); values.push(p.department || null); }
   // type/abbreviation are editable after creation (per spec), but the code itself — already
   // generated from whatever they were at creation time — is intentionally never regenerated, so
@@ -206,10 +215,14 @@ projectsRouter.put('/:id', async (req, res) => {
   if ('abbreviation' in p) { fields.push('abbreviation = ?'); values.push(typeof p.abbreviation === 'string' && p.abbreviation.trim() ? p.abbreviation.trim().toUpperCase() : null); }
   if ('priority' in p) { fields.push('priority = ?'); values.push(PRIORITIES.includes(p.priority) ? p.priority : null); }
   if ('budget' in p) { fields.push('budget = ?'); values.push(p.budget ?? null); }
-  if ('ownerEmployeeId' in p) { fields.push('owner_employee_id = ?'); values.push(p.ownerEmployeeId || null); }
+  if ('ownerEmployeeIds' in p) {
+    const ownerEmployeeIds = sanitizeIds(p.ownerEmployeeIds);
+    fields.push('owner_employee_ids = ?');
+    values.push(ownerEmployeeIds.length ? JSON.stringify(ownerEmployeeIds) : null);
+  }
   if ('docFolderId' in p) { fields.push('doc_folder_id = ?'); values.push(p.docFolderId || null); }
   if ('memberEmployeeIds' in p) {
-    const memberEmployeeIds = sanitizeMemberIds(p.memberEmployeeIds);
+    const memberEmployeeIds = sanitizeIds(p.memberEmployeeIds);
     fields.push('member_employee_ids = ?');
     values.push(memberEmployeeIds.length ? JSON.stringify(memberEmployeeIds) : null);
   }
@@ -223,25 +236,42 @@ projectsRouter.put('/:id', async (req, res) => {
   if ('endDate' in p) { fields.push('end_date = ?'); values.push(p.endDate || null); }
   if (typeof p.status === 'string' && (await isValidProjectStatus(p.status))) { fields.push('status = ?'); values.push(p.status); }
 
-  if (fields.length === 0) {
-    return res.status(400).json({ message: 'ไม่มีข้อมูลที่จะอัปเดต' });
+  if (fields.length === 0) return null;
+
+  fields.push('updated_at = ?');
+  values.push(nowBangkokDateTime());
+  await pool.query(`UPDATE project SET ${fields.join(', ')} WHERE id = ?`, [...values, id]);
+
+  const [[row]] = await pool.query<ProjectRowDb[]>(
+    `SELECT id, code, title, description, department, type, abbreviation, priority, budget, owner_employee_ids,
+            member_employee_ids, member_duties, doc_folder_id, progress, start_date, end_date, status, created_at
+     FROM project WHERE id = ?`,
+    [id]
+  );
+  return row ? toProjectRow(row) : null;
+}
+
+// Partial update — only touches fields actually present in the body.
+projectsRouter.put('/:id', async (req, res) => {
+  const p = req.body ?? {};
+
+  // Once a project has ≥1 owner, only one of them may edit it directly — anyone else must file a
+  // change_request instead (see change-requests.ts). An unowned project stays open to everyone,
+  // same as before this feature existed.
+  const [[existing]] = await pool.query<RowDataPacket[]>('SELECT owner_employee_ids FROM project WHERE id = ?', [req.params.id]);
+  if (!existing) return res.status(404).json({ message: 'ไม่พบโครงการนี้' });
+  const currentOwnerIds: string[] = existing.owner_employee_ids ? JSON.parse(existing.owner_employee_ids) : [];
+  if (!isOwner(currentOwnerIds, p.actorEmployeeId)) {
+    return res.status(409).json({ message: 'ต้องขออนุมัติจากผู้รับผิดชอบหลักก่อนจึงจะแก้ไขได้', requiresApproval: true });
   }
 
   try {
-    fields.push('updated_at = ?');
-    values.push(nowBangkokDateTime());
-    await pool.query(`UPDATE project SET ${fields.join(', ')} WHERE id = ?`, [...values, req.params.id]);
-
-    // Return the freshly-formatted row (not just {id}) so the client can replace its local copy
+    const row = await applyProjectFields(req.params.id, p);
+    if (!row) return res.status(400).json({ message: 'ไม่มีข้อมูลที่จะอัปเดต' });
+    // Returns the freshly-formatted row (not just {id}) so the client can replace its local copy
     // outright — updates may include raw ISO dates, which must never leak into the Thai-formatted
     // display fields the rest of the UI reads directly off ProjectRow.
-    const [[row]] = await pool.query<ProjectRowDb[]>(
-      `SELECT id, code, title, description, department, type, abbreviation, priority, budget, owner_employee_id,
-              member_employee_ids, member_duties, doc_folder_id, progress, start_date, end_date, status, created_at
-       FROM project WHERE id = ?`,
-      [req.params.id]
-    );
-    res.json(toProjectRow(row));
+    res.json(row);
   } catch (err) {
     console.error('PUT /api/projects/:id failed:', err);
     res.status(500).json({ message: 'เกิดข้อผิดพลาดในระบบ กรุณาลองใหม่อีกครั้ง' });
@@ -250,6 +280,13 @@ projectsRouter.put('/:id', async (req, res) => {
 
 projectsRouter.delete('/:id', async (req, res) => {
   try {
+    const [[existing]] = await pool.query<RowDataPacket[]>('SELECT owner_employee_ids FROM project WHERE id = ?', [req.params.id]);
+    if (!existing) return res.status(404).json({ message: 'ไม่พบโครงการนี้' });
+    const currentOwnerIds: string[] = existing.owner_employee_ids ? JSON.parse(existing.owner_employee_ids) : [];
+    if (!isOwner(currentOwnerIds, typeof req.query.actorEmployeeId === 'string' ? req.query.actorEmployeeId : undefined)) {
+      return res.status(409).json({ message: 'ต้องขออนุมัติจากผู้รับผิดชอบหลักก่อนจึงจะลบได้', requiresApproval: true });
+    }
+
     await pool.query('DELETE FROM project WHERE id = ?', [req.params.id]);
     res.status(204).end();
   } catch (err) {

@@ -92,8 +92,8 @@ export default function Dashboard({
     } else {
       const headers = ['ชื่อโครงการ', 'ผู้รับผิดชอบหลัก', 'วันครบกำหนด', 'งบประมาณ', 'สถานะ', 'ความคืบหน้า (%)'];
       const rows = filteredProjects.map((p) => {
-        const owner = p.ownerEmployeeId ? employeeById.get(p.ownerEmployeeId) : undefined;
-        return [p.title, owner ? displayName(owner) : '', p.endDate ?? '', p.budget ?? '', STATUS_LABEL[p.status], p.progress ?? ''];
+        const owners = p.ownerEmployeeIds.map((id) => employeeById.get(id)).filter((e): e is Employee => Boolean(e));
+        return [p.title, owners.map((o) => displayName(o)).join(', '), p.endDate ?? '', p.budget ?? '', STATUS_LABEL[p.status], p.progress ?? ''];
       });
       downloadCsv(`แดชบอร์ด-${new Date().toISOString().slice(0, 10)}.csv`, buildCsv(headers, rows));
     }

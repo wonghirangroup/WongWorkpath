@@ -5,7 +5,9 @@ import { X, Folder, ListChecks, Users2 } from 'lucide-react';
 import { Employee, Meeting } from '../../types';
 import { ProjectRow, ProjectTaskItem, ProjectTaskStatus } from './types';
 import { EmployeeMultiSelect, displayName, formatThaiDateShort, PRIORITY_OPTIONS, Priority } from './CreateProjectModal';
-import { TASK_STATUS_LABEL } from './statusMeta';
+import { TASK_STATUS_LABEL, TASK_STATUS_COLOR } from './statusMeta';
+import { ChangeRequest } from '../../lib/api';
+import { isOwner } from '../../lib/ownership';
 import Dropdown from '../Dropdown';
 import EmployeeAvatar from '../EmployeeAvatar';
 import ThaiDatePicker from '../ThaiDatePicker';
@@ -13,13 +15,16 @@ import { useEscapeToClose } from '../../lib/useEscapeToClose';
 
 type ModalMode = 'task' | 'meeting';
 
-const TASK_STATUS_OPTIONS: { value: ProjectTaskStatus; label: string }[] = [
-  { value: 'todo', label: TASK_STATUS_LABEL.todo },
-  { value: 'in_progress', label: TASK_STATUS_LABEL.in_progress },
-  { value: 'review', label: TASK_STATUS_LABEL.review },
-  { value: 'blocked', label: TASK_STATUS_LABEL.blocked },
-  { value: 'done', label: TASK_STATUS_LABEL.done },
-];
+// A task's status now follows the actual work process instead of being freely pickable: no
+// assignee yet -> ยังไม่เริ่ม, an assignee set -> กำลังทำ, and รอตรวจ/เสร็จแล้ว only ever happen
+// through the real "ส่งงาน"/"ตรวจงาน" flows (SubmitTaskModal/ReviewTaskModal) — editing here never
+// regresses either of those back to todo/in_progress. ติดปัญหา is the one manual override left,
+// via the checkbox below, and wins over everything else while it's checked.
+function computeTaskStatus(currentStatus: ProjectTaskStatus | undefined, assigneeIds: string[], blocked: boolean): ProjectTaskStatus {
+  if (blocked) return 'blocked';
+  if (currentStatus === 'review' || currentStatus === 'done') return currentStatus;
+  return assigneeIds.length > 0 ? 'in_progress' : 'todo';
+}
 
 interface AddTaskModalProps {
   isOpen: boolean;
@@ -40,11 +45,32 @@ interface AddTaskModalProps {
   projectEndDate?: string | null;
   // Only needed when projectId === '' — powers the project picker.
   projects?: ProjectRow[];
+  // Restricts the assignee/reviewer/attendee pickers to people already on this project (its
+  // owners + members) instead of every employee in the company. Only meaningful when projectId
+  // is fixed — when there's no fixed project yet, the equivalent list is derived from whichever
+  // project the picker above resolves to instead. An empty list (no owners/members set yet)
+  // leaves the picker open to everyone, same "unowned = open" convention used elsewhere.
+  projectMemberIds?: string[];
   employees: Employee[];
   currentUserId: string;
   // When set, the modal opens straight into "แก้ไขงาน" for this task instead of a blank "เพิ่มงาน
   // ใหม่" form — locked to task mode (editing an existing task into a meeting doesn't make sense).
   editingTask?: ProjectTaskItem | null;
+  // When set (create mode only — editingTask already carries its own parentTaskId), this modal
+  // creates a งานย่อย under this task instead of a top-level task: locked to task mode (no
+  // "subtask meeting"), and the new row's parentTaskId is set to parentTask.id on save.
+  parentTask?: ProjectTaskItem | null;
+  // Only meaningful in edit mode — an unowned task (or one the current user is an assignee of)
+  // still saves directly; anyone else's edit files a change_request instead. Optional since the
+  // create-only instance in AppLayout.tsx (the Dashboard's quick-add) never sets editingTask.
+  changeRequests?: ChangeRequest[];
+  onRequestChange?: (
+    entityType: 'project' | 'project_task',
+    entityId: string,
+    requestType: 'edit' | 'delete',
+    proposedChanges: Record<string, unknown> | undefined,
+    reason: string
+  ) => Promise<void>;
 }
 
 // Both tasks and meetings are real, network-persisted data now (see AppDataContext's
@@ -52,7 +78,7 @@ interface AddTaskModalProps {
 // branches of handleSubmit await the call and show an inline error instead of closing blind. The
 // "create a folder" option also writes to the shared document store via onCreateFolder, same as
 // CreateProjectModal's own folder step.
-export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, onUpdateTask, onCreateFolder, projectId, projectDocFolderId, projectStartDate, projectEndDate, projects, employees, currentUserId, editingTask }: AddTaskModalProps) {
+export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, onUpdateTask, onCreateFolder, projectId, projectDocFolderId, projectStartDate, projectEndDate, projects, projectMemberIds, employees, currentUserId, editingTask, parentTask, changeRequests, onRequestChange }: AddTaskModalProps) {
   const needsProjectPicker = !projectId;
   const [mode, setMode] = useState<ModalMode>('task');
   const [pickedProjectId, setPickedProjectId] = useState('');
@@ -60,7 +86,8 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<Priority | null>(null);
-  const [status, setStatus] = useState<ProjectTaskStatus>('todo');
+  const [blocked, setBlocked] = useState(false);
+  const [blockedReason, setBlockedReason] = useState('');
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [reviewerIds, setReviewerIds] = useState<string[]>([]);
   const [startDate, setStartDate] = useState('');
@@ -73,10 +100,20 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
   const [meetingEndTime, setMeetingEndTime] = useState('');
   const [attendeeIds, setAttendeeIds] = useState<string[]>([]);
   const [location, setLocation] = useState('');
+  const [meetingLink, setMeetingLink] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
+  const [reason, setReason] = useState('');
 
   const isEditing = Boolean(editingTask);
+  // Only relevant in edit mode — an unowned task (or one the current user is already an assignee
+  // of) still saves directly; anyone else's edit files a change_request instead (see
+  // ProjectDetail's "คำขอที่รอดำเนินการ" panel for the owner-facing approve/reject side). งานย่อย
+  // is exempt from this gate entirely — only the main task needs approval, per the product decision.
+  const canEditDirectly = !editingTask || Boolean(editingTask.parentTaskId) || isOwner(editingTask.assigneeEmployeeIds, currentUserId);
+  const pendingRequest = editingTask && !editingTask.parentTaskId
+    ? changeRequests?.find((r) => r.entityType === 'project_task' && r.entityId === editingTask.id && r.status === 'pending')
+    : undefined;
 
   // The component instance stays mounted between opens, so without this a second "แก้ไข" click on
   // a different task would still show whatever the previous open left behind.
@@ -88,7 +125,8 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
       setTitle(editingTask.title);
       setDescription(editingTask.description ?? '');
       setPriority(editingTask.priority ?? null);
-      setStatus(editingTask.status);
+      setBlocked(editingTask.status === 'blocked');
+      setBlockedReason(editingTask.blockedReason ?? '');
       setAssigneeIds(editingTask.assigneeEmployeeIds);
       setReviewerIds(editingTask.reviewerEmployeeIds ?? []);
       setStartDate(editingTask.startDateISO ?? '');
@@ -97,7 +135,8 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
       setTitle('');
       setDescription('');
       setPriority(null);
-      setStatus('todo');
+      setBlocked(false);
+      setBlockedReason('');
       setAssigneeIds([]);
       setReviewerIds([]);
       setStartDate('');
@@ -110,7 +149,9 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
     setMeetingEndTime('');
     setAttendeeIds([]);
     setLocation('');
+    setMeetingLink('');
     setFormError('');
+    setReason('');
   }, [isOpen, editingTask]);
 
   // "สร้างโฟลเดอร์เอกสาร" defaults to checked (see the reset effect above) — this keeps the folder
@@ -129,6 +170,19 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
   // normally come from a fixed prop instead comes from whichever project gets picked below.
   const pickedProject = useMemo(() => projects?.find((p) => p.id === pickedProjectId), [projects, pickedProjectId]);
   const effectiveProjectId = projectId || pickedProjectId;
+
+  // Restricts the assignee/reviewer/attendee pickers below to people already on this project —
+  // an empty roster (no owners/members set yet, or no project picked yet) leaves it open to
+  // everyone, the same "unowned = open" convention the change-request ownership gate already uses.
+  const projectMemberIdSet = useMemo(() => {
+    const ids = needsProjectPicker
+      ? [...(pickedProject?.ownerEmployeeIds ?? []), ...(pickedProject?.memberEmployeeIds ?? [])]
+      : (projectMemberIds ?? []);
+    return new Set(ids);
+  }, [needsProjectPicker, pickedProject, projectMemberIds]);
+  const selectableEmployees = (currentIds: string[]) =>
+    projectMemberIdSet.size === 0 ? employees : employees.filter((e) => projectMemberIdSet.has(e.id) || currentIds.includes(e.id));
+
   const effectiveProjectDocFolderId = needsProjectPicker ? pickedProject?.docFolderId : projectDocFolderId;
   const effectiveProjectStartDate = needsProjectPicker ? pickedProject?.startDateISO : projectStartDate;
   const effectiveProjectEndDate = needsProjectPicker ? pickedProject?.endDateISO : projectEndDate;
@@ -152,7 +206,10 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
     ? `ต้องไม่หลัง ${formatThaiDateShort(effectiveProjectEndDate)} (วันที่สิ้นสุดโครงการ)`
     : '';
 
-  const isFormValid = effectiveProjectId !== '' && (mode === 'task'
+  const reasonValid = canEditDirectly || reason.trim() !== '';
+  const blockedReasonValid = !blocked || blockedReason.trim() !== '';
+
+  const isFormValid = effectiveProjectId !== '' && !pendingRequest && reasonValid && blockedReasonValid && (mode === 'task'
     ? titleValid && taskDateOrderValid && taskStartInRange && taskDueInRange
     : titleValid && meetingDate.trim() !== '' && meetingStartTime.trim() !== '' && meetingTimeOrderValid && meetingDateInRange);
 
@@ -180,6 +237,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
           endTime: meetingEndTime || undefined,
           attendeeIds,
           location: location.trim() || undefined,
+          meetingLink: meetingLink.trim() || undefined,
           createdBy: currentUserId,
           status: 'scheduled',
         });
@@ -195,23 +253,26 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
           reviewerEmployeeIds: reviewerIds,
           startDate: startDate || null,
           dueDate: dueDate || null,
-          // Status is only ever editable from the edit form (see the "สถานะงาน" dropdown below,
-          // rendered only when isEditing) — creation always starts a task at 'todo' via the
-          // separate onSave call further down, untouched by this field.
-          ...(isEditing ? { status } : {}),
+          // Derived from the process, not freely picked — see computeTaskStatus above.
+          status: computeTaskStatus(editingTask?.status, assigneeIds, blocked),
+          blockedReason: blocked ? blockedReason.trim() : undefined,
         };
 
         if (editingTask && onUpdateTask) {
-          await onUpdateTask(editingTask.id, taskFields);
+          if (canEditDirectly) {
+            await onUpdateTask(editingTask.id, taskFields);
+          } else if (onRequestChange) {
+            await onRequestChange('project_task', editingTask.id, 'edit', taskFields, reason.trim());
+          }
         } else {
           // Created first (not the folder) so the real new task id exists to tag the folder with —
           // DocVault uses that tag to show "this belongs to task X" (see LinkedDoc.taskId).
           const createdTask = await onSave({
             projectId: effectiveProjectId,
-            status: 'todo',
             creatorEmployeeId: currentUserId,
             progress: 0,
             checklist: [],
+            parentTaskId: parentTask?.id ?? null,
             ...taskFields,
           });
           // Folder creation is create-only — re-offering it on every edit-save would spawn a fresh
@@ -267,11 +328,13 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
             <div className="flex justify-between items-center px-6 pt-5 pb-2 shrink-0">
               <div>
                 <h3 className="text-sm font-bold text-slate-800">
-                  {isEditing ? 'แก้ไขงาน' : mode === 'task' ? 'เพิ่มงานใหม่' : 'นัดประชุมใหม่'}
+                  {isEditing ? (editingTask?.parentTaskId ? 'แก้ไขงานย่อย' : 'แก้ไขงาน') : parentTask ? 'เพิ่มงานย่อย' : mode === 'task' ? 'เพิ่มงานใหม่' : 'นัดประชุมใหม่'}
                 </h3>
                 <p className="text-[11px] text-[#6F6F6F] mt-0.5">
                   {isEditing
                     ? 'ปรับรายละเอียดงานแล้วกดบันทึกเพื่อยืนยัน'
+                    : parentTask
+                    ? `งานย่อยของ "${parentTask.title}"`
                     : needsProjectPicker
                     ? 'เลือกโครงการแล้วกรอกรายละเอียดงาน'
                     : mode === 'task' ? 'กรอกรายละเอียดงานสำหรับโครงการนี้' : 'กรอกรายละเอียดการประชุมสำหรับโครงการนี้'}
@@ -282,7 +345,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
               </button>
             </div>
 
-            {!isEditing && !needsProjectPicker && (
+            {!isEditing && !needsProjectPicker && !parentTask && (
             <div className="flex items-center gap-1 px-6 pb-3 shrink-0">
               <button
                 type="button"
@@ -354,7 +417,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                     <div>
                       <label className="block text-[#272220] font-bold text-[11px] mb-1">ผู้รับผิดชอบ (เลือกได้มากกว่า 1)</label>
                       <EmployeeMultiSelect
-                        employees={employees}
+                        employees={selectableEmployees(assigneeIds)}
                         valueIds={assigneeIds}
                         onChange={setAssigneeIds}
                         placeholder="ค้นหาหรือเลือกพนักงาน..."
@@ -364,7 +427,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                     <div>
                       <label className="block text-[#272220] font-bold text-[11px] mb-1">ผู้ตรวจงาน (ไม่บังคับ, เลือกได้มากกว่า 1)</label>
                       <EmployeeMultiSelect
-                        employees={employees}
+                        employees={selectableEmployees(reviewerIds)}
                         valueIds={reviewerIds}
                         onChange={setReviewerIds}
                         placeholder="ค้นหาหรือเลือกพนักงาน..."
@@ -390,10 +453,76 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                       </div>
                     </div>
 
-                    {isEditing && (
+                    {isEditing && editingTask && (
+                      <div className="sm:col-span-2 flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
+                        <div>
+                          <p className="text-[#272220] font-bold text-[11px] mb-1">สถานะงาน</p>
+                          <p className="text-[10px] text-[#A0A0A0]">
+                            เปลี่ยนตามขั้นตอนอัตโนมัติ — ยังไม่เริ่ม/กำลังทำตามผู้รับผิดชอบ, รอตรวจ/เสร็จแล้วผ่านการ "ส่งงาน"/"ตรวจงาน"
+                          </p>
+                        </div>
+                        {(() => {
+                          const previewStatus = computeTaskStatus(editingTask.status, assigneeIds, blocked);
+                          const color = TASK_STATUS_COLOR[previewStatus];
+                          return (
+                            <span
+                              className="text-[11px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap shrink-0"
+                              style={{ backgroundColor: `${color}1A`, color }}
+                            >
+                              {TASK_STATUS_LABEL[previewStatus]}
+                            </span>
+                          );
+                        })()}
+                      </div>
+                    )}
+
+                    {isEditing && editingTask?.status !== 'done' && (
                       <div className="sm:col-span-2">
-                        <label className="block text-[#272220] font-bold text-[11px] mb-1">สถานะงาน</label>
-                        <Dropdown<ProjectTaskStatus> value={status} onChange={setStatus} options={TASK_STATUS_OPTIONS} />
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={blocked}
+                            onChange={(e) => setBlocked(e.target.checked)}
+                            className="rounded border-[#E5E5E5] text-[#FF6537] focus:ring-[#FF6537] cursor-pointer"
+                          />
+                          <span className="text-[#272220] font-bold text-[11px]">ติดปัญหา</span>
+                          <span className="text-[10px] text-[#A0A0A0]">— ทุกคนที่เกี่ยวข้องกับโปรเจคนี้จะได้รับแจ้งเตือน</span>
+                        </label>
+                        {blocked && (
+                          <textarea
+                            rows={2}
+                            autoFocus
+                            value={blockedReason}
+                            onChange={(e) => setBlockedReason(e.target.value)}
+                            placeholder="ติดปัญหาอะไร? (บังคับกรอก — จะโชว์ให้คนอื่นเห็นด้วย)"
+                            className="w-full mt-2 p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                          />
+                        )}
+                      </div>
+                    )}
+
+                    {isEditing && pendingRequest && (
+                      <p className="sm:col-span-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                        มีคำขอแก้ไขรออนุมัติอยู่แล้ว โดย {(() => {
+                          const requester = employees.find((e) => e.id === pendingRequest.requestedBy);
+                          return requester ? displayName(requester) : 'ไม่ทราบผู้ใช้งาน';
+                        })()}
+                        {' — เหตุผล: '}{pendingRequest.reason}
+                      </p>
+                    )}
+
+                    {isEditing && !pendingRequest && !canEditDirectly && (
+                      <div className="sm:col-span-2">
+                        <label className="block text-[#272220] font-bold text-[11px] mb-1">
+                          เหตุผลที่ขอแก้ไข <span className="text-[#FF6537]">*</span>
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={reason}
+                          onChange={(e) => setReason(e.target.value)}
+                          placeholder="งานนี้มีผู้รับผิดชอบแล้ว ระบุเหตุผลเพื่อขออนุมัติแก้ไข..."
+                          className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                        />
                       </div>
                     )}
 
@@ -510,20 +639,31 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                     <div>
                       <label className="block text-[#272220] font-bold text-[11px] mb-1">ผู้เข้าร่วมประชุม (ไม่บังคับ)</label>
                       <EmployeeMultiSelect
-                        employees={employees}
+                        employees={selectableEmployees(attendeeIds)}
                         valueIds={attendeeIds}
                         onChange={setAttendeeIds}
                         placeholder="ค้นหาหรือเลือกพนักงาน..."
                       />
                     </div>
 
-                    <div className="sm:col-span-2">
-                      <label className="block text-[#272220] font-bold text-[11px] mb-1">สถานที่ / ลิงก์ประชุมออนไลน์ (ไม่บังคับ)</label>
+                    <div>
+                      <label className="block text-[#272220] font-bold text-[11px] mb-1">สถานที่ (ไม่บังคับ)</label>
                       <input
                         type="text"
-                        placeholder="เช่น ห้องประชุมชั้น 3 หรือ https://meet.google.com/..."
+                        placeholder="เช่น ห้องประชุมชั้น 3"
                         value={location}
                         onChange={(e) => setLocation(e.target.value)}
+                        className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[#272220] font-bold text-[11px] mb-1">ลิงก์ประชุมออนไลน์ (ไม่บังคับ)</label>
+                      <input
+                        type="text"
+                        placeholder="เช่น https://meet.google.com/..."
+                        value={meetingLink}
+                        onChange={(e) => setMeetingLink(e.target.value)}
                         className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
                       />
                     </div>
@@ -551,7 +691,9 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                     isFormValid && !isSubmitting ? 'bg-[#FF6537] hover:bg-[#e6572c] cursor-pointer' : 'bg-[#F68C6C] cursor-not-allowed'
                   }`}
                 >
-                  {isSubmitting ? 'กำลังบันทึก...' : isEditing ? 'บันทึกการแก้ไข' : mode === 'task' ? 'เพิ่มงาน' : 'นัดประชุม'}
+                  {isEditing && !canEditDirectly
+                    ? (isSubmitting ? 'กำลังส่งคำขอ...' : 'ส่งคำขอแก้ไข')
+                    : isSubmitting ? 'กำลังบันทึก...' : isEditing ? 'บันทึกการแก้ไข' : mode === 'task' ? 'เพิ่มงาน' : 'นัดประชุม'}
                 </button>
               </div>
             </form>

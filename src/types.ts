@@ -54,7 +54,6 @@ export interface Task {
   dependencies: string[]; // Task IDs that must be completed first
   approvalStatus: 'None' | 'Pending Approval' | 'Approved' | 'Rejected';
   approvalNote?: string;
-  recurringPattern: 'None' | 'Weekly' | 'Monthly';
   linkedDocIds: string[]; // Document IDs linked to this task
   handovers: HandoverRecord[];
 }
@@ -81,8 +80,8 @@ export interface LinkedDoc {
   fileDataUrl?: string; // kind === 'file' — base64 data: URL, read via FileReader on upload
   fileMimeType?: string; // kind === 'file'
   fileSize?: number; // kind === 'file' — bytes
-  scope: 'ส่วนตัว' | 'ทีม';
-  team?: string; // scope === 'ทีม' — real org-chart section (แผนก)
+  scope: 'ส่วนตัว' | 'โครงการ';
+  projectId?: string; // scope === 'โครงการ' — id of a real ProjectRow this item is explicitly tagged with
   // Set only on a folder created via a project task's own "create folder" checkbox (see
   // AddTaskModal.tsx) — lets DocVault show which task (and, via the task's own projectId, which
   // project) owns this folder. Anything nested inside it inherits the tag by walking up parentId,
@@ -143,7 +142,12 @@ export interface Meeting {
   startTime: string; // HH:mm
   endTime?: string; // HH:mm
   attendeeIds: string[]; // Employee ids
-  location?: string; // a physical place or an online meeting link — free text either way
+  location?: string; // a physical place — a meeting can have this AND meetingLink at once (e.g.
+  // an in-room meeting that also opens an online bridge for remote attendees), so the two are
+  // separate fields rather than one dual-purpose one. Pre-existing meetings from before this
+  // split may still hold a URL in here (no backfill was run) — display code should still detect
+  // and link-ify that case for them.
+  meetingLink?: string; // an online meeting URL (Zoom/Meet/Teams/etc.)
   createdBy?: string; // Employee id
   status: 'scheduled' | 'cancelled';
   cancellationReason?: string; // required whenever status is 'cancelled' — see ScheduleMeetingModal's cancel flow

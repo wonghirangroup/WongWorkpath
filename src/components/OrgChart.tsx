@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useRef, useState, ReactNode } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
-import { Users2, Pencil, Trash2, Plus, X, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
+import { Users2, Pencil, Trash2, Plus, X, ZoomIn, ZoomOut, Maximize2, Search } from 'lucide-react';
 import { Employee } from '../types';
 import { COMPANY_NAME, OrgDivisionData, resolveOrgPlacement } from '../data/orgStructure';
 import { getAvatarColor } from '../lib/avatarColor';
-import Dropdown from './Dropdown';
 import Tooltip from './Tooltip';
 import { useEscapeToClose } from '../lib/useEscapeToClose';
 
@@ -15,10 +14,15 @@ function displayName(emp: Employee) {
 
 // A single person row embedded inside a division/section card — same shape as the task rows
 // embedded inside each member's card on the project detail page's "ทีม" tab (avatar/dot + a
-// two-line text block), just showing a person instead of a task.
-function MemberRow({ employee }: { employee: Employee }) {
+// two-line text block), just showing a person instead of a task. `data-employee-id` is how the
+// search box / "ตำแหน่งของฉัน" button locates this node in the DOM to pan/zoom the canvas onto it
+// (see focusOnEmployeeNode); `highlighted` briefly rings it after a jump so it's obvious which one.
+function MemberRow({ employee, highlighted }: { employee: Employee; highlighted?: boolean }) {
   return (
-    <div className="flex items-center gap-2 text-left">
+    <div
+      data-employee-id={employee.id}
+      className={`flex items-center gap-2 text-left rounded-lg transition-shadow ${highlighted ? 'ring-2 ring-[#FF6537] ring-offset-2' : ''}`}
+    >
       {employee.avatar ? (
         <img src={employee.avatar} alt="" className="w-6 h-6 rounded-full object-cover shrink-0" />
       ) : (
@@ -37,12 +41,12 @@ function MemberRow({ employee }: { employee: Employee }) {
   );
 }
 
-function MemberList({ members }: { members: Employee[] }) {
+function MemberList({ members, highlightedEmployeeId }: { members: Employee[]; highlightedEmployeeId?: string | null }) {
   if (members.length === 0) return null;
   return (
     <div className="w-full pt-3 mt-1 border-t border-slate-50 space-y-2">
       {members.map((m) => (
-        <MemberRow key={m.id} employee={m} />
+        <MemberRow key={m.id} employee={m} highlighted={highlightedEmployeeId === m.id} />
       ))}
     </div>
   );
@@ -50,9 +54,12 @@ function MemberList({ members }: { members: Employee[] }) {
 
 // A flat pill (not a card row) — only used for the bottom "ยังไม่ระบุฝ่าย" bucket, which isn't
 // part of the tree so it doesn't get a card of its own.
-function MemberChip({ employee }: { employee: Employee }) {
+function MemberChip({ employee, highlighted }: { employee: Employee; highlighted?: boolean }) {
   return (
-    <div className="flex items-center gap-1.5 bg-[#F9F9F9] border border-slate-100 rounded-xl pl-1 pr-2.5 py-1">
+    <div
+      data-employee-id={employee.id}
+      className={`flex items-center gap-1.5 bg-[#F9F9F9] border border-slate-100 rounded-xl pl-1 pr-2.5 py-1 transition-shadow ${highlighted ? 'ring-2 ring-[#FF6537] ring-offset-2' : ''}`}
+    >
       {employee.avatar ? (
         <img src={employee.avatar} alt="" className="w-6 h-6 rounded-full object-cover shrink-0" />
       ) : (
@@ -67,6 +74,78 @@ function MemberChip({ employee }: { employee: Employee }) {
         <p className="text-[11px] font-semibold text-[#272220] leading-tight truncate max-w-24">{displayName(employee)}</p>
         <p className="text-[9px] text-[#A0A0A0] leading-tight truncate max-w-24">{employee.role}</p>
       </div>
+    </div>
+  );
+}
+
+// Typeahead used to jump the canvas to a specific person — a plain self-contained search box
+// (not the app's generic Dropdown, which is single-select-from-a-fixed-list, not free-text) that
+// closes on outside click and clears itself once a result is picked. Exported so EmployeeManagement
+// can render it in its own toolbar row, above the tab switcher (see OrgChartHandle below for how
+// picking a result still reaches the canvas that lives inside <OrgChart>).
+export function EmployeeLocateSearch({ employees, onSelect }: { employees: Employee[]; onSelect: (id: string) => void }) {
+  const [query, setQuery] = useState('');
+  const [isOpen, setIsOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onClickOutside = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setIsOpen(false);
+    };
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, []);
+
+  const q = query.trim().toLowerCase();
+  const results = q
+    ? employees.filter((e) => displayName(e).toLowerCase().includes(q) || (e.role || '').toLowerCase().includes(q)).slice(0, 8)
+    : [];
+
+  return (
+    <div ref={rootRef} className="relative w-full">
+      <div className="relative">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#A0A0A0] pointer-events-none" />
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setIsOpen(true); }}
+          onFocus={() => setIsOpen(true)}
+          placeholder="ค้นหาพนักงานในผังองค์กร..."
+          aria-label="ค้นหาพนักงานในผังองค์กร"
+          className="w-full h-9 pl-8 pr-3 text-[13px] border border-[#E5E5E5] rounded-lg focus:outline-none focus:border-[#FF6537]"
+        />
+      </div>
+      {isOpen && q && (
+        <div className="absolute z-30 top-full left-0 right-0 mt-1 bg-white border border-slate-100 rounded-xl shadow-lg max-h-64 overflow-y-auto">
+          {results.length === 0 ? (
+            <p className="px-3 py-2.5 text-xs text-[#A0A0A0]">ไม่พบพนักงาน</p>
+          ) : (
+            results.map((emp) => (
+              <button
+                key={emp.id}
+                type="button"
+                onClick={() => { onSelect(emp.id); setQuery(''); setIsOpen(false); }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 cursor-pointer"
+              >
+                {emp.avatar ? (
+                  <img src={emp.avatar} alt="" className="w-6 h-6 rounded-full object-cover shrink-0" />
+                ) : (
+                  <span
+                    className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-bold shrink-0"
+                    style={{ backgroundColor: getAvatarColor(displayName(emp)) }}
+                  >
+                    {displayName(emp).trim().charAt(0).toUpperCase()}
+                  </span>
+                )}
+                <span className="min-w-0">
+                  <p className="text-xs font-semibold text-[#272220] truncate">{displayName(emp)}</p>
+                  <p className="text-[10px] text-[#A0A0A0] truncate">{emp.role}</p>
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -244,6 +323,13 @@ interface DivisionColumn {
 interface OrgChartProps {
   employees: Employee[];
   orgDivisions: OrgDivisionData[];
+  // Lifted up to EmployeeManagement's own toolbar row (see OrgChartHandle) so its search box and
+  // "ทุกฝ่าย" filter can sit above the tab switcher, matching every other tab's layout — the
+  // canvas itself (and everything it drives, like auto-fit-on-filter-change) still lives here.
+  filterDivision: string;
+  onFilterDivisionChange: (value: string) => void;
+  editMode: boolean;
+  onEditModeChange: (value: boolean) => void;
   onAddDivision: (name: string) => void;
   onRenameDivision: (oldName: string, newName: string) => void;
   onDeleteDivision: (name: string) => void;
@@ -252,24 +338,35 @@ interface OrgChartProps {
   onDeleteSection: (divisionName: string, sectionName: string) => void;
 }
 
+// Imperative surface for the parent's lifted-out toolbar: picking a search result or clicking
+// "ตำแหน่งของฉัน" needs to pan/zoom the canvas onto a specific person, and "+เพิ่มฝ่าย" needs to open
+// this component's own add-division prompt — both are actions, not state, so a ref beats trying to
+// lift the pan/zoom/DOM-measurement machinery itself out of the component that owns the canvas.
+export interface OrgChartHandle {
+  focusOnEmployee: (employeeId: string) => void;
+  openAddDivisionPrompt: () => void;
+}
+
 // Static-shaped org chart template — always renders every division and its sections regardless of
 // real employee data, then layers real employees on top wherever `resolveOrgPlacement` can
 // confidently place them. The structure itself (divisions/sections) is admin-editable in place
 // via the pencil/trash/+ controls that appear when "แก้ไขโครงสร้าง" is switched on. Card styling
 // (white bg, subtle/orange border, shadow, embedded member rows) matches the org chart on a
 // project's own "ทีม" tab (ProjectDetail.tsx) rather than the earlier compact fixed-size boxes.
-export default function OrgChart({
+const OrgChart = forwardRef<OrgChartHandle, OrgChartProps>(function OrgChart({
   employees,
   orgDivisions,
+  filterDivision,
+  onFilterDivisionChange,
+  editMode,
+  onEditModeChange,
   onAddDivision,
   onRenameDivision,
   onDeleteDivision,
   onAddSection,
   onRenameSection,
   onDeleteSection,
-}: OrgChartProps) {
-  const [editMode, setEditMode] = useState(false);
-  const [filterDivision, setFilterDivision] = useState('__all__');
+}, ref) {
   const [renamePrompt, setRenamePrompt] = useState<
     | { kind: 'division'; oldName: string }
     | { kind: 'section'; division: string; oldName: string }
@@ -380,12 +477,87 @@ export default function OrgChart({
     });
   };
 
-  // A filter change can swap in dramatically smaller/differently-placed content (e.g. "ทุกฝ่าย"
-  // down to a single division) — reset the view instead of leaving the old pan/zoom pointed at
-  // wherever the wider chart used to be, which could easily be nowhere near the filtered result.
+  // Fits the whole tree in the viewport (padded, never upscaled past 100%) rather than always
+  // opening at a fixed x:24/y:24/scale:1 — on a normal-width screen that fixed frame often cropped
+  // the rightmost division out of view, reading as "part of the chart is missing" rather than "pan
+  // right to see more". Recomputed whenever the filter changes (a different subset of the tree =
+  // different natural size) or on first mount.
+  const fitToView = () => {
+    const viewport = viewportRef.current?.getBoundingClientRect();
+    if (!viewport || contentSize.width === 0 || contentSize.height === 0) return false;
+    const PADDING = 48;
+    const scale = Math.min(1, Math.max(0.3, Math.min(
+      (viewport.width - PADDING * 2) / contentSize.width,
+      (viewport.height - PADDING * 2) / contentSize.height
+    )));
+    const x = Math.max(PADDING, (viewport.width - contentSize.width * scale) / 2);
+    setView({ x, y: PADDING, scale });
+    return true;
+  };
+
+  // Search box / "ตำแหน่งของฉัน" both resolve to the same "pan+zoom onto this person" action.
+  // Both first force the division filter back to "ทุกฝ่าย" — a matched person may live in a
+  // division the filter is currently hiding, so their node might not even exist in the DOM yet —
+  // then wait for that filtered-in DOM to actually land before measuring anyone's position.
+  const [pendingFocusEmployeeId, setPendingFocusEmployeeId] = useState<string | null>(null);
+  const [highlightedEmployeeId, setHighlightedEmployeeId] = useState<string | null>(null);
+
+  // `contentSize` isn't known yet the instant the filter changes (the ResizeObserver reports it
+  // one paint later, once the DOM actually reflects the new filtered subset) — this flag defers
+  // the fit until that fresh measurement lands, instead of fitting against the previous filter's
+  // now-stale size.
+  const [shouldAutoFit, setShouldAutoFit] = useState(true);
   useEffect(() => {
-    setView({ x: 24, y: 24, scale: 1 });
+    setShouldAutoFit(true);
   }, [filterDivision]);
+  useEffect(() => {
+    if (!shouldAutoFit || pendingFocusEmployeeId) return;
+    if (fitToView()) setShouldAutoFit(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldAutoFit, contentSize, pendingFocusEmployeeId]);
+
+  const focusOnEmployeeNode = (employeeId: string) => {
+    const viewport = viewportRef.current;
+    const content = contentRef.current;
+    if (!viewport || !content) return;
+    const node = Array.from(content.querySelectorAll<HTMLElement>('[data-employee-id]')).find((el) => el.dataset.employeeId === employeeId);
+    if (!node) return;
+    const viewportRect = viewport.getBoundingClientRect();
+    const nodeRect = node.getBoundingClientRect();
+    setView((v) => {
+      const localCenterX = (nodeRect.left + nodeRect.width / 2 - viewportRect.left - v.x) / v.scale;
+      const localCenterY = (nodeRect.top + nodeRect.height / 2 - viewportRect.top - v.y) / v.scale;
+      const targetScale = Math.min(2.5, Math.max(1, v.scale));
+      const x = viewportRect.width / 2 - localCenterX * targetScale;
+      const y = viewportRect.height / 2 - localCenterY * targetScale;
+      return { scale: targetScale, ...clampView(x, y, targetScale) };
+    });
+  };
+
+  const requestFocusEmployee = (employeeId: string) => {
+    onFilterDivisionChange('__all__');
+    setPendingFocusEmployeeId(employeeId);
+  };
+
+  useImperativeHandle(ref, () => ({
+    focusOnEmployee: requestFocusEmployee,
+    openAddDivisionPrompt: () => setRenamePrompt({ kind: 'add-division' }),
+  }));
+
+  useEffect(() => {
+    if (!pendingFocusEmployeeId || filterDivision !== '__all__') return;
+    focusOnEmployeeNode(pendingFocusEmployeeId);
+    setHighlightedEmployeeId(pendingFocusEmployeeId);
+    setPendingFocusEmployeeId(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingFocusEmployeeId, filterDivision, columns, unassigned]);
+
+  // Highlight ring fades on its own after a few seconds instead of needing a dismiss click.
+  useEffect(() => {
+    if (!highlightedEmployeeId) return;
+    const timer = setTimeout(() => setHighlightedEmployeeId(null), 3000);
+    return () => clearTimeout(timer);
+  }, [highlightedEmployeeId]);
 
   // This listener is attached once (empty dep array — see below for why) but must always call
   // the CURRENT render's `zoomAt`, which closes over the current `contentSize`/`viewportRef`
@@ -420,45 +592,40 @@ export default function OrgChart({
     zoomAt(rect ? rect.width / 2 : 0, rect ? rect.height / 2 : 0, factor);
   };
 
-  const resetView = () => setView({ x: 24, y: 24, scale: 1 });
+  const resetView = () => { if (!fitToView()) setView({ x: 24, y: 24, scale: 1 }); };
+
+  // A hardcoded canvas height left dead gray space below the card (too short) or spilled the
+  // canvas past the sidebar's bottom edge (too tall) whenever the toolbar above it changed
+  // height — same problem, and same fix, as EmployeeManagement's own employee/log table
+  // (`tableMaxHeight`): measure the real gap to the bottom of the viewport live instead of
+  // guessing. Recomputed on resize and whenever `editMode` toggles, since that's what changes the
+  // parent toolbar's own height (the "+เพิ่มฝ่าย" button appearing/disappearing) and therefore
+  // shifts where this canvas starts.
+  const [canvasHeight, setCanvasHeight] = useState<number>();
+  useEffect(() => {
+    function updateCanvasHeight() {
+      if (!viewportRef.current) return;
+      const top = viewportRef.current.getBoundingClientRect().top;
+      setCanvasHeight(window.innerHeight - top - 18); // 18px matches <main>'s own bottom padding
+    }
+    updateCanvasHeight();
+    window.addEventListener('resize', updateCanvasHeight);
+    return () => window.removeEventListener('resize', updateCanvasHeight);
+  }, [editMode]);
+
+  // The initial fit-to-view (see `shouldAutoFit` above) runs against the canvas's fallback
+  // `h-140` size, before this measured height lands — re-fit once the real height is known so the
+  // chart isn't left zoomed/positioned for a viewport size that no longer applies.
+  useEffect(() => {
+    setShouldAutoFit(true);
+  }, [canvasHeight]);
 
   return (
     <div className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-2 p-4 border-b border-slate-100">
-        <div className="w-44 h-9">
-          <Dropdown<string>
-            value={filterDivision}
-            onChange={setFilterDivision}
-            size="compact"
-            options={[{ value: '__all__', label: 'ทุกฝ่าย' }, ...orgDivisions.map((d) => ({ value: d.name, label: d.name }))]}
-          />
-        </div>
-
-        <div className="flex items-center gap-2">
-          {editMode && (
-            <button
-              type="button"
-              onClick={() => setRenamePrompt({ kind: 'add-division' })}
-              className="flex items-center gap-1 h-9 px-3 rounded-lg text-xs font-semibold text-[#FF6537] border border-[#FF6537] hover:bg-[#FFF1EC] cursor-pointer"
-            >
-              <Plus size={13} /> เพิ่มฝ่าย
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => setEditMode((v) => !v)}
-            className={`flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
-              editMode ? 'bg-[#FF6537] text-white' : 'bg-[#F4F4F5] text-[#6F6F6F] hover:bg-slate-200'
-            }`}
-          >
-            <Pencil size={13} /> {editMode ? 'เสร็จสิ้นการแก้ไข' : 'แก้ไขโครงสร้าง'}
-          </button>
-        </div>
-      </div>
-
       <div
         ref={viewportRef}
-        className={`relative h-140 overflow-hidden bg-[#FAFAFA] ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+        className={`relative overflow-hidden bg-[#FAFAFA] ${canvasHeight === undefined ? 'h-140' : ''} ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+        style={canvasHeight !== undefined ? { height: canvasHeight } : undefined}
         onMouseDown={(e) => {
           dragRef.current = { startX: e.clientX, startY: e.clientY, origX: view.x, origY: view.y };
           setIsDragging(true);
@@ -499,7 +666,7 @@ export default function OrgChart({
                             {col.division.name}
                           </p>
                         </Tooltip>
-                        <MemberList members={col.generalMembers} />
+                        <MemberList members={col.generalMembers} highlightedEmployeeId={highlightedEmployeeId} />
                       </div>
                     </div>
 
@@ -524,7 +691,7 @@ export default function OrgChart({
                                   {section}
                                 </p>
                               </Tooltip>
-                              <MemberList members={membersHere} />
+                              <MemberList members={membersHere} highlightedEmployeeId={highlightedEmployeeId} />
                             </div>
                           </div>
                         );
@@ -552,7 +719,7 @@ export default function OrgChart({
                 </p>
                 <div className="flex flex-wrap gap-1.5">
                   {unassigned.map((m) => (
-                    <MemberChip key={m.id} employee={m} />
+                    <MemberChip key={m.id} employee={m} highlighted={highlightedEmployeeId === m.id} />
                   ))}
                 </div>
               </div>
@@ -615,4 +782,6 @@ export default function OrgChart({
       )}
     </div>
   );
-}
+});
+
+export default OrgChart;

@@ -158,6 +158,13 @@ export default function TaskDetailModal({ task, employees, onClose }: TaskDetail
                 </div>
               )}
 
+              {task.status === 'blocked' && task.blockedReason && (
+                <div>
+                  <p className="text-[#A0A0A0] text-[11px] mb-1">เหตุผลที่ติดปัญหา</p>
+                  <p className="text-sm text-red-600 whitespace-pre-wrap break-words bg-red-50 border border-red-100 rounded-lg px-3 py-2">{task.blockedReason}</p>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-[#A0A0A0] text-[11px] mb-1">ระยะเวลา</p>

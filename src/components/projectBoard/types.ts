@@ -37,8 +37,8 @@ export interface ProjectRow {
   abbreviation?: string; // "ตัวย่อชื่อโครงการ" (e.g. "GS" for Grow store) — derived from the title, user-editable, the code's first segment
   priority?: ProjectPriority; // shown as "ความสำคัญ" in the project detail meta grid
   budget: number | null; // null renders as "ยังไม่มี" (draft projects with no figure yet)
-  ownerEmployeeId: string | null; // real Employee.id — name/role/avatar are resolved from the live employee roster
-  memberEmployeeIds?: string[]; // "ผู้รับผิดชอบร่วม" — additional team members beyond the primary owner
+  ownerEmployeeIds: string[]; // real Employee.ids, equal authority — e.g. any one of them can approve an edit/delete request once the project has an owner. Empty array = unowned, anyone can edit/delete freely
+  memberEmployeeIds?: string[]; // "ผู้รับผิดชอบร่วม" — additional team members beyond the owners
   memberDuties?: Record<string, string>; // keyed by employeeId — "หน้าที่ในโครงการนี้" per member, set alongside memberEmployeeIds
   docFolderId?: string | null; // Doc Vault folder created for this project (its own "create folder" step) — tasks with their own "create folder" checkbox nest inside this one instead of the Drive root
   progress: number | null; // 0-100; null renders as "ยังไม่มี"
@@ -86,4 +86,14 @@ export interface ProjectTaskItem {
   submissionNote?: string;
   submissionFileIds?: string[];
   reviewNote?: string;
+  // Required whenever status is 'blocked' (see AddTaskModal's checkbox) — cleared server-side the
+  // moment status moves away from 'blocked', so a stale reason never resurfaces on a later block.
+  blockedReason?: string;
+  // งานย่อย — set when this row is a subtask of another project_task. A subtask is otherwise a
+  // full, ordinary ProjectTaskItem (own assignee/reviewer/status/submit-review flow, counted in
+  // the project's overall progress exactly like a top-level task) and is exempt from the
+  // ownership-gated edit/delete flow that top-level tasks go through (see server/routes/
+  // project-tasks.ts) — anyone can edit/delete a subtask directly, no change_request involved.
+  // Deleting the parent cascades to delete its subtasks (ON DELETE CASCADE at the DB level).
+  parentTaskId?: string | null;
 }

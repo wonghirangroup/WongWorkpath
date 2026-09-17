@@ -14,6 +14,10 @@ interface SubmitTaskModalProps {
   employees: Employee[];
   documents: LinkedDoc[];
   projectDocFolderId?: string | null;
+  // Restricts the reviewer picker to people already on this task's project (its owners +
+  // members) instead of every employee in the company — an empty list (no owners/members set
+  // yet) leaves it open to everyone, same "unowned = open" convention used elsewhere.
+  projectMemberIds?: string[];
   currentUserName: string;
   onAddDocument: (doc: LinkedDoc) => void;
   onSubmit: (taskId: string, updates: Partial<ProjectTaskItem>) => Promise<void>;
@@ -24,7 +28,7 @@ interface SubmitTaskModalProps {
 // attaches files (each becomes a real Doc Vault file tagged with this task's LinkedDoc.taskId, so
 // it shows up in "เอกสาร Drive" too, filed alongside the task's own folder when it has one). This
 // moves the task to 'review'; ReviewTaskModal is the other half of the loop.
-export default function SubmitTaskModal({ task, employees, documents, projectDocFolderId, currentUserName, onAddDocument, onSubmit, onClose }: SubmitTaskModalProps) {
+export default function SubmitTaskModal({ task, employees, documents, projectDocFolderId, projectMemberIds, currentUserName, onAddDocument, onSubmit, onClose }: SubmitTaskModalProps) {
   useEscapeToClose(Boolean(task), onClose);
   const [reviewerIds, setReviewerIds] = useState<string[]>([]);
   const [note, setNote] = useState('');
@@ -79,6 +83,14 @@ export default function SubmitTaskModal({ task, employees, documents, projectDoc
   const removePickedLink = (idx: number) => {
     setPickedLinks((prev) => prev.filter((_, i) => i !== idx));
   };
+
+  // An empty roster (no owners/members set on the project yet) leaves the picker open to
+  // everyone, same "unowned = open" convention used elsewhere — already-selected reviewers stay
+  // visible even if they've since left the project, so a chip never silently disappears.
+  const projectMemberIdSet = new Set(projectMemberIds ?? []);
+  const selectableEmployees = projectMemberIdSet.size === 0
+    ? employees
+    : employees.filter((e) => projectMemberIdSet.has(e.id) || reviewerIds.includes(e.id));
 
   const isFormValid = reviewerIds.length > 0;
 
@@ -191,7 +203,7 @@ export default function SubmitTaskModal({ task, employees, documents, projectDoc
                     ผู้ตรวจงาน <span className="text-[#FF6537]">*</span> <span className="font-normal text-[#A0A0A0]">(เลือกได้มากกว่า 1)</span>
                   </label>
                   <EmployeeMultiSelect
-                    employees={employees}
+                    employees={selectableEmployees}
                     valueIds={reviewerIds}
                     onChange={setReviewerIds}
                     placeholder="ค้นหาหรือเลือกพนักงาน..."

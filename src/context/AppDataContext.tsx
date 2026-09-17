@@ -15,7 +15,7 @@ import {
   INITIAL_DOCS,
   INITIAL_CREDENTIALS
 } from '../data/mockData';
-import { fetchEmployees, createEmployee, updateEmployeeRemote, deleteEmployeeRemote, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote, fetchProjects, createProject, updateProjectRemote, deleteProjectRemote, CreateProjectPayload, fetchMeetings, createMeeting, updateMeetingRemote, deleteMeetingRemote, fetchProjectTasks, createProjectTask, updateProjectTaskRemote, deleteProjectTaskRemote, fetchProjectCustomStatuses, createProjectCustomStatus, deleteProjectCustomStatusRemote, fetchNotifications, createNotification, markNotificationRead, markAllNotificationsRead, CreateNotificationPayload } from '../lib/api';
+import { fetchEmployees, createEmployee, updateEmployeeRemote, deleteEmployeeRemote, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote, fetchProjects, createProject, updateProjectRemote, deleteProjectRemote, CreateProjectPayload, fetchMeetings, createMeeting, updateMeetingRemote, deleteMeetingRemote, fetchProjectTasks, createProjectTask, updateProjectTaskRemote, deleteProjectTaskRemote, fetchProjectCustomStatuses, createProjectCustomStatus, deleteProjectCustomStatusRemote, fetchNotifications, createNotification, markNotificationRead, markAllNotificationsRead, CreateNotificationPayload, fetchChangeRequests, createChangeRequest, decideChangeRequest, ChangeRequest } from '../lib/api';
 import { nowTimestamp } from '../lib/datetime';
 import type { ProjectRow, ProjectTaskItem, CustomProjectStatus } from '../components/projectBoard/types';
 import { registerCustomStatusLabels } from '../components/projectBoard/statusMeta';
@@ -24,14 +24,22 @@ import { registerCustomStatusLabels } from '../components/projectBoard/statusMet
 // `kind`/`parentId` (folders + file uploads) in place of the old `type` enum — without this,
 // anyone with pre-existing `unityspace_docs` data would have every saved doc silently vanish
 // (root-level filtering keys off `parentId === null`, which a missing field never satisfies).
+//
+// Also migrates the old free-text 'ทีม' (department) scope to the current 'โครงการ' (real project
+// reference) scope — there's no way to map an old department name onto one specific project, so
+// those docs fall back to 'ส่วนตัว' instead of carrying a scope value the rest of the app no
+// longer understands.
 function normalizeStoredDoc(raw: any): LinkedDoc {
-  if (raw.kind) return { parentId: raw.parentId ?? null, scope: raw.scope ?? 'ส่วนตัว', ...raw };
+  const scope: LinkedDoc['scope'] = raw.scope === 'โครงการ' ? 'โครงการ' : 'ส่วนตัว';
+  const projectId = scope === 'โครงการ' ? raw.projectId : undefined;
+  if (raw.kind) return { parentId: raw.parentId ?? null, ...raw, scope, projectId };
   return {
     ...raw,
     kind: 'link',
     parentId: raw.parentId ?? null,
     url: raw.url ?? '',
-    scope: raw.scope ?? 'ส่วนตัว'
+    scope,
+    projectId
   };
 }
 
@@ -76,11 +84,20 @@ interface AppDataContextValue {
   handleAddProjectTask: (task: Omit<ProjectTaskItem, 'id'>) => Promise<ProjectTaskItem>;
   handleUpdateProjectTask: (id: string, updates: Partial<ProjectTaskItem>) => Promise<void>;
   handleDeleteProjectTask: (id: string) => Promise<void>;
+  changeRequests: ChangeRequest[];
+  handleRequestChange: (
+    entityType: 'project' | 'project_task',
+    entityId: string,
+    requestType: 'edit' | 'delete',
+    proposedChanges: Record<string, unknown> | undefined,
+    reason: string
+  ) => Promise<void>;
+  handleDecideChangeRequest: (requestId: string, decision: 'approve' | 'reject', note?: string) => Promise<void>;
   handleDeleteTask: (id: string) => void;
   handleInitiateHandover: (taskId: string, fromUserId: string, toUserId: string, stageName: string, notes: string) => void;
   handleApproveHandover: (taskId: string, handoverId: string, approved: boolean, notes: string) => void;
   handleAddDocument: (newDoc: LinkedDoc) => void;
-  handleEditDocument: (docId: string, updates: { name: string; url?: string; scope: LinkedDoc['scope']; team?: string }) => void;
+  handleEditDocument: (docId: string, updates: { name: string; url?: string; scope: LinkedDoc['scope']; projectId?: string }) => void;
   handleDeleteDocument: (docId: string) => void;
   handleMoveDocument: (docId: string, newParentId: string) => void;
   saveDocuments: (newDocs: LinkedDoc[]) => void;
@@ -93,6 +110,12 @@ interface AppDataContextValue {
   // of the page's normal static subtitle, same pattern as docCurrentFolderId above.
   taskSelectedProjectId: string | null;
   setTaskSelectedProjectId: (id: string | null) => void;
+  // Which tab ProjectDetail should open on the next time it mounts for taskSelectedProjectId —
+  // set alongside it by anywhere that deep-links into a specific project (e.g. clicking a meeting
+  // on the Calendar page opens straight to "การประชุม" instead of always landing on "ภาพรวม").
+  // Consumed once (read into ProjectDetail's own initial state) and cleared by ProjectBoard.
+  taskSelectedTab: string | null;
+  setTaskSelectedTab: (tab: string | null) => void;
   handleAddMeeting: (newMeeting: Omit<Meeting, 'id'>) => Promise<void>;
   handleUpdateMeeting: (id: string, updates: Partial<Meeting>, reason?: string) => Promise<void>;
   handleDeleteMeeting: (id: string) => Promise<void>;
@@ -138,10 +161,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [customProjectStatuses, setCustomProjectStatuses] = useState<CustomProjectStatus[]>([]);
   const [projectTasks, setProjectTasks] = useState<ProjectTaskItem[]>([]);
+  const [changeRequests, setChangeRequests] = useState<ChangeRequest[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [documents, setDocuments] = useState<LinkedDoc[]>([]);
   const [docCurrentFolderId, setDocCurrentFolderId] = useState<string | null>(null);
   const [taskSelectedProjectId, setTaskSelectedProjectId] = useState<string | null>(null);
+  const [taskSelectedTab, setTaskSelectedTab] = useState<string | null>(null);
   const [credentials, setCredentials] = useState<CredentialItem[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -280,6 +305,27 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       })
       .catch((err) => {
         console.warn('Could not load project tasks from the API:', err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Pending/decided edit-or-delete requests (see server/routes/change-requests.ts) — loaded
+  // whole, same as projects/tasks, since this is a small internal-tool dataset. Powers both the
+  // "is a request already pending here" check before opening an edit/delete form and
+  // ProjectDetail's owner-facing pending-requests panel.
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchChangeRequests()
+      .then((requests) => {
+        if (cancelled) return;
+        setChangeRequests(requests);
+      })
+      .catch((err) => {
+        console.warn('Could not load change requests from the API:', err);
       });
 
     return () => {
@@ -581,14 +627,14 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   // version rather than merging raw `updates` straight into state, since an edit may submit raw
   // ISO dates while ProjectRow.startDate/endDate must stay Thai-formatted display text.
   const handleUpdateProject = async (id: string, updates: Partial<ProjectRow>) => {
-    const updated = await updateProjectRemote(id, updates);
+    const updated = await updateProjectRemote(id, updates, currentUser?.id ?? '');
     setProjects((prev) => prev.map((p) => (p.id === id ? updated : p)));
     handleLogAudit('UPDATE_PROJECT', `แก้ไขโครงการ: "${updated.title}" (${updated.code})`);
   };
 
   const handleDeleteProject = async (id: string) => {
     const target = projects.find((p) => p.id === id);
-    await deleteProjectRemote(id);
+    await deleteProjectRemote(id, currentUser?.id ?? '');
     setProjects((prev) => prev.filter((p) => p.id !== id));
     if (target) handleLogAudit('DELETE_PROJECT', `ลบโครงการ: "${target.title}" (${target.code}) ออกจากระบบถาวร`);
   };
@@ -619,6 +665,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     const created = await createProjectTask(task);
     setProjectTasks((prev) => [created, ...prev]);
 
+    // Mirrors the server's own auto-promotion (see POST /api/project-tasks) — a 'draft' project
+    // isn't a draft anymore once it has a real task, so reflect that locally right away instead
+    // of waiting for a full reload to notice the server already flipped it.
+    setProjects((prev) => prev.map((p) => (p.id === created.projectId && p.status === 'draft' ? { ...p, status: 'in_progress' } : p)));
+
     // Notify each assignee — except whoever created it, who doesn't need telling about their own
     // action. Random-suffixed (not deterministic) id: reassigning a task later should genuinely
     // produce a second notification, not silently collide with the first one.
@@ -643,7 +694,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   // must never leak into the Thai-formatted startDate/dueDate display fields.
   const handleUpdateProjectTask = async (id: string, updates: Partial<ProjectTaskItem>) => {
     const before = projectTasks.find((t) => t.id === id);
-    const updated = await updateProjectTaskRemote(id, updates);
+    const updated = await updateProjectTaskRemote(id, updates, currentUser?.id ?? '');
     setProjectTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
 
     const projectTitle = projects.find((p) => p.id === updated.projectId)?.title ?? 'โครงการ';
@@ -678,11 +729,133 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         linkId: updated.projectId,
       });
     }
+
+    // Marked ติดปัญหา (blocked) via AddTaskModal's checkbox — everyone already involved in the
+    // project (owners, members, the task's own assignees/reviewers) should see it, not just
+    // whoever happens to be watching the task table.
+    if (updates.status === 'blocked' && before?.status !== 'blocked') {
+      const project = projects.find((p) => p.id === updated.projectId);
+      const involvedIds = new Set([
+        ...(project?.ownerEmployeeIds ?? []),
+        ...(project?.memberEmployeeIds ?? []),
+        ...(updated.assigneeEmployeeIds ?? []),
+        ...(updated.reviewerEmployeeIds ?? []),
+      ]);
+      notifyEach(Array.from(involvedIds), {
+        title: 'งานติดปัญหา',
+        message: `งาน "${updated.title}" ในโครงการ ${projectTitle} ถูกทำเครื่องหมายว่าติดปัญหา: ${updated.blockedReason || 'ไม่ได้ระบุเหตุผล'}`,
+        type: 'warning',
+        linkType: 'project',
+        linkId: updated.projectId,
+      });
+    }
   };
 
   const handleDeleteProjectTask = async (id: string) => {
-    await deleteProjectTaskRemote(id);
-    setProjectTasks((prev) => prev.filter((t) => t.id !== id));
+    await deleteProjectTaskRemote(id, currentUser?.id ?? '');
+    // Deleting a task with subtasks cascades server-side (ON DELETE CASCADE) — drop them from
+    // local state too, or they'd keep showing (pointing at a now-nonexistent parent) until the
+    // next full reload.
+    setProjectTasks((prev) => prev.filter((t) => t.id !== id && t.parentTaskId !== id));
+  };
+
+  // Filed whenever the current user isn't one of an entity's owners (project.ownerEmployeeIds, or
+  // a task's own assigneeEmployeeIds) but wants to edit/delete it anyway — the entity itself is
+  // left untouched here; only handleDecideChangeRequest's approve path actually changes it. Every
+  // current owner gets notified, since any one of them can decide (equal authority).
+  const handleRequestChange = async (
+    entityType: 'project' | 'project_task',
+    entityId: string,
+    requestType: 'edit' | 'delete',
+    proposedChanges: Record<string, unknown> | undefined,
+    reason: string
+  ) => {
+    const request = await createChangeRequest({
+      entityType, entityId, requestType, proposedChanges, reason,
+      requestedBy: currentUser?.id ?? '',
+    });
+    setChangeRequests((prev) => [request, ...prev]);
+
+    const project = entityType === 'project' ? projects.find((p) => p.id === entityId) : undefined;
+    const task = entityType === 'project_task' ? projectTasks.find((t) => t.id === entityId) : undefined;
+    const ownerIds = project?.ownerEmployeeIds ?? task?.assigneeEmployeeIds ?? [];
+    const entityTitle = project?.title ?? task?.title ?? (entityType === 'project' ? 'โครงการ' : 'งาน');
+    const linkProjectId = project?.id ?? task?.projectId;
+    const requesterName = currentUser?.nickname || currentUser?.name || 'พนักงาน';
+
+    ownerIds
+      .filter((empId) => empId !== currentUser?.id)
+      .forEach((empId) => pushNotification({
+        targetEmployeeId: empId,
+        title: requestType === 'edit' ? 'มีคำขอแก้ไขรออนุมัติ' : 'มีคำขอลบรออนุมัติ',
+        message: `${requesterName} ขอ${requestType === 'edit' ? 'แก้ไข' : 'ลบ'} "${entityTitle}" — เหตุผล: ${reason}`,
+        type: 'warning',
+        linkType: 'project',
+        linkId: linkProjectId,
+      }));
+
+    handleLogAudit(
+      requestType === 'edit' ? 'REQUEST_EDIT' : 'REQUEST_DELETE',
+      `ขอ${requestType === 'edit' ? 'แก้ไข' : 'ลบ'}${entityType === 'project' ? 'โครงการ' : 'งาน'}: "${entityTitle}" — เหตุผล: ${reason}`
+    );
+  };
+
+  // Approve applies the change server-side (see change-requests.ts's decide handler) before this
+  // even runs — the refetch here just brings the already-updated/already-deleted row(s) back into
+  // local state, same "small dataset, just reload it" approach the initial page load already uses,
+  // since there's no single-entity GET endpoint to patch just the one row that changed.
+  const handleDecideChangeRequest = async (requestId: string, decision: 'approve' | 'reject', note?: string) => {
+    const before = changeRequests.find((r) => r.id === requestId);
+    const updated = await decideChangeRequest(requestId, decision, currentUser?.id ?? '', note);
+    setChangeRequests((prev) => prev.map((r) => (r.id === requestId ? updated : r)));
+    if (!before) return;
+
+    const project = before.entityType === 'project' ? projects.find((p) => p.id === before.entityId) : undefined;
+    const task = before.entityType === 'project_task' ? projectTasks.find((t) => t.id === before.entityId) : undefined;
+    const entityTitle = project?.title ?? task?.title ?? (before.entityType === 'project' ? 'โครงการ' : 'งาน');
+    const linkProjectId = project?.id ?? task?.projectId;
+
+    if (decision === 'approve') {
+      const [freshProjects, freshTasks] = await Promise.all([fetchProjects(), fetchProjectTasks()]);
+      setProjects(freshProjects);
+      setProjectTasks(freshTasks);
+
+      const others = new Set([...(project?.ownerEmployeeIds ?? []), ...(project?.memberEmployeeIds ?? []), ...(task?.assigneeEmployeeIds ?? []), ...(task?.reviewerEmployeeIds ?? [])]);
+      others.delete(currentUser?.id ?? '');
+      if (before.requestedBy) {
+        pushNotification({
+          targetEmployeeId: before.requestedBy,
+          title: 'คำขอของคุณได้รับการอนุมัติแล้ว',
+          message: `คำขอ${before.requestType === 'edit' ? 'แก้ไข' : 'ลบ'} "${entityTitle}" ได้รับการอนุมัติแล้ว`,
+          type: 'success',
+          linkType: 'project',
+          linkId: linkProjectId,
+        });
+        others.delete(before.requestedBy);
+      }
+      others.forEach((empId) => pushNotification({
+        targetEmployeeId: empId,
+        title: before.requestType === 'edit' ? 'มีการแก้ไข' : 'มีการลบ',
+        message: `"${entityTitle}" ถูก${before.requestType === 'edit' ? 'แก้ไข' : 'ลบ'}แล้ว`,
+        type: 'info',
+        linkType: 'project',
+        linkId: linkProjectId,
+      }));
+    } else if (before.requestedBy) {
+      pushNotification({
+        targetEmployeeId: before.requestedBy,
+        title: 'คำขอของคุณไม่ได้รับการอนุมัติ',
+        message: `คำขอ${before.requestType === 'edit' ? 'แก้ไข' : 'ลบ'} "${entityTitle}" ถูกปฏิเสธ${note ? `: ${note}` : ''}`,
+        type: 'warning',
+        linkType: 'project',
+        linkId: linkProjectId,
+      });
+    }
+
+    handleLogAudit(
+      decision === 'approve' ? 'APPROVE_CHANGE_REQUEST' : 'REJECT_CHANGE_REQUEST',
+      `${decision === 'approve' ? 'อนุมัติ' : 'ปฏิเสธ'}คำขอ${before.requestType === 'edit' ? 'แก้ไข' : 'ลบ'}: "${entityTitle}"${note ? ` — เหตุผล: ${note}` : ''}`
+    );
   };
 
   // 0b. Org Chart Structure Operations (โครงสร้างองค์กร) — client-side/localStorage only, admin-
@@ -870,9 +1043,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     handleLogAudit('ADD_DOCUMENT', `${actionLabel}ใน Drive: "${newDoc.name}"`);
   };
 
-  const handleEditDocument = (docId: string, updates: { name: string; url?: string; scope: LinkedDoc['scope']; team?: string }) => {
+  const handleEditDocument = (docId: string, updates: { name: string; url?: string; scope: LinkedDoc['scope']; projectId?: string }) => {
     const doc = documents.find(d => d.id === docId);
-    saveDocs(documents.map(d => (d.id === docId ? { ...d, ...updates, team: updates.scope === 'ทีม' ? updates.team : undefined } : d)));
+    saveDocs(documents.map(d => (d.id === docId ? { ...d, ...updates, projectId: updates.scope === 'โครงการ' ? updates.projectId : undefined } : d)));
     if (doc) handleLogAudit('EDIT_DOCUMENT', `แก้ไข${doc.kind === 'folder' ? 'โฟลเดอร์' : doc.kind === 'file' ? 'ไฟล์' : 'ลิงก์'}: "${doc.name}"${updates.name !== doc.name ? ` → "${updates.name}"` : ''}`);
   };
 
@@ -1019,13 +1192,29 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     setIsTaskModalOpen(false);
   };
 
+  // A project's own `progress` column is never actually written by any real flow (no create/edit
+  // form sends it) — it only ever gets a real value from test fixtures poked in directly via the
+  // API. Every consumer (ProjectCard's ring, ProjectTable's bar, MyWorkspace's "โครงการของฉัน"
+  // table, ProjectDetail's overview card) is meant to show live task-completion instead, so it's
+  // computed once here and overridden on every ProjectRow exposed downstream — a single source of
+  // truth, rather than each screen recomputing (or forgetting to recompute) its own done/total.
+  const projectsWithComputedProgress = useMemo(
+    () => projects.map((p) => {
+      const tasksInProject = projectTasks.filter((t) => t.projectId === p.id);
+      if (tasksInProject.length === 0) return p;
+      const doneCount = tasksInProject.filter((t) => t.status === 'done').length;
+      return { ...p, progress: Math.round((doneCount / tasksInProject.length) * 100) };
+    }),
+    [projects, projectTasks]
+  );
+
   const value: AppDataContextValue = {
     currentUser,
     isRestoringSession,
     handleLogin,
     handleLogout,
     employees,
-    projects,
+    projects: projectsWithComputedProgress,
     projectTasks,
     tasks,
     documents,
@@ -1049,6 +1238,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     handleAddProjectTask,
     handleUpdateProjectTask,
     handleDeleteProjectTask,
+    changeRequests,
+    handleRequestChange,
+    handleDecideChangeRequest,
     handleDeleteTask,
     handleInitiateHandover,
     handleApproveHandover,
@@ -1061,6 +1253,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     setDocCurrentFolderId,
     taskSelectedProjectId,
     setTaskSelectedProjectId,
+    taskSelectedTab,
+    setTaskSelectedTab,
     handleAddMeeting,
     handleUpdateMeeting,
     handleDeleteMeeting,

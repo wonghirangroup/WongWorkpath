@@ -38,6 +38,7 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
   const [meetingEndTime, setMeetingEndTime] = useState('');
   const [attendeeIds, setAttendeeIds] = useState<string[]>([]);
   const [location, setLocation] = useState('');
+  const [meetingLink, setMeetingLink] = useState('');
   const [reasonForChange, setReasonForChange] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
@@ -53,6 +54,7 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
       setMeetingEndTime(meetingToEdit.endTime ?? '');
       setAttendeeIds(meetingToEdit.attendeeIds);
       setLocation(meetingToEdit.location ?? '');
+      setMeetingLink(meetingToEdit.meetingLink ?? '');
     } else {
       setTitle('');
       setDescription('');
@@ -62,6 +64,7 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
       setMeetingEndTime('');
       setAttendeeIds([]);
       setLocation('');
+      setMeetingLink('');
     }
     setReasonForChange('');
     setFormError('');
@@ -70,6 +73,18 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
   const selectedProject = useMemo(() => projects.find((p) => p.id === projectId), [projects, projectId]);
   const projectStartDate = selectedProject?.startDateISO ?? null;
   const projectEndDate = selectedProject?.endDateISO ?? null;
+
+  // Restricts the attendee picker to people already on the picked project (its owners + members)
+  // instead of every employee in the company — left unrestricted while no project is picked
+  // ("ไม่ผูกกับโครงการ") or when that project has no owners/members set yet, same "unowned = open"
+  // convention used elsewhere.
+  const projectMemberIdSet = useMemo(
+    () => new Set([...(selectedProject?.ownerEmployeeIds ?? []), ...(selectedProject?.memberEmployeeIds ?? [])]),
+    [selectedProject]
+  );
+  const selectableEmployees = projectMemberIdSet.size === 0
+    ? employees
+    : employees.filter((e) => projectMemberIdSet.has(e.id) || attendeeIds.includes(e.id));
 
   const titleValid = title.trim() !== '';
   const meetingTimeOrderValid = !(meetingStartTime && meetingEndTime && meetingEndTime < meetingStartTime);
@@ -111,6 +126,7 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
         endTime: meetingEndTime || undefined,
         attendeeIds,
         location: location.trim() || undefined,
+        meetingLink: meetingLink.trim() || undefined,
       };
       if (isEditMode && meetingToEdit && onUpdateMeeting) {
         await onUpdateMeeting(meetingToEdit.id, payload, reasonForChange.trim());
@@ -240,22 +256,34 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
                 <div>
                   <label className="block text-[#272220] font-bold text-[11px] mb-1">ผู้เข้าร่วมประชุม (ไม่บังคับ)</label>
                   <EmployeeMultiSelect
-                    employees={employees}
+                    employees={selectableEmployees}
                     valueIds={attendeeIds}
                     onChange={setAttendeeIds}
                     placeholder="ค้นหาหรือเลือกพนักงาน..."
                   />
                 </div>
 
-                <div>
-                  <label className="block text-[#272220] font-bold text-[11px] mb-1">สถานที่ / ลิงก์ประชุมออนไลน์ (ไม่บังคับ)</label>
-                  <input
-                    type="text"
-                    placeholder="เช่น ห้องประชุมชั้น 3 หรือ https://meet.google.com/..."
-                    value={location}
-                    onChange={(e) => setLocation(e.target.value)}
-                    className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[#272220] font-bold text-[11px] mb-1">สถานที่ (ไม่บังคับ)</label>
+                    <input
+                      type="text"
+                      placeholder="เช่น ห้องประชุมชั้น 3"
+                      value={location}
+                      onChange={(e) => setLocation(e.target.value)}
+                      className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[#272220] font-bold text-[11px] mb-1">ลิงก์ประชุมออนไลน์ (ไม่บังคับ)</label>
+                    <input
+                      type="text"
+                      placeholder="เช่น https://meet.google.com/..."
+                      value={meetingLink}
+                      onChange={(e) => setMeetingLink(e.target.value)}
+                      className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                    />
+                  </div>
                 </div>
 
                 {isEditMode && (

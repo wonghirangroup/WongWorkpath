@@ -8,7 +8,6 @@ import { Employee } from '../../types';
 import { ProjectRow, ProjectType, CustomProjectStatus } from './types';
 import { STATUS_LABEL, PROJECT_TYPE_META, PROJECT_TYPE_OPTIONS } from './statusMeta';
 import {
-  EmployeeSearchSelect,
   EmployeeMultiSelect,
   PRIORITY_OPTIONS,
   Priority,
@@ -16,8 +15,9 @@ import {
   getUniqueTitle,
   displayName,
 } from './CreateProjectModal';
-import { ApiError } from '../../lib/api';
+import { ApiError, ChangeRequest } from '../../lib/api';
 import { formatThousands } from '../../lib/numberFormat';
+import { isOwner } from '../../lib/ownership';
 import Dropdown from '../Dropdown';
 import Tooltip from '../Tooltip';
 
@@ -29,14 +29,31 @@ interface EditProjectModalProps {
   onSave: (updates: Partial<ProjectRow>) => Promise<void>;
   existingTitles: string[];
   customStatuses: CustomProjectStatus[];
+  currentUserId: string;
+  changeRequests: ChangeRequest[];
+  onRequestChange: (
+    entityType: 'project' | 'project_task',
+    entityId: string,
+    requestType: 'edit' | 'delete',
+    proposedChanges: Record<string, unknown> | undefined,
+    reason: string
+  ) => Promise<void>;
 }
 
 // Single-screen edit form (not the create wizard's 3 steps) — editing an existing project should
 // show every field at once rather than re-running a step-by-step flow each time. Only fields the
 // create wizard itself collects are editable here (see CreateProjectModal's own note on why
 // "department" has no field yet) — this stays a straight edit of what's already there.
-export default function EditProjectModal({ isOpen, onClose, row, employees, onSave, existingTitles, customStatuses }: EditProjectModalProps) {
+export default function EditProjectModal({ isOpen, onClose, row, employees, onSave, existingTitles, customStatuses, currentUserId, changeRequests, onRequestChange }: EditProjectModalProps) {
   useEscapeToClose(isOpen, onClose);
+  // Once row.ownerEmployeeIds has ≥1 person, only they may save directly — anyone else's submit
+  // files a change_request instead (see ProjectDetail's "คำขอที่รอดำเนินการ" panel for the
+  // owner-facing approve/reject side). An unowned project stays open to everyone, as today.
+  const canEditDirectly = isOwner(row.ownerEmployeeIds, currentUserId);
+  const pendingRequest = changeRequests.find(
+    (r) => r.entityType === 'project' && r.entityId === row.id && r.status === 'pending'
+  );
+  const [reason, setReason] = useState('');
   const [title, setTitle] = useState(row.title);
   const [renameNotice, setRenameNotice] = useState('');
   // Renaming to the project's own current title is never a "collision" with itself.
@@ -44,7 +61,7 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
   const [description, setDescription] = useState(row.description ?? '');
   const [type, setType] = useState<ProjectType | null>(row.type ?? null);
   const [abbreviation, setAbbreviation] = useState(row.abbreviation ?? '');
-  const [ownerId, setOwnerId] = useState(row.ownerEmployeeId ?? '');
+  const [ownerIds, setOwnerIds] = useState<string[]>(row.ownerEmployeeIds ?? []);
   const [memberIds, setMemberIds] = useState<string[]>(row.memberEmployeeIds ?? []);
   const [memberDuties, setMemberDuties] = useState<Record<string, string>>(row.memberDuties ?? {});
   const [priority, setPriority] = useState<Priority | null>(row.priority ?? null);
@@ -57,31 +74,37 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
 
   const titleValid = title.trim() !== '';
   const dateOrderValid = !(startDate && endDate && endDate < startDate);
+  const reasonValid = canEditDirectly || reason.trim() !== '';
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!titleValid || !dateOrderValid || isSubmitting) return;
+    if (!titleValid || !dateOrderValid || !reasonValid || isSubmitting || pendingRequest) return;
     setFormError('');
     setIsSubmitting(true);
     // Safety net alongside the title field's own onBlur (see CreateProjectModal's identical note).
     const finalTitle = getUniqueTitle(title, otherTitles);
+    const updates = {
+      title: finalTitle,
+      description: description.trim() || undefined,
+      type: type ?? undefined,
+      abbreviation: abbreviation.trim() || undefined,
+      priority: priority ?? undefined,
+      ownerEmployeeIds: ownerIds,
+      memberEmployeeIds: memberIds,
+      memberDuties: Object.fromEntries(
+        Object.entries(memberDuties).filter(([id, duty]) => memberIds.includes(id) && duty.trim() !== '')
+      ),
+      status,
+      budget: budget.trim() !== '' && !isNaN(Number(budget)) ? Number(budget) : null,
+      startDate: startDate || null,
+      endDate: endDate || null,
+    };
     try {
-      await onSave({
-        title: finalTitle,
-        description: description.trim() || undefined,
-        type: type ?? undefined,
-        abbreviation: abbreviation.trim() || undefined,
-        priority: priority ?? undefined,
-        ownerEmployeeId: ownerId || null,
-        memberEmployeeIds: memberIds,
-        memberDuties: Object.fromEntries(
-          Object.entries(memberDuties).filter(([id, duty]) => memberIds.includes(id) && duty.trim() !== '')
-        ),
-        status,
-        budget: budget.trim() !== '' && !isNaN(Number(budget)) ? Number(budget) : null,
-        startDate: startDate || null,
-        endDate: endDate || null,
-      });
+      if (canEditDirectly) {
+        await onSave(updates);
+      } else {
+        await onRequestChange('project', row.id, 'edit', updates, reason.trim());
+      }
       onClose();
     } catch (err) {
       setFormError(err instanceof ApiError ? err.message : 'บันทึกการแก้ไขไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
@@ -213,12 +236,15 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
                 </div>
 
                 <div>
-                  <label className="block text-[#272220] font-bold text-[11px] mb-1">ผู้รับผิดชอบหลัก</label>
-                  <EmployeeSearchSelect
+                  <div className="flex items-baseline justify-between mb-1">
+                    <label className="block text-[#272220] font-bold text-[11px]">ผู้รับผิดชอบหลัก</label>
+                    <span className="text-[10px] text-[#6F6F6F]">เลือกได้หลายคน สิทธิ์เท่ากันทุกคน</span>
+                  </div>
+                  <EmployeeMultiSelect
                     employees={employees}
-                    valueId={ownerId}
-                    onChange={setOwnerId}
-                    placeholder="ค้นหาหรือเลือกพนักงาน..."
+                    valueIds={ownerIds}
+                    onChange={setOwnerIds}
+                    placeholder="ค้นหาแล้วเลือกเพิ่มได้หลายคน..."
                   />
                 </div>
 
@@ -316,6 +342,29 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
                   <p className="text-xs text-red-600 -mt-1.5">วันที่สิ้นสุดต้องไม่อยู่ก่อนวันที่เริ่ม</p>
                 )}
 
+                {pendingRequest ? (
+                  <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    มีคำขอแก้ไขรออนุมัติอยู่แล้ว โดย {(() => {
+                      const requester = employees.find((e) => e.id === pendingRequest.requestedBy);
+                      return requester ? displayName(requester) : 'ไม่ทราบผู้ใช้งาน';
+                    })()}
+                    {' — เหตุผล: '}{pendingRequest.reason}
+                  </p>
+                ) : !canEditDirectly && (
+                  <div>
+                    <label className="block text-[#272220] font-bold text-[11px] mb-1">
+                      เหตุผลที่ขอแก้ไข <span className="text-[#FF6537]">*</span>
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={reason}
+                      onChange={(e) => setReason(e.target.value)}
+                      placeholder="โครงการนี้มีผู้รับผิดชอบหลักแล้ว ระบุเหตุผลเพื่อขออนุมัติแก้ไข..."
+                      className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                    />
+                  </div>
+                )}
+
                 {formError && (
                   <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{formError}</p>
                 )}
@@ -329,16 +378,18 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
                 >
                   ยกเลิก
                 </button>
+                {!pendingRequest && (
                 <button
                   type="submit"
-                  disabled={!titleValid || !dateOrderValid || isSubmitting}
+                  disabled={!titleValid || !dateOrderValid || !reasonValid || isSubmitting}
                   className={`flex-1 h-10 flex items-center justify-center gap-1.5 text-white font-bold text-sm rounded-lg transition-colors ${
-                    titleValid && dateOrderValid && !isSubmitting ? 'bg-[#FF6537] hover:bg-[#e6572c] cursor-pointer' : 'bg-[#F68C6C] cursor-not-allowed'
+                    titleValid && dateOrderValid && reasonValid && !isSubmitting ? 'bg-[#FF6537] hover:bg-[#e6572c] cursor-pointer' : 'bg-[#F68C6C] cursor-not-allowed'
                   }`}
                 >
-                  {isSubmitting ? 'กำลังบันทึก...' : 'บันทึกการแก้ไข'}
+                  {isSubmitting ? (canEditDirectly ? 'กำลังบันทึก...' : 'กำลังส่งคำขอ...') : canEditDirectly ? 'บันทึกการแก้ไข' : 'ส่งคำขอแก้ไข'}
                   {!isSubmitting && <ArrowRight size={16} />}
                 </button>
+                )}
               </div>
             </form>
           </motion.div>

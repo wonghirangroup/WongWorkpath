@@ -45,7 +45,7 @@ interface DocVaultProps {
   documents: LinkedDoc[];
   currentUserName: string;
   onAddDocument: (doc: LinkedDoc) => void;
-  onEditDocument: (docId: string, updates: { name: string; url?: string; scope: LinkedDoc['scope']; team?: string }) => void;
+  onEditDocument: (docId: string, updates: { name: string; url?: string; scope: LinkedDoc['scope']; projectId?: string }) => void;
   onDeleteDocument: (docId: string) => void;
   onMoveDocument: (docId: string, newParentId: string) => void;
   // Lifted to AppDataContext (not local state) so AppLayout can render the current folder as a
@@ -71,10 +71,12 @@ const SORT_OPTIONS: { value: 'latest' | 'oldest' | 'az'; label: string }[] = [
 const SCOPE_FILTER_OPTIONS: { value: LinkedDoc['scope'] | '__all__'; label: string }[] = [
   { value: '__all__', label: 'รายการทั้งหมด' },
   { value: 'ส่วนตัว', label: 'ส่วนตัว' },
-  { value: 'ทีม', label: 'ทีม' }
+  { value: 'โครงการ', label: 'โครงการ' }
 ];
 
-const getDeptTagClass = (team?: string) => (team ? getDepartmentTagClass(team) : 'text-[#FF6537] bg-[#FFF1EC]');
+// Reuses the department-tag hash palette for a project's own tag — it colors any string
+// consistently and distinctly, department name or project title alike.
+const getProjectTagClass = (projectTitle?: string) => (projectTitle ? getDepartmentTagClass(projectTitle) : 'text-[#FF6537] bg-[#FFF1EC]');
 
 // A folder/file/link's project (and, if it's specifically a task's own folder or lives inside
 // one, its task) is never stored directly on most docs — it's derived by walking up the
@@ -318,7 +320,7 @@ export default function DocVault({
   setCurrentFolderId,
   initialSelectedDocId
 }: DocVaultProps) {
-  const { orgSections, projects, projectTasks, setTaskSelectedProjectId } = useAppData();
+  const { projects, projectTasks, setTaskSelectedProjectId } = useAppData();
   const navigate = useNavigate();
   const goToProject = (projectId: string) => {
     setTaskSelectedProjectId(projectId);
@@ -337,7 +339,7 @@ export default function DocVault({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedKind, setSelectedKind] = useState<LinkedDoc['kind'] | 'All'>('All');
   const [scopeFilter, setScopeFilter] = useState<LinkedDoc['scope'] | '__all__'>('__all__');
-  const [teamFilter, setTeamFilter] = useState<string>('__all__');
+  const [projectFilter, setProjectFilter] = useState<string>('__all__');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [sortBy, setSortBy] = useState<'latest' | 'oldest' | 'az'>('latest');
   const [isSortOpen, setIsSortOpen] = useState(false);
@@ -417,14 +419,14 @@ export default function DocVault({
       return true;
     });
 
-    // Dropped files inherit the target folder's scope/team, same as files added through the
-    // create modal — the folder already establishes "this is a team/personal space".
+    // Dropped files inherit the target folder's scope/project, same as files added through the
+    // create modal — the folder already establishes "this is a project/personal space".
     const targetFolder = documents.find(d => d.id === targetFolderId);
     const scope: LinkedDoc['scope'] = targetFolderId ? (targetFolder?.scope ?? 'ส่วนตัว') : 'ส่วนตัว';
-    const team = targetFolderId ? targetFolder?.team : undefined;
+    const projectId = targetFolderId ? targetFolder?.projectId : undefined;
     if (targetFolderId === currentFolderId) {
       setScopeFilter(scope);
-      setTeamFilter(team || '__all__');
+      setProjectFilter(projectId || '__all__');
     }
 
     for (let i = 0; i < valid.length; i++) {
@@ -440,7 +442,7 @@ export default function DocVault({
         fileMimeType: file.type || 'application/octet-stream',
         fileSize: file.size,
         scope,
-        team,
+        projectId,
         version: 1,
         lastUpdated: date,
         updatedBy: currentUserName,
@@ -535,7 +537,7 @@ export default function DocVault({
   const [newName, setNewName] = useState('');
   const [newUrl, setNewUrl] = useState('');
   const [newScope, setNewScope] = useState<LinkedDoc['scope']>('ส่วนตัว');
-  const [newTeam, setNewTeam] = useState<string>('');
+  const [newProjectId, setNewProjectId] = useState<string>('');
   const [nameTouched, setNameTouched] = useState(false);
   const [createRenameNotice, setCreateRenameNotice] = useState('');
   const [editRenameNotice, setEditRenameNotice] = useState('');
@@ -568,7 +570,7 @@ export default function DocVault({
   const [editName, setEditName] = useState('');
   const [editUrl, setEditUrl] = useState('');
   const [editScope, setEditScope] = useState<LinkedDoc['scope']>('ส่วนตัว');
-  const [editTeam, setEditTeam] = useState<string>('');
+  const [editProjectId, setEditProjectId] = useState<string>('');
 
   // Delete confirmation modal
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; hasChildren: boolean } | null>(null);
@@ -676,7 +678,7 @@ export default function DocVault({
     setNewName('');
     setNewUrl('');
     setNewScope('ส่วนตัว');
-    setNewTeam('');
+    setNewProjectId('');
     setNameTouched(false);
     setPickedFile(null);
     setFileError('');
@@ -702,7 +704,7 @@ export default function DocVault({
     setEditName('');
     setEditUrl('');
     setEditScope('ส่วนตัว');
-    setEditTeam('');
+    setEditProjectId('');
     setEditRenameNotice('');
   };
 
@@ -711,7 +713,7 @@ export default function DocVault({
     setEditName(doc.name);
     setEditUrl(doc.url || '');
     setEditScope(doc.scope);
-    setEditTeam(doc.team || '');
+    setEditProjectId(doc.projectId || '');
   };
 
   const handleSaveEdit = (e: React.FormEvent) => {
@@ -722,7 +724,7 @@ export default function DocVault({
       name: finalName,
       ...(editDoc?.kind === 'link' ? { url: editUrl.trim() } : {}),
       scope: editScope,
-      team: editScope === 'ทีม' ? (editTeam || undefined) : undefined
+      projectId: editScope === 'โครงการ' ? (editProjectId || undefined) : undefined
     });
     closeEdit();
     showActionToast('บันทึกการแก้ไขสำเร็จแล้ว');
@@ -757,13 +759,13 @@ export default function DocVault({
     setPreviewDocId(doc.id);
   };
 
-  // The open folder itself (if any) — items created inside it inherit its scope/team rather
-  // than asking again, since the folder already established "this is a team/personal space".
+  // The open folder itself (if any) — items created inside it inherit its scope/project rather
+  // than asking again, since the folder already established "this is a project/personal space".
   const currentFolder = documents.find(d => d.id === currentFolderId);
-  const resolveCreateScope = (): { scope: LinkedDoc['scope']; team?: string } =>
+  const resolveCreateScope = (): { scope: LinkedDoc['scope']; projectId?: string } =>
     currentFolderId
-      ? { scope: currentFolder?.scope ?? 'ส่วนตัว', team: currentFolder?.team }
-      : { scope: newScope, team: newScope === 'ทีม' ? (newTeam || undefined) : undefined };
+      ? { scope: currentFolder?.scope ?? 'ส่วนตัว', projectId: currentFolder?.projectId }
+      : { scope: newScope, projectId: newScope === 'โครงการ' ? (newProjectId || undefined) : undefined };
 
   // Items inside the current folder, then search + kind filter on top of that
   const itemsHere = documents.filter(doc => doc.parentId === currentFolderId);
@@ -771,8 +773,8 @@ export default function DocVault({
     const matchesSearch = doc.name.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesKind = selectedKind === 'All' || doc.kind === selectedKind;
     const matchesScope = scopeFilter === '__all__' || doc.scope === scopeFilter;
-    const matchesTeam = scopeFilter !== 'ทีม' || teamFilter === '__all__' || doc.team === teamFilter;
-    return matchesSearch && matchesKind && matchesScope && matchesTeam;
+    const matchesProject = scopeFilter !== 'โครงการ' || projectFilter === '__all__' || doc.projectId === projectFilter;
+    return matchesSearch && matchesKind && matchesScope && matchesProject;
   });
 
   const sortedDocs = [...filteredDocs].sort((a, b) => {
@@ -792,14 +794,14 @@ export default function DocVault({
     // Safety net alongside the name field's own onBlur (see the project module's identical note).
     const finalName = getUniqueDocName(newName, siblingNames);
     const date = nowStamp();
-    const { scope, team } = resolveCreateScope();
+    const { scope, projectId } = resolveCreateScope();
     const newDoc: LinkedDoc = {
       id: 'DOC' + Date.now(),
       name: finalName,
       kind: 'folder',
       parentId: currentFolderId,
       scope,
-      team,
+      projectId,
       version: 1,
       lastUpdated: date,
       updatedBy: currentUserName,
@@ -807,7 +809,7 @@ export default function DocVault({
     };
     onAddDocument(newDoc);
     setScopeFilter(scope);
-    setTeamFilter(team || '__all__');
+    setProjectFilter(projectId || '__all__');
     closeAddForm();
     showActionToast('บันทึกรายการสำเร็จแล้ว');
   };
@@ -833,7 +835,7 @@ export default function DocVault({
     try {
       const dataUrl = await readFileAsDataUrl(pickedFile);
       const date = nowStamp();
-      const { scope, team } = resolveCreateScope();
+      const { scope, projectId } = resolveCreateScope();
       const newDoc: LinkedDoc = {
         id: 'DOC' + Date.now(),
         name: finalName,
@@ -843,7 +845,7 @@ export default function DocVault({
         fileMimeType: pickedFile.type || 'application/octet-stream',
         fileSize: pickedFile.size,
         scope,
-        team,
+        projectId,
         version: 1,
         lastUpdated: date,
         updatedBy: currentUserName,
@@ -851,7 +853,7 @@ export default function DocVault({
       };
       onAddDocument(newDoc);
       setScopeFilter(scope);
-      setTeamFilter(team || '__all__');
+      setProjectFilter(projectId || '__all__');
       closeAddForm();
       showActionToast('บันทึกรายการสำเร็จแล้ว');
     } finally {
@@ -864,7 +866,7 @@ export default function DocVault({
     if (!newName.trim() || !newUrl.trim()) return;
     const finalName = getUniqueDocName(newName, siblingNames);
     const date = nowStamp();
-    const { scope, team } = resolveCreateScope();
+    const { scope, projectId } = resolveCreateScope();
     const newDoc: LinkedDoc = {
       id: 'DOC' + Date.now(),
       name: finalName,
@@ -872,7 +874,7 @@ export default function DocVault({
       parentId: currentFolderId,
       url: newUrl.trim(),
       scope,
-      team,
+      projectId,
       version: 1,
       lastUpdated: date,
       updatedBy: currentUserName,
@@ -880,7 +882,7 @@ export default function DocVault({
     };
     onAddDocument(newDoc);
     setScopeFilter(scope);
-    setTeamFilter(team || '__all__');
+    setProjectFilter(projectId || '__all__');
     closeAddForm();
     showActionToast('บันทึกรายการสำเร็จแล้ว');
   };
@@ -1035,19 +1037,19 @@ export default function DocVault({
           <div className="w-36 h-10">
             <Dropdown<LinkedDoc['scope'] | '__all__'>
               value={scopeFilter}
-              onChange={(value) => { setScopeFilter(value); setTeamFilter('__all__'); }}
+              onChange={(value) => { setScopeFilter(value); setProjectFilter('__all__'); }}
               options={SCOPE_FILTER_OPTIONS}
             />
           </div>
 
-          {scopeFilter === 'ทีม' && (
+          {scopeFilter === 'โครงการ' && (
             <div className="w-33.75 h-10">
               <Dropdown<string>
-                value={teamFilter}
-                onChange={setTeamFilter}
+                value={projectFilter}
+                onChange={setProjectFilter}
                 options={[
-                  { value: '__all__', label: 'ทุกทีม' },
-                  ...orgSections.map((team) => ({ value: team, label: team }))
+                  { value: '__all__', label: 'ทุกโครงการ' },
+                  ...projects.map((p) => ({ value: p.id, label: p.title }))
                 ]}
               />
             </div>
@@ -1183,9 +1185,9 @@ export default function DocVault({
                           <div className="min-w-0">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <p className="text-[13px] font-bold text-slate-900 leading-tight whitespace-nowrap">{doc.name}</p>
-                              {doc.scope === 'ทีม' && (
-                                <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none shrink-0 ${getDeptTagClass(doc.team)}`}>
-                                  {doc.team || 'ทีม'}
+                              {doc.scope === 'โครงการ' && (
+                                <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none shrink-0 ${getProjectTagClass(projectById.get(doc.projectId ?? '')?.title)}`}>
+                                  {projectById.get(doc.projectId ?? '')?.title || 'โครงการ'}
                                 </span>
                               )}
                             </div>
@@ -1299,9 +1301,9 @@ export default function DocVault({
                       <div className="flex-1 flex flex-col items-center justify-center text-center gap-1.5">
                         <Icon size={56} className={color} fill={fill ? 'currentColor' : 'none'} strokeWidth={fill ? 1 : 1.25} />
                         <h4 className="text-[15px] font-bold text-[#272220] truncate max-w-full w-full">{doc.name}</h4>
-                        {doc.scope === 'ทีม' && (
-                          <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDeptTagClass(doc.team)}`}>
-                            {doc.team || 'ทีม'}
+                        {doc.scope === 'โครงการ' && (
+                          <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getProjectTagClass(projectById.get(doc.projectId ?? '')?.title)}`}>
+                            {projectById.get(doc.projectId ?? '')?.title || 'โครงการ'}
                           </span>
                         )}
                         {ownership && (
@@ -1323,9 +1325,9 @@ export default function DocVault({
                           <div className="flex items-center gap-1.5 min-w-0">
                             <Icon size={18} className={`${color} shrink-0`} fill={fill ? 'currentColor' : 'none'} strokeWidth={fill ? 1.5 : 1.75} />
                             <h4 className="text-[15px] font-bold text-[#272220] truncate">{doc.name}</h4>
-                            {doc.scope === 'ทีม' && (
-                              <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none shrink-0 ${getDeptTagClass(doc.team)}`}>
-                                {doc.team || 'ทีม'}
+                            {doc.scope === 'โครงการ' && (
+                              <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none shrink-0 ${getProjectTagClass(projectById.get(doc.projectId ?? '')?.title)}`}>
+                                {projectById.get(doc.projectId ?? '')?.title || 'โครงการ'}
                               </span>
                             )}
                           </div>
@@ -1460,21 +1462,21 @@ export default function DocVault({
                             size="compact"
                             options={[
                               { value: 'ส่วนตัว', label: 'ส่วนตัว' },
-                              { value: 'ทีม', label: 'ทีม' }
+                              { value: 'โครงการ', label: 'โครงการ' }
                             ]}
                           />
                         </div>
-                        {newScope === 'ทีม' && (
+                        {newScope === 'โครงการ' && (
                           <div>
-                            <label className="block text-[11px] font-bold text-slate-500 mb-1">เลือกทีม</label>
+                            <label className="block text-[11px] font-bold text-slate-500 mb-1">เลือกโครงการ</label>
                             <Dropdown<string>
-                              value={newTeam || '__unset__'}
-                              onChange={(value) => setNewTeam(value === '__unset__' ? '' : value)}
-                              placeholder="ไม่ระบุทีม"
+                              value={newProjectId || '__unset__'}
+                              onChange={(value) => setNewProjectId(value === '__unset__' ? '' : value)}
+                              placeholder="ไม่ระบุโครงการ"
                               size="compact"
                               options={[
-                                { value: '__unset__', label: 'ไม่ระบุทีม' },
-                                ...orgSections.map((team) => ({ value: team, label: team }))
+                                { value: '__unset__', label: 'ไม่ระบุโครงการ' },
+                                ...projects.map((p) => ({ value: p.id, label: p.title }))
                               ]}
                             />
                           </div>
@@ -1483,8 +1485,8 @@ export default function DocVault({
                     ) : (
                       <div className="flex items-center gap-1.5 text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-2">
                         <span>สิทธิ์:</span>
-                        <span className={`font-semibold px-1.5 py-0.5 rounded-full text-[10px] ${currentFolder?.scope === 'ทีม' ? getDeptTagClass(currentFolder?.team) : 'text-slate-600 bg-slate-200'}`}>
-                          {currentFolder?.scope === 'ทีม' ? (currentFolder?.team || 'ทีม') : 'ส่วนตัว'}
+                        <span className={`font-semibold px-1.5 py-0.5 rounded-full text-[10px] ${currentFolder?.scope === 'โครงการ' ? getProjectTagClass(projectById.get(currentFolder?.projectId ?? '')?.title) : 'text-slate-600 bg-slate-200'}`}>
+                          {currentFolder?.scope === 'โครงการ' ? (projectById.get(currentFolder?.projectId ?? '')?.title || 'โครงการ') : 'ส่วนตัว'}
                         </span>
                         <span className="text-slate-400">(สืบทอดจากโฟลเดอร์นี้)</span>
                       </div>
@@ -1540,21 +1542,21 @@ export default function DocVault({
                             size="compact"
                             options={[
                               { value: 'ส่วนตัว', label: 'ส่วนตัว' },
-                              { value: 'ทีม', label: 'ทีม' }
+                              { value: 'โครงการ', label: 'โครงการ' }
                             ]}
                           />
                         </div>
-                        {newScope === 'ทีม' && (
+                        {newScope === 'โครงการ' && (
                           <div>
-                            <label className="block text-[11px] font-bold text-slate-500 mb-1">เลือกทีม</label>
+                            <label className="block text-[11px] font-bold text-slate-500 mb-1">เลือกโครงการ</label>
                             <Dropdown<string>
-                              value={newTeam || '__unset__'}
-                              onChange={(value) => setNewTeam(value === '__unset__' ? '' : value)}
-                              placeholder="ไม่ระบุทีม"
+                              value={newProjectId || '__unset__'}
+                              onChange={(value) => setNewProjectId(value === '__unset__' ? '' : value)}
+                              placeholder="ไม่ระบุโครงการ"
                               size="compact"
                               options={[
-                                { value: '__unset__', label: 'ไม่ระบุทีม' },
-                                ...orgSections.map((team) => ({ value: team, label: team }))
+                                { value: '__unset__', label: 'ไม่ระบุโครงการ' },
+                                ...projects.map((p) => ({ value: p.id, label: p.title }))
                               ]}
                             />
                           </div>
@@ -1563,8 +1565,8 @@ export default function DocVault({
                     ) : (
                       <div className="flex items-center gap-1.5 text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-2">
                         <span>สิทธิ์:</span>
-                        <span className={`font-semibold px-1.5 py-0.5 rounded-full text-[10px] ${currentFolder?.scope === 'ทีม' ? getDeptTagClass(currentFolder?.team) : 'text-slate-600 bg-slate-200'}`}>
-                          {currentFolder?.scope === 'ทีม' ? (currentFolder?.team || 'ทีม') : 'ส่วนตัว'}
+                        <span className={`font-semibold px-1.5 py-0.5 rounded-full text-[10px] ${currentFolder?.scope === 'โครงการ' ? getProjectTagClass(projectById.get(currentFolder?.projectId ?? '')?.title) : 'text-slate-600 bg-slate-200'}`}>
+                          {currentFolder?.scope === 'โครงการ' ? (projectById.get(currentFolder?.projectId ?? '')?.title || 'โครงการ') : 'ส่วนตัว'}
                         </span>
                         <span className="text-slate-400">(สืบทอดจากโฟลเดอร์นี้)</span>
                       </div>
@@ -1621,21 +1623,21 @@ export default function DocVault({
                             size="compact"
                             options={[
                               { value: 'ส่วนตัว', label: 'ส่วนตัว' },
-                              { value: 'ทีม', label: 'ทีม' }
+                              { value: 'โครงการ', label: 'โครงการ' }
                             ]}
                           />
                         </div>
-                        {newScope === 'ทีม' && (
+                        {newScope === 'โครงการ' && (
                           <div>
-                            <label className="block text-[11px] font-bold text-slate-500 mb-1">เลือกทีม</label>
+                            <label className="block text-[11px] font-bold text-slate-500 mb-1">เลือกโครงการ</label>
                             <Dropdown<string>
-                              value={newTeam || '__unset__'}
-                              onChange={(value) => setNewTeam(value === '__unset__' ? '' : value)}
-                              placeholder="ไม่ระบุทีม"
+                              value={newProjectId || '__unset__'}
+                              onChange={(value) => setNewProjectId(value === '__unset__' ? '' : value)}
+                              placeholder="ไม่ระบุโครงการ"
                               size="compact"
                               options={[
-                                { value: '__unset__', label: 'ไม่ระบุทีม' },
-                                ...orgSections.map((team) => ({ value: team, label: team }))
+                                { value: '__unset__', label: 'ไม่ระบุโครงการ' },
+                                ...projects.map((p) => ({ value: p.id, label: p.title }))
                               ]}
                             />
                           </div>
@@ -1644,8 +1646,8 @@ export default function DocVault({
                     ) : (
                       <div className="flex items-center gap-1.5 text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-2">
                         <span>สิทธิ์:</span>
-                        <span className={`font-semibold px-1.5 py-0.5 rounded-full text-[10px] ${currentFolder?.scope === 'ทีม' ? getDeptTagClass(currentFolder?.team) : 'text-slate-600 bg-slate-200'}`}>
-                          {currentFolder?.scope === 'ทีม' ? (currentFolder?.team || 'ทีม') : 'ส่วนตัว'}
+                        <span className={`font-semibold px-1.5 py-0.5 rounded-full text-[10px] ${currentFolder?.scope === 'โครงการ' ? getProjectTagClass(projectById.get(currentFolder?.projectId ?? '')?.title) : 'text-slate-600 bg-slate-200'}`}>
+                          {currentFolder?.scope === 'โครงการ' ? (projectById.get(currentFolder?.projectId ?? '')?.title || 'โครงการ') : 'ส่วนตัว'}
                         </span>
                         <span className="text-slate-400">(สืบทอดจากโฟลเดอร์นี้)</span>
                       </div>
@@ -1751,22 +1753,22 @@ export default function DocVault({
                       size="compact"
                       options={[
                         { value: 'ส่วนตัว', label: 'ส่วนตัว' },
-                        { value: 'ทีม', label: 'ทีม' }
+                        { value: 'โครงการ', label: 'โครงการ' }
                       ]}
                     />
                   </div>
 
-                  {editScope === 'ทีม' && (
+                  {editScope === 'โครงการ' && (
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-500 mb-1">เลือกทีม</label>
+                      <label className="block text-[11px] font-bold text-slate-500 mb-1">เลือกโครงการ</label>
                       <Dropdown<string>
-                        value={editTeam || '__unset__'}
-                        onChange={(value) => setEditTeam(value === '__unset__' ? '' : value)}
-                        placeholder="ไม่ระบุทีม"
+                        value={editProjectId || '__unset__'}
+                        onChange={(value) => setEditProjectId(value === '__unset__' ? '' : value)}
+                        placeholder="ไม่ระบุโครงการ"
                         size="compact"
                         options={[
-                          { value: '__unset__', label: 'ไม่ระบุทีม' },
-                          ...orgSections.map((team) => ({ value: team, label: team }))
+                          { value: '__unset__', label: 'ไม่ระบุโครงการ' },
+                          ...projects.map((p) => ({ value: p.id, label: p.title }))
                         ]}
                       />
                     </div>

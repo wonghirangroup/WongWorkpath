@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, FormEvent, KeyboardEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
-import { X, Check, Folder, Pencil, CalendarClock, Clock, ArrowRight } from 'lucide-react';
+import { X, Check, Folder, Pencil, CalendarClock, ArrowRight } from 'lucide-react';
 import { Employee } from '../../types';
 import { ProjectPriority, ProjectStatus, ProjectType, CustomProjectStatus } from './types';
 import { STATUS_LABEL, STATUS_PILL, PROJECT_TYPE_META, PROJECT_TYPE_OPTIONS } from './statusMeta';
@@ -35,13 +35,6 @@ export const PRIORITY_OPTIONS: { value: Priority; label: string; activeClass: st
   { value: 5, label: '5', activeClass: 'bg-slate-100 border-slate-400 text-slate-600' },
 ];
 
-type Duration = 'short' | 'long' | 'special';
-const DURATION_OPTIONS: { value: Duration; label: string }[] = [
-  { value: 'short', label: 'ระยะสั้น' },
-  { value: 'long', label: 'ระยะยาว' },
-  { value: 'special', label: 'พิเศษ' },
-];
-
 export function displayName(emp: Employee): string {
   return emp.nickname || emp.name;
 }
@@ -61,84 +54,6 @@ function EmployeeOptionRow({ emp }: { emp: Employee }) {
         <span className="block truncate text-[11px] text-slate-400">{emp.role} · {emp.department}</span>
       </span>
     </span>
-  );
-}
-
-// Searchable single-select — type to filter, click to choose; once chosen, collapses to a
-// name chip with a clear button so the field stays compact.
-export function EmployeeSearchSelect({
-  employees,
-  valueId,
-  onChange,
-  placeholder
-}: {
-  employees: Employee[];
-  valueId: string;
-  onChange: (id: string) => void;
-  placeholder: string;
-}) {
-  const [query, setQuery] = useState('');
-  const [isOpen, setIsOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const selected = employees.find((e) => e.id === valueId);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setIsOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
-  if (selected) {
-    return (
-      <div className="flex items-center justify-between p-2 text-sm border border-[#E5E5E5] rounded-lg bg-white">
-        <EmployeeOptionRow emp={selected} />
-        <button type="button" onClick={() => onChange('')} className="text-slate-400 hover:text-slate-600 cursor-pointer shrink-0">
-          <X size={14} />
-        </button>
-      </div>
-    );
-  }
-
-  const filtered = employees.filter((e) => displayName(e).toLowerCase().includes(query.toLowerCase()));
-
-  return (
-    <div className="relative" ref={ref}>
-      <input
-        type="text"
-        placeholder={placeholder}
-        value={query}
-        onFocus={() => setIsOpen(true)}
-        onChange={(e) => {
-          setQuery(e.target.value);
-          setIsOpen(true);
-        }}
-        className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
-      />
-      {isOpen && (
-        <div className="absolute z-10 left-0 right-0 top-full mt-1 max-h-40 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg py-1">
-          {filtered.length === 0 ? (
-            <p className="px-3 py-2 text-xs text-slate-400">ไม่พบพนักงาน</p>
-          ) : (
-            filtered.map((emp) => (
-              <button
-                key={emp.id}
-                type="button"
-                onClick={() => {
-                  onChange(emp.id);
-                  setQuery('');
-                  setIsOpen(false);
-                }}
-                className="w-full text-left px-3 py-2 hover:bg-[#FEFAF9] cursor-pointer"
-              >
-                <EmployeeOptionRow emp={emp} />
-              </button>
-            ))
-          )}
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -360,12 +275,11 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
   const [title, setTitle] = useState('');
   const [renameNotice, setRenameNotice] = useState('');
   const [description, setDescription] = useState('');
-  const [duration, setDuration] = useState<Duration | null>(null);
   const [type, setType] = useState<ProjectType | null>(null);
   const [abbreviation, setAbbreviation] = useState('');
   // Once the user types their own abbreviation, retyping the title stops overwriting it.
   const [abbreviationTouched, setAbbreviationTouched] = useState(false);
-  const [ownerId, setOwnerId] = useState('');
+  const [ownerIds, setOwnerIds] = useState<string[]>([]);
   const [priority, setPriority] = useState<Priority | null>(null);
   const [status, setStatus] = useState<string>('draft');
   const [budget, setBudget] = useState('');
@@ -399,11 +313,10 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
     setTitle('');
     setRenameNotice('');
     setDescription('');
-    setDuration(null);
     setType(null);
     setAbbreviation('');
     setAbbreviationTouched(false);
-    setOwnerId('');
+    setOwnerIds([]);
     setPriority(null);
     setStatus('draft');
     setBudget('');
@@ -419,7 +332,11 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
 
   useEscapeToClose(isOpen, resetAndClose);
 
-  const step1Valid = title.trim() !== '' && type !== null;
+  // ตัวย่อโครงการ is required (not just auto-derived) because deriveAbbreviation only works on
+  // Latin letters — a Thai-only title (the overwhelming majority here) derives nothing, and
+  // without this check that silently produced a generic "PRJ-NNN" code instead of the intended
+  // "{ตัวย่อ}-{ปี}-{ประเภท}-{ลำดับ}" format (see generateProjectCode server-side).
+  const step1Valid = title.trim() !== '' && type !== null && abbreviation.trim() !== '';
   // Only meaningful once both dates are set — an open-ended start or end date has nothing to
   // compare against yet.
   const dateOrderValid = !(startDate && endDate && endDate < startDate);
@@ -444,7 +361,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
         type: type ?? undefined,
         abbreviation: abbreviation.trim() || undefined,
         priority: priority ?? undefined,
-        ownerEmployeeId: ownerId || undefined,
+        ownerEmployeeIds: ownerIds,
         memberEmployeeIds: assigneeIds,
         memberDuties: Object.fromEntries(
           Object.entries(memberDuties).filter(([id, duty]) => assigneeIds.includes(id) && duty.trim() !== '')
@@ -464,7 +381,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
     }
   };
 
-  const ownerEmp = employees.find((e) => e.id === ownerId);
+  const ownerEmps = employees.filter((e) => ownerIds.includes(e.id));
   const assigneeEmps = employees.filter((e) => assigneeIds.includes(e.id));
 
   // Enter anywhere in the wizard advances to the next step, all the way through to actually
@@ -580,8 +497,10 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                     </div>
                     <div>
                       <div className="flex items-baseline justify-between mb-1">
-                        <label className="block text-[#272220] font-bold text-[11px]">ตัวย่อชื่อโครงการ</label>
-                        <span className="text-[10px] text-[#6F6F6F]">ตั้งจากชื่อให้อัตโนมัติ แก้ไขเองได้</span>
+                        <label className="block text-[#272220] font-bold text-[11px]">
+                          ตัวย่อชื่อโครงการ <span className="text-[#FF6537]">*</span>
+                        </label>
+                        <span className="text-[10px] text-[#6F6F6F]">ตั้งจากชื่อให้อัตโนมัติถ้าเป็นภาษาอังกฤษ ไม่งั้นพิมพ์เอง</span>
                       </div>
                       <input
                         type="text"
@@ -596,25 +515,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                         }}
                         className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
                       />
-                    </div>
-                    <div>
-                      <label className="block text-[#272220] font-bold text-[11px] mb-1">ระยะโครงการ</label>
-                      <div className="flex gap-2">
-                        {DURATION_OPTIONS.map((d) => (
-                          <button
-                            key={d.value}
-                            type="button"
-                            onClick={() => setDuration((current) => (current === d.value ? null : d.value))}
-                            className={`flex-1 h-9 rounded-lg text-xs font-semibold border cursor-pointer transition-colors ${
-                              duration === d.value
-                                ? 'bg-[#FFF1EC] border-[#FF6537] text-[#FF6537]'
-                                : 'border-[#E5E5E5] text-[#6F6F6F] hover:bg-slate-50'
-                            }`}
-                          >
-                            {d.label}
-                          </button>
-                        ))}
-                      </div>
+                      <p className="text-[10px] text-[#A0A0A0] mt-1">ใช้ประกอบรหัสโครงการ (เช่น GS-69-P-001) — จำเป็นต้องกรอก</p>
                     </div>
                     <div>
                       <label className="block text-[#272220] font-bold text-[11px] mb-1">รายละเอียด</label>
@@ -632,12 +533,15 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                 {step === 2 && (
                   <>
                     <div>
-                      <label className="block text-[#272220] font-bold text-[11px] mb-1">ผู้รับผิดชอบหลัก</label>
-                      <EmployeeSearchSelect
+                      <div className="flex items-baseline justify-between mb-1">
+                        <label className="block text-[#272220] font-bold text-[11px]">ผู้รับผิดชอบหลัก</label>
+                        <span className="text-[10px] text-[#6F6F6F]">เลือกได้หลายคน สิทธิ์เท่ากันทุกคน</span>
+                      </div>
+                      <EmployeeMultiSelect
                         employees={employees}
-                        valueId={ownerId}
-                        onChange={setOwnerId}
-                        placeholder="ค้นหาหรือเลือกพนักงาน..."
+                        valueIds={ownerIds}
+                        onChange={setOwnerIds}
+                        placeholder="ค้นหาแล้วเลือกเพิ่มได้หลายคน..."
                       />
                     </div>
 
@@ -773,17 +677,6 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                       />
                       <SummaryRow label="ตัวย่อชื่อโครงการ" value={abbreviation || 'ไม่ระบุ'} />
                       <SummaryRow
-                        label="ระยะโครงการ"
-                        value={
-                          duration ? (
-                            <span className="inline-flex items-center gap-1.5 border border-slate-200 rounded-full px-2.5 py-1 text-[11px] font-medium text-[#272220]">
-                              <Clock size={11} />
-                              {DURATION_OPTIONS.find((d) => d.value === duration)!.label}
-                            </span>
-                          ) : 'ไม่ระบุ'
-                        }
-                      />
-                      <SummaryRow
                         label="รายละเอียด"
                         value={
                           description ? (
@@ -799,19 +692,31 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                       <SummaryRow
                         label="ผู้รับผิดชอบหลัก"
                         value={
-                          ownerEmp ? (
-                            <span className="flex items-center gap-1.5 justify-end">
-                              {ownerEmp.avatar ? (
-                                <img src={ownerEmp.avatar} alt="" className="w-5 h-5 rounded-full object-cover shrink-0" />
-                              ) : (
-                                <span
-                                  className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-bold shrink-0"
-                                  style={{ backgroundColor: getAvatarColor(displayName(ownerEmp)) }}
-                                >
-                                  {displayName(ownerEmp).trim().charAt(0).toUpperCase()}
-                                </span>
+                          ownerEmps.length > 0 ? (
+                            <span className="flex items-center justify-end">
+                              {ownerEmps.slice(0, 3).map((emp, idx) => (
+                                emp.avatar ? (
+                                  <Tooltip key={emp.id} content={displayName(emp)}>
+                                    <img
+                                      src={emp.avatar}
+                                      alt=""
+                                      className={`w-6 h-6 rounded-full object-cover ring-2 ring-white ${idx > 0 ? '-ml-2' : ''}`}
+                                    />
+                                  </Tooltip>
+                                ) : (
+                                  <Tooltip key={emp.id} content={displayName(emp)}>
+                                    <span
+                                      className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-bold ring-2 ring-white ${idx > 0 ? '-ml-2' : ''}`}
+                                      style={{ backgroundColor: getAvatarColor(displayName(emp)) }}
+                                    >
+                                      {displayName(emp).trim().charAt(0).toUpperCase()}
+                                    </span>
+                                  </Tooltip>
+                                )
+                              ))}
+                              {ownerEmps.length > 3 && (
+                                <span className="ml-1.5 text-[11px] font-medium text-[#6F6F6F]">+{ownerEmps.length - 3} คน</span>
                               )}
-                              <span className="truncate">{displayName(ownerEmp)} ({ownerEmp.role})</span>
                             </span>
                           ) : 'ไม่ระบุ'
                         }
@@ -867,7 +772,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                                 )
                               ))}
                               {assigneeEmps.length > 3 && (
-                                <span className="ml-1.5 text-[11px] font-medium text-[#6F6F6F]">+{assigneeEmps.length - 3} สมาชิก</span>
+                                <span className="ml-1.5 text-[11px] font-medium text-[#6F6F6F]">+{assigneeEmps.length - 3} คน</span>
                               )}
                             </span>
                           ) : 'ไม่ระบุ'

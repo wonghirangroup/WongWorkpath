@@ -2,6 +2,7 @@ import { Router } from 'express';
 import type { RowDataPacket } from 'mysql2';
 import { pool } from '../db.ts';
 import { nowBangkokDateTime, formatThaiDateShort } from '../lib/datetime.ts';
+import { isOwner } from '../lib/ownership.ts';
 
 export const projectTasksRouter = Router();
 
@@ -25,6 +26,8 @@ interface ProjectTaskRowDb extends RowDataPacket {
   submission_note: string | null;
   submission_file_ids: string | null;
   review_note: string | null;
+  blocked_reason: string | null;
+  parent_task_id: string | null;
 }
 
 // Same JSON-array-as-TEXT convention as project.member_employee_ids.
@@ -73,10 +76,12 @@ function toProjectTask(r: ProjectTaskRowDb) {
     submissionNote: r.submission_note ?? undefined,
     submissionFileIds: r.submission_file_ids ? JSON.parse(r.submission_file_ids) : [],
     reviewNote: r.review_note ?? undefined,
+    blockedReason: r.blocked_reason ?? undefined,
+    parentTaskId: r.parent_task_id ?? undefined,
   };
 }
 
-const SELECT_FIELDS = `id, project_id, title, description, status, priority, assignee_employee_ids, reviewer_employee_ids, creator_employee_id, start_date, due_date, progress, checklist, submission_note, submission_file_ids, review_note`;
+const SELECT_FIELDS = `id, project_id, title, description, status, priority, assignee_employee_ids, reviewer_employee_ids, creator_employee_id, start_date, due_date, progress, checklist, submission_note, submission_file_ids, review_note, blocked_reason, parent_task_id`;
 
 projectTasksRouter.get('/', async (_req, res) => {
   try {
@@ -103,6 +108,7 @@ projectTasksRouter.post('/', async (req, res) => {
   const checklist = sanitizeChecklist(t.checklist);
   const assigneeIds = sanitizeIds(t.assigneeEmployeeIds);
   const reviewerIds = sanitizeIds(t.reviewerEmployeeIds);
+  const parentTaskId = typeof t.parentTaskId === 'string' && t.parentTaskId ? t.parentTaskId : null;
 
   try {
     const id = `PTASK_${Date.now()}`;
@@ -110,15 +116,22 @@ projectTasksRouter.post('/', async (req, res) => {
     await pool.query(
       `INSERT INTO project_task
          (id, project_id, title, description, status, priority, assignee_employee_ids, reviewer_employee_ids,
-          creator_employee_id, start_date, due_date, progress, checklist, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          creator_employee_id, start_date, due_date, progress, checklist, parent_task_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id, t.projectId, t.title.trim(), t.description?.trim() || null, status, priority,
         assigneeIds.length ? JSON.stringify(assigneeIds) : null, reviewerIds.length ? JSON.stringify(reviewerIds) : null,
         t.creatorEmployeeId || null, t.startDate || null, t.dueDate || null, t.progress ?? 0,
-        checklist.length ? JSON.stringify(checklist) : null, now, now,
+        checklist.length ? JSON.stringify(checklist) : null, parentTaskId, now, now,
       ]
     );
+
+    // A project sitting at 'draft' clearly isn't a draft anymore once real work exists under
+    // it — auto-promote it the moment its first task/subtask is created. Done here (not via the
+    // public PUT /api/projects/:id) so it's never blocked by that route's ownership gate: whoever
+    // just created this task might not be one of the project's owners, and this is a system-
+    // triggered side effect of an already-unrestricted action (creating a task), not a user edit.
+    await pool.query(`UPDATE project SET status = 'in_progress', updated_at = ? WHERE id = ? AND status = 'draft'`, [now, t.projectId]);
 
     const [[row]] = await pool.query<ProjectTaskRowDb[]>(`SELECT ${SELECT_FIELDS} FROM project_task WHERE id = ?`, [id]);
     res.status(201).json(toProjectTask(row));
@@ -128,14 +141,21 @@ projectTasksRouter.post('/', async (req, res) => {
   }
 });
 
-projectTasksRouter.put('/:id', async (req, res) => {
-  const t = req.body ?? {};
+// Shared by the public PUT route and change-requests.ts's approve-an-edit-request path — see the
+// identical rationale on projects.ts's applyProjectFields.
+export async function applyTaskFields(id: string, t: any) {
   const fields: string[] = [];
   const values: unknown[] = [];
 
   if (typeof t.title === 'string' && t.title.trim()) { fields.push('title = ?'); values.push(t.title.trim()); }
-  if ('description' in t) { fields.push('description = ?'); values.push(t.description?.trim() || null); }
-  if (typeof t.status === 'string' && STATUSES.includes(t.status)) { fields.push('status = ?'); values.push(t.status); }
+  if ('description' in t) { fields.push('description = ?'); values.push((t.description as string | undefined)?.trim() || null); }
+  if (typeof t.status === 'string' && STATUSES.includes(t.status)) {
+    fields.push('status = ?');
+    values.push(t.status);
+    // A reason only makes sense while the task is actually blocked — clear any stale one the
+    // moment the status moves anywhere else, so an old blocker never resurfaces on a later block.
+    if (t.status !== 'blocked' && !('blockedReason' in t)) { fields.push('blocked_reason = ?'); values.push(null); }
+  }
   if ('priority' in t) { fields.push('priority = ?'); values.push(PRIORITIES.includes(t.priority) ? t.priority : null); }
   if ('assigneeEmployeeIds' in t) {
     const assigneeIds = sanitizeIds(t.assigneeEmployeeIds);
@@ -157,25 +177,47 @@ projectTasksRouter.put('/:id', async (req, res) => {
   }
   // submissionNote/submissionFileIds are written together by the "ส่งงาน" flow; reviewNote by the
   // "ตรวจงาน" flow (pass clears it, reject sets it) — see MyWorkspace.tsx's two modals.
-  if ('submissionNote' in t) { fields.push('submission_note = ?'); values.push(t.submissionNote?.trim() || null); }
+  if ('submissionNote' in t) { fields.push('submission_note = ?'); values.push((t.submissionNote as string | undefined)?.trim() || null); }
   if ('submissionFileIds' in t) {
     const fileIds = sanitizeIds(t.submissionFileIds);
     fields.push('submission_file_ids = ?');
     values.push(fileIds.length ? JSON.stringify(fileIds) : null);
   }
-  if ('reviewNote' in t) { fields.push('review_note = ?'); values.push(t.reviewNote?.trim() || null); }
+  if ('reviewNote' in t) { fields.push('review_note = ?'); values.push((t.reviewNote as string | undefined)?.trim() || null); }
+  if ('blockedReason' in t) { fields.push('blocked_reason = ?'); values.push((t.blockedReason as string | undefined)?.trim() || null); }
 
-  if (fields.length === 0) {
-    return res.status(400).json({ message: 'ไม่มีข้อมูลที่จะอัปเดต' });
+  if (fields.length === 0) return null;
+
+  fields.push('updated_at = ?');
+  values.push(nowBangkokDateTime());
+  await pool.query(`UPDATE project_task SET ${fields.join(', ')} WHERE id = ?`, [...values, id]);
+
+  const [[row]] = await pool.query<ProjectTaskRowDb[]>(`SELECT ${SELECT_FIELDS} FROM project_task WHERE id = ?`, [id]);
+  return row ? toProjectTask(row) : null;
+}
+
+projectTasksRouter.put('/:id', async (req, res) => {
+  const t = req.body ?? {};
+
+  // Once a task has ≥1 assignee, only one of them (or one of its reviewers — ReviewTaskModal's
+  // "ผ่าน"/"ตีกลับ" go through this same route) may edit it directly — anyone else must file a
+  // change_request instead (see change-requests.ts). A task with no assignees yet stays open to
+  // everyone. Reviewers are trusted with this same edit right, not just a narrower "decide"
+  // action, since this app has no real per-field permission model to split the two.
+  // งานย่อย (a row with parent_task_id set) is exempt from this gate entirely — per the product
+  // decision, only the main task goes through approval, so anyone can edit a subtask directly.
+  const [[existing]] = await pool.query<RowDataPacket[]>('SELECT assignee_employee_ids, reviewer_employee_ids, parent_task_id FROM project_task WHERE id = ?', [req.params.id]);
+  if (!existing) return res.status(404).json({ message: 'ไม่พบงานนี้' });
+  const currentAssigneeIds: string[] = existing.assignee_employee_ids ? JSON.parse(existing.assignee_employee_ids) : [];
+  const currentReviewerIds: string[] = existing.reviewer_employee_ids ? JSON.parse(existing.reviewer_employee_ids) : [];
+  if (!existing.parent_task_id && !isOwner([...currentAssigneeIds, ...currentReviewerIds], t.actorEmployeeId)) {
+    return res.status(409).json({ message: 'ต้องขออนุมัติจากผู้รับผิดชอบก่อนจึงจะแก้ไขได้', requiresApproval: true });
   }
 
   try {
-    fields.push('updated_at = ?');
-    values.push(nowBangkokDateTime());
-    await pool.query(`UPDATE project_task SET ${fields.join(', ')} WHERE id = ?`, [...values, req.params.id]);
-
-    const [[row]] = await pool.query<ProjectTaskRowDb[]>(`SELECT ${SELECT_FIELDS} FROM project_task WHERE id = ?`, [req.params.id]);
-    res.json(toProjectTask(row));
+    const row = await applyTaskFields(req.params.id, t);
+    if (!row) return res.status(400).json({ message: 'ไม่มีข้อมูลที่จะอัปเดต' });
+    res.json(row);
   } catch (err) {
     console.error('PUT /api/project-tasks/:id failed:', err);
     res.status(500).json({ message: 'เกิดข้อผิดพลาดในระบบ กรุณาลองใหม่อีกครั้ง' });
@@ -184,6 +226,14 @@ projectTasksRouter.put('/:id', async (req, res) => {
 
 projectTasksRouter.delete('/:id', async (req, res) => {
   try {
+    const [[existing]] = await pool.query<RowDataPacket[]>('SELECT assignee_employee_ids, parent_task_id FROM project_task WHERE id = ?', [req.params.id]);
+    if (!existing) return res.status(404).json({ message: 'ไม่พบงานนี้' });
+    const currentAssigneeIds: string[] = existing.assignee_employee_ids ? JSON.parse(existing.assignee_employee_ids) : [];
+    // งานย่อยลบตรงได้เลย ไม่ต้องขออนุมัติ (เหมือนกฎฝั่งแก้ไขด้านบน)
+    if (!existing.parent_task_id && !isOwner(currentAssigneeIds, typeof req.query.actorEmployeeId === 'string' ? req.query.actorEmployeeId : undefined)) {
+      return res.status(409).json({ message: 'ต้องขออนุมัติจากผู้รับผิดชอบก่อนจึงจะลบได้', requiresApproval: true });
+    }
+
     await pool.query('DELETE FROM project_task WHERE id = ?', [req.params.id]);
     res.status(204).end();
   } catch (err) {

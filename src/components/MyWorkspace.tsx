@@ -8,23 +8,28 @@ import {
   Send,
   CheckCircle2,
   Calendar as CalendarIcon,
+  ShieldCheck,
 } from 'lucide-react';
 import { Employee, LinkedDoc } from '../types';
 import { ProjectRow, ProjectTaskItem, ProjectTaskStatus } from './projectBoard/types';
 import { TASK_STATUS_LABEL, TASK_STATUS_COLOR, STATUS_DOT, STATUS_LABEL, STATUS_PILL, STATUS_ICON } from './projectBoard/statusMeta';
 import { displayName } from './projectBoard/CreateProjectModal';
 import { getAvatarColor } from '../lib/avatarColor';
+import { isOwner } from '../lib/ownership';
+import { ChangeRequest } from '../lib/api';
 import ProjectGantt from './projectBoard/ProjectGantt';
 import TaskDetailModal from './projectBoard/TaskDetailModal';
 import SubmitTaskModal from './projectBoard/SubmitTaskModal';
 import ReviewTaskModal from './projectBoard/ReviewTaskModal';
+import PendingRequestCard from './projectBoard/PendingRequestCard';
 import Tooltip from './Tooltip';
 
-type WorkTab = 'my_tasks' | 'to_review' | 'my_projects' | 'gantt';
+type WorkTab = 'my_tasks' | 'to_review' | 'my_approvals' | 'my_projects' | 'gantt';
 
 const TABS: { value: WorkTab; label: string; icon: typeof ListChecks }[] = [
   { value: 'my_tasks', label: 'งานของฉัน', icon: ListChecks },
   { value: 'to_review', label: 'งานที่ต้องตรวจ', icon: ClipboardCheck },
+  { value: 'my_approvals', label: 'รออนุมัติจากฉัน', icon: ShieldCheck },
   { value: 'my_projects', label: 'โครงการของฉัน', icon: Briefcase },
   { value: 'gantt', label: 'Gantt ของฉัน', icon: GanttChartSquare },
 ];
@@ -43,14 +48,16 @@ function StatCard({ icon: Icon, label, count, color }: { icon: typeof ListChecks
   );
 }
 
-function TaskStatusPill({ status }: { status: ProjectTaskStatus }) {
+function TaskStatusPill({ status, blockedReason }: { status: ProjectTaskStatus; blockedReason?: string }) {
   return (
-    <span
-      className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium"
-      style={{ backgroundColor: `${TASK_STATUS_COLOR[status]}1A`, color: TASK_STATUS_COLOR[status] }}
-    >
-      {TASK_STATUS_LABEL[status]}
-    </span>
+    <Tooltip content={status === 'blocked' ? blockedReason : undefined}>
+      <span
+        className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium"
+        style={{ backgroundColor: `${TASK_STATUS_COLOR[status]}1A`, color: TASK_STATUS_COLOR[status] }}
+      >
+        {TASK_STATUS_LABEL[status]}
+      </span>
+    </Tooltip>
   );
 }
 
@@ -86,6 +93,8 @@ interface MyWorkspaceProps {
   onUpdateTask: (id: string, updates: Partial<ProjectTaskItem>) => Promise<void>;
   onAddDocument: (doc: LinkedDoc) => void;
   onSelectProject: (id: string) => void;
+  changeRequests: ChangeRequest[];
+  onDecideChangeRequest: (requestId: string, decision: 'approve' | 'reject', note?: string) => Promise<void>;
 }
 
 // "งานของฉัน" — replaces the old flat, org-wide Gantt browser (which read stale mock Task[] data
@@ -93,7 +102,7 @@ interface MyWorkspaceProps {
 // across every project, the tasks I've been asked to review, the projects I own or belong to, and
 // a Gantt view scoped to just my own tasks. Submitting/reviewing a task is the other half of the
 // loop — see SubmitTaskModal/ReviewTaskModal.
-export default function MyWorkspace({ projectTasks, projects, employees, documents, currentUserId, onUpdateTask, onAddDocument, onSelectProject }: MyWorkspaceProps) {
+export default function MyWorkspace({ projectTasks, projects, employees, documents, currentUserId, onUpdateTask, onAddDocument, onSelectProject, changeRequests, onDecideChangeRequest }: MyWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<WorkTab>('my_tasks');
   const [viewingTask, setViewingTask] = useState<ProjectTaskItem | null>(null);
   const [submittingTask, setSubmittingTask] = useState<ProjectTaskItem | null>(null);
@@ -101,6 +110,12 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
 
   const projectById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
   const employeeById = useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
+
+  // Restricts SubmitTaskModal's reviewer picker to people already on the task's own project.
+  const submittingTaskProject = submittingTask ? projectById.get(submittingTask.projectId) : undefined;
+  const submittingTaskProjectMemberIds = submittingTaskProject
+    ? [...(submittingTaskProject.ownerEmployeeIds ?? []), ...(submittingTaskProject.memberEmployeeIds ?? [])]
+    : undefined;
 
   const myTasks = useMemo(
     () => projectTasks.filter((t) => t.assigneeEmployeeIds.includes(currentUserId)),
@@ -111,17 +126,34 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
     [projectTasks, currentUserId]
   );
   const myProjects = useMemo(
-    () => projects.filter((p) => p.ownerEmployeeId === currentUserId || (p.memberEmployeeIds ?? []).includes(currentUserId)),
+    () => projects.filter((p) => p.ownerEmployeeIds.includes(currentUserId) || (p.memberEmployeeIds ?? []).includes(currentUserId)),
     [projects, currentUserId]
+  );
+
+  // Aggregates pending change requests across every project/task the current user can actually
+  // decide on — the per-project panel on ProjectDetail only shows one project at a time, so anyone
+  // with requests waiting on them in more than one place had no single list to check.
+  const myApprovalRequests = useMemo(
+    () => changeRequests.filter((r) => {
+      if (r.status !== 'pending') return false;
+      if (r.entityType === 'project') {
+        const project = projects.find((p) => p.id === r.entityId);
+        return project ? isOwner(project.ownerEmployeeIds, currentUserId) && project.ownerEmployeeIds.length > 0 : false;
+      }
+      const task = projectTasks.find((t) => t.id === r.entityId);
+      return task ? isOwner(task.assigneeEmployeeIds, currentUserId) && task.assigneeEmployeeIds.length > 0 : false;
+    }),
+    [changeRequests, projects, projectTasks, currentUserId]
   );
 
   const currentUser = employeeById.get(currentUserId);
 
   return (
     <div className="flex flex-col h-full min-h-0" id="my-workspace">
-      <div className="shrink-0 grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
+      <div className="shrink-0 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
         <StatCard icon={ListChecks} label="งานที่รับผิดชอบ" count={myTasks.length} color="#FF6537" />
         <StatCard icon={ClipboardCheck} label="งานที่รอฉันตรวจ" count={tasksToReview.length} color="#0EA5E9" />
+        <StatCard icon={ShieldCheck} label="คำขอที่รอฉันอนุมัติ" count={myApprovalRequests.length} color="#D97706" />
         <StatCard icon={Briefcase} label="โครงการที่ดูแล" count={myProjects.length} color="#0017C1" />
       </div>
 
@@ -139,7 +171,7 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
             >
               <Icon size={13} />
               {tab.label}
-              {tab.value === 'to_review' && tasksToReview.length > 0 && (
+              {((tab.value === 'to_review' && tasksToReview.length > 0) || (tab.value === 'my_approvals' && myApprovalRequests.length > 0)) && (
                 <span className="relative flex w-1.5 h-1.5 shrink-0">
                   <span className="absolute inline-flex w-full h-full rounded-full bg-[#F50C0C] opacity-75 animate-ping" />
                   <span className="relative inline-flex w-1.5 h-1.5 rounded-full bg-[#F50C0C]" />
@@ -186,9 +218,16 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
                             {project?.title ?? 'ไม่ทราบโครงการ'}
                           </button>
                         </td>
-                        <td className="px-4 py-4 font-medium text-[#272220] max-w-60 truncate">{task.title}</td>
+                        <td className="px-4 py-4 font-medium text-[#272220] max-w-60">
+                          <p className="truncate">{task.title}</p>
+                          {task.parentTaskId && (
+                            <p className="text-[10px] font-normal text-[#A0A0A0] truncate mt-0.5">
+                              งานย่อยของ: {projectTasks.find((t) => t.id === task.parentTaskId)?.title ?? 'ไม่ทราบงาน'}
+                            </p>
+                          )}
+                        </td>
                         <td className="px-4 py-4 whitespace-nowrap">
-                          <TaskStatusPill status={task.status} />
+                          <TaskStatusPill status={task.status} blockedReason={task.blockedReason} />
                           {task.status === 'in_progress' && task.reviewNote && (
                             <Tooltip content={task.reviewNote}>
                               <p className="text-[10px] text-red-600 mt-1 max-w-40 truncate">ตีกลับ: {task.reviewNote}</p>
@@ -280,6 +319,33 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
           )
         )}
 
+        {activeTab === 'my_approvals' && (
+          myApprovalRequests.length === 0 ? (
+            <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-400 text-sm">
+              ยังไม่มีคำขอที่รอให้คุณอนุมัติ
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {myApprovalRequests.map((request) => {
+                const project = request.entityType === 'project' ? projectById.get(request.entityId) : undefined;
+                const task = request.entityType === 'project_task' ? projectTasks.find((t) => t.id === request.entityId) : undefined;
+                const entityTitle = project?.title ?? task?.title ?? (request.entityType === 'project' ? 'โครงการ' : 'งาน');
+                const requester = request.requestedBy ? employeeById.get(request.requestedBy) : undefined;
+                return (
+                  <PendingRequestCard
+                    key={request.id}
+                    request={request}
+                    entityTitle={entityTitle}
+                    requesterLabel={requester ? displayName(requester) : 'ไม่ทราบผู้ใช้งาน'}
+                    canDecide
+                    onDecide={(decision, note) => onDecideChangeRequest(request.id, decision, note)}
+                  />
+                );
+              })}
+            </div>
+          )
+        )}
+
         {activeTab === 'my_projects' && (
           myProjects.length === 0 ? (
             <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-400 text-sm">
@@ -303,7 +369,7 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
                   {myProjects.map((project) => {
                     const pill = STATUS_PILL[project.status];
                     const StatusIcon = STATUS_ICON[project.status];
-                    const isOwner = project.ownerEmployeeId === currentUserId;
+                    const isOwner = project.ownerEmployeeIds.includes(currentUserId);
                     return (
                       <tr key={project.id} className="border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50">
                         <td className="px-4 py-4 text-[#6F6F6F] whitespace-nowrap">{project.code}</td>
@@ -371,6 +437,7 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
         employees={employees}
         documents={documents}
         projectDocFolderId={submittingTask ? projectById.get(submittingTask.projectId)?.docFolderId : undefined}
+        projectMemberIds={submittingTaskProjectMemberIds}
         currentUserName={currentUser ? displayName(currentUser) : 'ผู้ใช้งานปัจจุบัน'}
         onAddDocument={onAddDocument}
         onSubmit={onUpdateTask}

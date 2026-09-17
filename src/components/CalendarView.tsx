@@ -9,13 +9,14 @@ import {
   ListChecks,
   Users2,
   Briefcase,
-  RefreshCw,
   Ban,
   X
 } from 'lucide-react';
 import Dropdown from './Dropdown';
 import ProjectsGanttChart from './projectBoard/ProjectsGanttChart';
 import ScheduleMeetingModal from './projectBoard/ScheduleMeetingModal';
+import CancelMeetingModal from './projectBoard/CancelMeetingModal';
+import MeetingDetailModal from './projectBoard/MeetingDetailModal';
 import { ProjectRow } from './projectBoard/types';
 import { STATUS_DOT, STATUS_LABEL, STATUS_ICON, TASK_STATUS_COLOR, TASK_STATUS_LABEL } from './projectBoard/statusMeta';
 import { formatThaiDateShort } from './projectBoard/CreateProjectModal';
@@ -43,7 +44,6 @@ interface CalendarTaskItem {
   title: string;
   dueDateISO: string;
   startDateISO: string | null;
-  recurringPattern: 'None' | 'Weekly' | 'Monthly';
   // Real project tasks carry colorHex (from the canonical TASK_STATUS_COLOR in statusMeta.ts, the
   // same palette ProjectDetail/ProjectGantt/MyWorkspace already color this exact status with) and
   // render via inline style, same technique as this file's own project-deadline chips below —
@@ -60,6 +60,14 @@ type UpcomingItem =
   | { kind: 'meeting'; sortKey: string; meeting: Meeting }
   | { kind: 'project'; sortKey: string; project: ProjectRow };
 
+// A day cell's chips (up to 2 visible, see dayChipItems below) — same 3 kinds as UpcomingItem,
+// just without a sortKey since a day cell keeps the original tasks/meetings/deadlines grouping
+// order instead of sorting across kinds.
+type DayChipItem =
+  | { kind: 'task'; key: string; task: CalendarTaskItem }
+  | { kind: 'meeting'; key: string; meeting: Meeting }
+  | { kind: 'project'; key: string; project: ProjectRow };
+
 // Stored dates are plain "YYYY-MM-DD" strings with no timezone of their own — formatting via the
 // Date object's LOCAL getters (not toISOString, which converts to UTC first) is what keeps a task
 // due "today" landing on today's cell instead of tomorrow's in any timezone ahead of UTC.
@@ -70,12 +78,27 @@ function toLocalDateString(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
+// "YYYY-MM-DDTHH:mm" strings sort lexicographically the same as chronologically, so this is a
+// plain string comparison against "now" in the same shape — no Date parsing/timezone conversion
+// needed since meeting.date/startTime are already local wall-clock values with no zone of their
+// own (see toLocalDateString's own note on the same thing for tasks).
+function isPastMeeting(meeting: Meeting): boolean {
+  if (meeting.status === 'cancelled') return false; // cancelled already gets its own treatment
+  const now = new Date();
+  const nowString = `${toLocalDateString(now)}T${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  return `${meeting.date}T${meeting.endTime || meeting.startTime}` < nowString;
+}
+
 export default function CalendarView({
   tasks
 }: CalendarViewProps) {
-  const { orgSections, meetings, projects, projectTasks, employees, currentUser, handleAddMeeting, setTaskSelectedProjectId } = useAppData();
+  const { orgSections, meetings, projects, projectTasks, employees, currentUser, handleAddMeeting, handleUpdateMeeting, setTaskSelectedProjectId, setTaskSelectedTab } = useAppData();
   const navigate = useNavigate();
   const [isScheduleMeetingOpen, setIsScheduleMeetingOpen] = useState(false);
+  // ยกเลิกประชุม / detail view for a meeting with no project to navigate into — see the render
+  // below for how a meeting click branches between the two.
+  const [cancellingMeeting, setCancellingMeeting] = useState<Meeting | null>(null);
+  const [viewingMeeting, setViewingMeeting] = useState<Meeting | null>(null);
   // Opens on the real current month/year — this used to be hardcoded to July 2026 (leftover from
   // whenever the mock data was authored), so the page never showed "today" highlighted at all
   // unless you clicked "วันนี้" yourself first.
@@ -107,6 +130,19 @@ export default function CalendarView({
   const goToProject = (projectId: string) => {
     setTaskSelectedProjectId(projectId);
     navigate('/tasks');
+  };
+  // Same navigation, but also deep-links straight into the relevant tab (e.g. a meeting opens
+  // directly on "การประชุม" instead of always landing on ภาพรวม first) — see ProjectDetail's own
+  // initialTab prop / AppDataContext's taskSelectedTab for the other half of this.
+  const goToProjectTab = (projectId: string, tab: string) => {
+    setTaskSelectedTab(tab);
+    goToProject(projectId);
+  };
+  // A meeting with a project navigates there (การประชุม tab); one with no project has nowhere to
+  // navigate to, so it opens its own read-only detail view instead (see MeetingDetailModal).
+  const openMeeting = (meeting: Meeting) => {
+    if (meeting.projectId) goToProjectTab(meeting.projectId, 'meetings');
+    else setViewingMeeting(meeting);
   };
 
   const monthsThai = [
@@ -208,7 +244,6 @@ export default function CalendarView({
         title: task.title,
         dueDateISO: task.dueDate,
         startDateISO: task.startDate,
-        recurringPattern: task.recurringPattern,
         colorClasses: getTaskStatusColor(task.status),
         projectLabel: task.project,
       }));
@@ -221,7 +256,6 @@ export default function CalendarView({
         title: t.title,
         dueDateISO: t.dueDateISO as string,
         startDateISO: t.startDateISO ?? null,
-        recurringPattern: 'None',
         colorClasses: 'border',
         colorHex: TASK_STATUS_COLOR[t.status],
         projectLabel: projectById.get(t.projectId)?.title ?? 'ไม่ทราบโครงการ',
@@ -239,22 +273,6 @@ export default function CalendarView({
         if (task.startDateISO <= dateString && task.dueDateISO >= dateString) return true;
       } else if (task.dueDateISO === dateString) {
         return true;
-      }
-
-      // Check recurring weekly (if date matches start day of week)
-      if (task.recurringPattern === 'Weekly' && task.startDateISO) {
-        const startDay = new Date(task.startDateISO).getDay();
-        if (date.getDay() === startDay && dateString >= task.startDateISO) {
-          return true;
-        }
-      }
-
-      // Check recurring monthly (if date matches start date day)
-      if (task.recurringPattern === 'Monthly' && task.startDateISO) {
-        const startDayNum = new Date(task.startDateISO).getDate();
-        if (date.getDate() === startDayNum && dateString >= task.startDateISO) {
-          return true;
-        }
       }
 
       return false;
@@ -379,13 +397,30 @@ export default function CalendarView({
             ) : (
               upcomingItems.map((item) => {
                 if (item.kind === 'task') {
-                  return (
-                    <div key={`t-${item.task.id}`} className="text-xs min-w-0">
+                  // Only a real project_task (item.task.projectId set) has anywhere to navigate to
+                  // — the older, free-text-project Task model has no matching id to link against.
+                  const content = (
+                    <>
                       <p className="font-semibold text-[#272220] truncate flex items-center gap-1">
-                        {item.task.recurringPattern !== 'None' && <RefreshCw size={10} className="shrink-0 text-[#FF6537]" />}
                         {item.task.title}
                       </p>
-                      <p className="text-[11px] text-[#A0A0A0] truncate">{formatThaiDateShort(item.task.dueDateISO)} · {item.task.projectLabel}</p>
+                      <p className={`text-[11px] truncate ${item.task.projectId ? 'text-[#FF6537] group-hover:underline' : 'text-[#A0A0A0]'}`}>
+                        {formatThaiDateShort(item.task.dueDateISO)} · {item.task.projectLabel}
+                      </p>
+                    </>
+                  );
+                  return item.task.projectId ? (
+                    <button
+                      key={`t-${item.task.id}`}
+                      type="button"
+                      onClick={() => goToProjectTab(item.task.projectId!, 'overview')}
+                      className="w-full text-left text-xs min-w-0 group cursor-pointer"
+                    >
+                      {content}
+                    </button>
+                  ) : (
+                    <div key={`t-${item.task.id}`} className="text-xs min-w-0">
+                      {content}
                     </div>
                   );
                 }
@@ -412,22 +447,35 @@ export default function CalendarView({
                 }
                 const project = item.meeting.projectId ? projectById.get(item.meeting.projectId) : undefined;
                 const isCancelled = item.meeting.status === 'cancelled';
+                const isPast = isPastMeeting(item.meeting);
                 return (
-                  <button
-                    key={`m-${item.meeting.id}`}
-                    type="button"
-                    onClick={() => project && goToProject(project.id)}
-                    disabled={!project}
-                    className={`w-full text-left text-xs min-w-0 group ${project ? 'cursor-pointer' : 'cursor-default'} ${isCancelled ? 'opacity-60' : ''}`}
-                  >
-                    <p className="font-semibold text-[#272220] truncate flex items-center gap-1">
-                      {isCancelled ? <Ban size={10} className="shrink-0 text-red-500" /> : <Users2 size={10} className="shrink-0 text-purple-600" />}
-                      <span className={isCancelled ? 'line-through' : ''}>{item.meeting.title}</span>
-                    </p>
-                    <p className={`text-[11px] truncate ${isCancelled ? 'text-red-500' : project ? 'text-[#FF6537] group-hover:underline' : 'text-[#A0A0A0]'}`}>
-                      {isCancelled ? 'ยกเลิกแล้ว' : `${formatThaiDateShort(item.meeting.date)} ${item.meeting.startTime}${project ? ` · ${project.title}` : ''}`}
-                    </p>
-                  </button>
+                  <div key={`m-${item.meeting.id}`} className="w-full flex items-start gap-1 min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => openMeeting(item.meeting)}
+                      className={`flex-1 min-w-0 text-left text-xs group cursor-pointer ${isCancelled || isPast ? 'opacity-60' : ''}`}
+                    >
+                      <p className="font-semibold text-[#272220] truncate flex items-center gap-1">
+                        {isCancelled ? <Ban size={10} className="shrink-0 text-red-500" /> : <Users2 size={10} className="shrink-0 text-purple-600" />}
+                        <span className={isCancelled || isPast ? 'line-through' : ''}>{item.meeting.title}</span>
+                      </p>
+                      <p className={`text-[11px] truncate ${isCancelled ? 'text-red-500' : isPast ? 'text-[#A0A0A0]' : project ? 'text-[#FF6537] group-hover:underline' : 'text-[#A0A0A0] group-hover:text-purple-600'}`}>
+                        {isCancelled ? 'ยกเลิกแล้ว' : isPast ? 'ผ่านไปแล้ว' : `${formatThaiDateShort(item.meeting.date)} ${item.meeting.startTime}${project ? ` · ${project.title}` : ''}`}
+                      </p>
+                    </button>
+                    {!isCancelled && (
+                      <Tooltip content="ยกเลิกประชุม">
+                        <button
+                          type="button"
+                          onClick={() => setCancellingMeeting(item.meeting)}
+                          aria-label="ยกเลิกประชุม"
+                          className="text-[#A0A0A0] hover:text-red-600 cursor-pointer shrink-0"
+                        >
+                          <Ban size={12} />
+                        </button>
+                      </Tooltip>
+                    )}
+                  </div>
                 );
               })
             )}
@@ -531,6 +579,17 @@ export default function CalendarView({
             // grid with the Gantt timeline instead (see the render above the grid).
             const hasProjectDeadlines = filterType === 'All' ? getProjectsOnDate(cell.date) : [];
             const hasAnything = hasTasks.length > 0 || hasMeetings.length > 0 || hasProjectDeadlines.length > 0;
+            // One combined cap across every kind, not a separate 2/2/1 slice per kind — a day with
+            // e.g. 2 tasks + 2 meetings used to be able to show 4 chips at once regardless of how
+            // cramped the cell actually is. Order: tasks, then meetings, then deadlines (unchanged
+            // from before), just sliced together instead of independently.
+            const dayChipItems: DayChipItem[] = [
+              ...hasTasks.map((task): DayChipItem => ({ kind: 'task', key: `t-${task.id}`, task })),
+              ...hasMeetings.map((meeting): DayChipItem => ({ kind: 'meeting', key: `m-${meeting.id}`, meeting })),
+              ...hasProjectDeadlines.map((project): DayChipItem => ({ kind: 'project', key: `p-${project.id}`, project })),
+            ];
+            const visibleDayChips = dayChipItems.slice(0, 2);
+            const hiddenDayChipCount = dayChipItems.length - visibleDayChips.length;
             const isToday = cell.date.toDateString() === new Date().toDateString();
             const isOpen = openDayKey === cell.key;
             // Opens beside the cell, not below it — below used to drop the popover on top of the
@@ -576,55 +635,61 @@ export default function CalendarView({
                     popover carry any overflow reads far more balanced. */}
                 <div className="mt-1.5 flex flex-col gap-1 overflow-hidden flex-1 min-h-0">
 
-                  {/* Tasks deadlining/starting */}
-                  {hasTasks.slice(0, 2).map(task => (
-                    <Tooltip key={task.id} content={`[${task.projectLabel}] ${task.title}`}>
-                      <div
-                        className={`text-[9px] px-1.5 py-0.5 rounded-md border truncate font-medium ${task.colorClasses}`}
-                        style={task.colorHex ? { backgroundColor: `${task.colorHex}1A`, color: task.colorHex, borderColor: `${task.colorHex}33` } : undefined}
-                      >
-                        {task.recurringPattern !== 'None' && (
-                          <RefreshCw size={8} className="inline-block mr-0.5 -mt-0.5 text-[#FF6537]" />
-                        )}
-                        {task.title}
-                      </div>
-                    </Tooltip>
-                  ))}
-
-                  {/* Meetings scheduled */}
-                  {hasMeetings.slice(0, 2).map(meeting => {
-                    const isCancelled = meeting.status === 'cancelled';
-                    return (
-                      <Tooltip key={meeting.id} content={isCancelled ? `ยกเลิกแล้ว: ${meeting.title}` : `${meeting.startTime} ${meeting.title}`}>
-                        <div
-                          className={`text-[9px] px-1.5 py-0.5 rounded-md border truncate font-medium flex items-center gap-0.5 ${
-                            isCancelled ? 'bg-slate-50 text-slate-400 border-slate-200' : 'bg-purple-50 text-purple-700 border-purple-200'
-                          }`}
+                  {/* Up to 2 chips total across every kind (see dayChipItems above), plus one
+                      combined "+N" indicator for whatever didn't fit — replaces the old per-kind
+                      2/2/1 slicing, which could stack up to 4-5 chips into one tiny cell. */}
+                  {visibleDayChips.map((item) => {
+                    if (item.kind === 'task') {
+                      const task = item.task;
+                      return (
+                        <Tooltip key={item.key} content={`[${task.projectLabel}] ${task.title}`}>
+                          <div
+                            className={`text-[9px] px-1.5 py-0.5 rounded-md border truncate font-medium ${task.colorClasses}`}
+                            style={task.colorHex ? { backgroundColor: `${task.colorHex}1A`, color: task.colorHex, borderColor: `${task.colorHex}33` } : undefined}
+                          >
+                            {task.title}
+                          </div>
+                        </Tooltip>
+                      );
+                    }
+                    if (item.kind === 'meeting') {
+                      const meeting = item.meeting;
+                      const isCancelled = meeting.status === 'cancelled';
+                      const isPast = isPastMeeting(meeting);
+                      return (
+                        <Tooltip
+                          key={item.key}
+                          content={isCancelled ? `ยกเลิกแล้ว: ${meeting.title}` : isPast ? `ผ่านไปแล้ว: ${meeting.title}` : `${meeting.startTime} ${meeting.title}`}
                         >
-                          {isCancelled ? <Ban size={9} className="shrink-0" /> : <Users2 size={9} className="shrink-0" />}
-                          <span className={isCancelled ? 'line-through' : ''}>{meeting.startTime} {meeting.title}</span>
+                          <div
+                            className={`text-[9px] px-1.5 py-0.5 rounded-md border truncate font-medium flex items-center gap-0.5 ${
+                              isCancelled || isPast ? 'bg-slate-50 text-slate-400 border-slate-200' : 'bg-purple-50 text-purple-700 border-purple-200'
+                            }`}
+                          >
+                            {isCancelled ? <Ban size={9} className="shrink-0" /> : <Users2 size={9} className="shrink-0" />}
+                            <span className={isCancelled || isPast ? 'line-through' : ''}>{meeting.startTime} {meeting.title}</span>
+                          </div>
+                        </Tooltip>
+                      );
+                    }
+                    const project = item.project;
+                    return (
+                      <Tooltip key={item.key} content={`ครบกำหนดโครงการ: ${project.title}`}>
+                        <div
+                          className="text-[9px] px-1.5 py-0.5 rounded-md border truncate font-medium flex items-center gap-0.5"
+                          style={{ backgroundColor: `${STATUS_DOT[project.status]}1A`, color: STATUS_DOT[project.status], borderColor: `${STATUS_DOT[project.status]}33` }}
+                        >
+                          <Briefcase size={9} className="shrink-0" />
+                          {project.title}
                         </div>
                       </Tooltip>
                     );
                   })}
 
-                  {/* Project deadlines */}
-                  {hasProjectDeadlines.slice(0, 1).map(project => (
-                    <Tooltip key={project.id} content={`ครบกำหนดโครงการ: ${project.title}`}>
-                      <div
-                        className="text-[9px] px-1.5 py-0.5 rounded-md border truncate font-medium flex items-center gap-0.5"
-                        style={{ backgroundColor: `${STATUS_DOT[project.status]}1A`, color: STATUS_DOT[project.status], borderColor: `${STATUS_DOT[project.status]}33` }}
-                      >
-                        <Briefcase size={9} className="shrink-0" />
-                        {project.title}
-                      </div>
-                    </Tooltip>
-                  ))}
-
-                  {/* Excess Tasks hidden indicator */}
-                  {hasTasks.length > 2 && (
+                  {/* Excess items hidden indicator — one combined count, not per-kind */}
+                  {hiddenDayChipCount > 0 && (
                     <div className="text-[8px] text-center text-[#A0A0A0] font-bold bg-slate-50 py-0.2 rounded">
-                      + อีก {hasTasks.length - 2} งาน
+                      +{hiddenDayChipCount}
                     </div>
                   )}
 
@@ -664,7 +729,6 @@ export default function CalendarView({
                               </span>
                               <div className="min-w-0 text-xs">
                                 <p className="font-semibold text-[#272220] flex items-center gap-1">
-                                  {task.recurringPattern !== 'None' && <RefreshCw size={10} className="shrink-0 text-[#FF6537]" />}
                                   {task.title}
                                 </p>
                                 <p className="text-[11px] text-[#A0A0A0] mt-0.5">โครงการ: {task.projectLabel}</p>
@@ -684,33 +748,48 @@ export default function CalendarView({
                           {hasMeetings.map((meeting) => {
                             const project = meeting.projectId ? projectById.get(meeting.projectId) : undefined;
                             const isCancelled = meeting.status === 'cancelled';
+                            const isPast = isPastMeeting(meeting);
                             return (
-                              <button
+                              <div
                                 key={meeting.id}
-                                type="button"
-                                onClick={() => project && goToProject(project.id)}
-                                disabled={!project}
-                                className={`w-full flex items-start gap-2 p-2 rounded-lg bg-slate-50 text-left transition-colors ${
-                                  isCancelled ? 'opacity-60' : project ? 'hover:bg-purple-50 cursor-pointer group' : 'cursor-default'
-                                }`}
+                                className={`w-full flex items-start gap-1 p-2 rounded-lg bg-slate-50 transition-colors ${isCancelled || isPast ? 'opacity-60' : 'hover:bg-purple-50'}`}
                               >
-                                <span className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${isCancelled ? 'bg-red-50 text-red-500' : 'bg-purple-50 text-purple-600'}`}>
-                                  {isCancelled ? <Ban size={12} /> : <Users2 size={12} />}
-                                </span>
-                                <div className="min-w-0 flex-1 text-xs">
-                                  <p className={`font-semibold text-[#272220] ${isCancelled ? 'line-through' : ''}`}>{meeting.startTime} {meeting.title}</p>
-                                  {isCancelled ? (
-                                    <p className="text-[11px] text-red-500 font-medium mt-0.5">
-                                      ยกเลิกแล้ว{meeting.cancellationReason ? `: ${meeting.cancellationReason}` : ''}
-                                    </p>
-                                  ) : project ? (
-                                    <p className="text-[11px] text-[#FF6537] font-medium mt-0.5 group-hover:underline">โครงการ: {project.title}</p>
-                                  ) : (
-                                    <p className="text-[11px] text-[#A0A0A0] mt-0.5">ไม่ได้ผูกกับโครงการ</p>
-                                  )}
-                                </div>
-                                {project && !isCancelled && <ChevronRight size={14} className="shrink-0 text-purple-400 mt-1 group-hover:text-purple-600" />}
-                              </button>
+                                <button
+                                  type="button"
+                                  onClick={() => openMeeting(meeting)}
+                                  className="flex items-start gap-2 flex-1 min-w-0 text-left cursor-pointer group"
+                                >
+                                  <span className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${isCancelled ? 'bg-red-50 text-red-500' : isPast ? 'bg-slate-100 text-slate-400' : 'bg-purple-50 text-purple-600'}`}>
+                                    {isCancelled ? <Ban size={12} /> : <Users2 size={12} />}
+                                  </span>
+                                  <div className="min-w-0 flex-1 text-xs">
+                                    <p className={`font-semibold text-[#272220] ${isCancelled || isPast ? 'line-through' : ''}`}>{meeting.startTime} {meeting.title}</p>
+                                    {isCancelled ? (
+                                      <p className="text-[11px] text-red-500 font-medium mt-0.5">
+                                        ยกเลิกแล้ว{meeting.cancellationReason ? `: ${meeting.cancellationReason}` : ''}
+                                      </p>
+                                    ) : isPast ? (
+                                      <p className="text-[11px] text-[#A0A0A0] mt-0.5">ผ่านไปแล้ว</p>
+                                    ) : project ? (
+                                      <p className="text-[11px] text-[#FF6537] font-medium mt-0.5 group-hover:underline">โครงการ: {project.title}</p>
+                                    ) : (
+                                      <p className="text-[11px] text-[#A0A0A0] group-hover:text-purple-600 mt-0.5">ไม่ได้ผูกกับโครงการ · ดูรายละเอียด</p>
+                                    )}
+                                  </div>
+                                </button>
+                                {!isCancelled && (
+                                  <Tooltip content="ยกเลิกประชุม">
+                                    <button
+                                      type="button"
+                                      onClick={() => setCancellingMeeting(meeting)}
+                                      aria-label="ยกเลิกประชุม"
+                                      className="text-[#A0A0A0] hover:text-red-600 cursor-pointer shrink-0 p-1"
+                                    >
+                                      <Ban size={13} />
+                                    </button>
+                                  </Tooltip>
+                                )}
+                              </div>
                             );
                           })}
                         </div>
@@ -794,10 +873,6 @@ export default function CalendarView({
             <Briefcase size={12} className="text-[#6F6F6F]" />
             <span>ครบกำหนดโครงการ</span>
           </div>
-          <div className="flex items-center gap-1.5">
-            <RefreshCw size={12} className="text-[#FF6537]" />
-            <span>ตารางงานแบบเกิดซ้ำ (Weekly/Monthly)</span>
-          </div>
         </div>
         </>
         )}
@@ -811,6 +886,18 @@ export default function CalendarView({
         employees={employees}
         currentUserId={currentUser?.id ?? ''}
         onAddMeeting={handleAddMeeting}
+      />
+
+      <CancelMeetingModal
+        meeting={cancellingMeeting}
+        onClose={() => setCancellingMeeting(null)}
+        onConfirm={handleUpdateMeeting}
+      />
+
+      <MeetingDetailModal
+        meeting={viewingMeeting}
+        employees={employees}
+        onClose={() => setViewingMeeting(null)}
       />
 
     </div>

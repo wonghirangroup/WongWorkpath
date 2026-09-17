@@ -21,7 +21,7 @@ import {
   roleExemptFromDepartment,
 } from './EmployeeFormShared';
 
-type EmployeeUpdatePayload = Partial<Pick<Employee, 'name' | 'nickname' | 'role' | 'avatar' | 'department' | 'division' | 'username' | 'accountType' | 'restrictedMenuIds' | 'phone' | 'address'>> & { password?: string };
+type EmployeeUpdatePayload = Partial<Pick<Employee, 'name' | 'nickname' | 'role' | 'avatar' | 'department' | 'division' | 'username' | 'accountType' | 'restrictedMenuIds' | 'phone'>> & { password?: string };
 
 interface EmployeeProfileModalProps {
   employee: Employee;
@@ -83,7 +83,6 @@ export default function EmployeeProfileModal({
   const [nickname, setNickname] = useState(employee.nickname || employee.name);
   const [username, setUsername] = useState(employee.username || '');
   const [phone, setPhone] = useState(employee.phone || '');
-  const [address, setAddress] = useState(employee.address || '');
   const [role, setRole] = useState(employee.role);
   const [division, setDivision] = useState<Division>(employee.division || orgDivisions[0]?.name || '');
   const [department, setDepartment] = useState<string>(() => {
@@ -116,7 +115,6 @@ export default function EmployeeProfileModal({
     setNickname(employee.nickname || employee.name);
     setUsername(employee.username || '');
     setPhone(employee.phone || '');
-    setAddress(employee.address || '');
     setRole(employee.role);
     const initialDivision = employee.division || orgDivisions[0]?.name || '';
     setDivision(initialDivision);
@@ -159,7 +157,6 @@ export default function EmployeeProfileModal({
         accountType,
         restrictedMenuIds,
         phone: phone.trim() || undefined,
-        address: address.trim() || undefined,
       });
       setPassword('');
       setMode('view');
@@ -320,16 +317,6 @@ export default function EmployeeProfileModal({
                     />
                   </InfoRow>
                   )}
-
-                  <InfoRow label="ที่อยู่" value={address} editing={mode === 'edit'}>
-                    <textarea
-                      value={address}
-                      onChange={(e) => setAddress(e.target.value)}
-                      rows={2}
-                      placeholder="ที่อยู่ปัจจุบัน"
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#FF6537] resize-none"
-                    />
-                  </InfoRow>
                 </div>
 
                 <div className="space-y-3">

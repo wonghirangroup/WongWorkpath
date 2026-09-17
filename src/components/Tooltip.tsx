@@ -30,10 +30,9 @@ const ENTER_OFFSET: Record<Placement, { x: number; y: number }> = {
   right: { x: -4, y: 0 },
 };
 
-// Hover-triggered tooltip on the app's existing dark surface (bg-slate-900, the same one the
-// success toasts across DocVault/CredentialVault/ProjectBoard already use) scaled down to tooltip
-// sizing — the app-wide replacement for the browser's native `title` box. State-driven rather than
-// CSS group-hover so it animates in and out through motion/react like every other popover here.
+// Hover-triggered tooltip on a plain black surface, scaled down to tooltip sizing — the app-wide
+// replacement for the browser's native `title` box. State-driven rather than CSS group-hover so
+// it animates in and out through motion/react like every other popover here.
 //
 // The wrapper is a `display: contents` span (a span, not a div, so it's valid even inside a <p> or
 // <button>), so wrapping a trigger never changes layout — an absolutely
@@ -114,9 +113,9 @@ export default function Tooltip({ children, content, placement = 'top' }: Toolti
               style={{ position: 'fixed', top: bubbleStyle.top, left: bubbleStyle.left }}
               className="z-70 pointer-events-none"
             >
-              <div ref={bubbleRef} className="relative w-max max-w-xs bg-slate-900 text-white text-xs font-normal px-3 py-2 rounded-md shadow-md wrap-break-word">
+              <div ref={bubbleRef} className="relative w-max max-w-xs bg-black text-white text-xs font-normal px-3 py-2 rounded-md shadow-md wrap-break-word">
                 {content}
-                <span className={`absolute w-2 h-2 bg-slate-900 rotate-45 ${ARROW_POSITION[placement]}`} />
+                <span className={`absolute w-2 h-2 bg-black rotate-45 ${ARROW_POSITION[placement]}`} />
               </div>
             </motion.div>
           )}

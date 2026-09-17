@@ -3,10 +3,10 @@ import { Eye, Trash2 } from 'lucide-react';
 import { Employee } from '../../types';
 import { ProjectRow, ProjectPriority } from './types';
 import { STATUS_DOT, STATUS_LABEL, STATUS_PILL, STATUS_ICON, PROJECT_PRIORITY_META } from './statusMeta';
-import { getAvatarColor } from '../../lib/avatarColor';
-import { displayName } from './CreateProjectModal';
+import { isOwner } from '../../lib/ownership';
 import Dropdown from '../Dropdown';
 import Tooltip from '../Tooltip';
+import PeopleCell from './PeopleCell';
 
 // Dropdown is generic over string values only, so the numeric 1-5 scale is represented as
 // strings here and converted back to a number right at the onUpdatePriority call site below.
@@ -39,9 +39,10 @@ interface ProjectTableProps {
   canDelete: boolean;
   onDelete: (row: ProjectRow) => void;
   onUpdatePriority: (row: ProjectRow, priority: ProjectPriority) => void;
+  currentUserId: string;
 }
 
-export default function ProjectTable({ rows, employees, onViewDetail, canDelete, onDelete, onUpdatePriority }: ProjectTableProps) {
+export default function ProjectTable({ rows, employees, onViewDetail, canDelete, onDelete, onUpdatePriority, currentUserId }: ProjectTableProps) {
   // Same live-measurement technique as EmployeeManagement's table wrapper — a hardcoded
   // calc(100vh - Npx) guess drifts whenever the toolbar/status-cards above it change height, so
   // this keeps the table's bottom edge matching the sidebar's real bottom edge instead of
@@ -87,8 +88,7 @@ export default function ProjectTable({ rows, employees, onViewDetail, canDelete,
             const StatusIcon = STATUS_ICON[row.status];
             const showDueWarning = row.daysUntilDue !== undefined && row.daysUntilDue <= 2;
             const accentColor = rowAccentColor(row);
-            const owner = row.ownerEmployeeId ? employees.find((e) => e.id === row.ownerEmployeeId) : undefined;
-            const ownerName = owner ? displayName(owner) : null;
+            const owners = row.ownerEmployeeIds.map((id) => employees.find((e) => e.id === id)).filter((e): e is Employee => Boolean(e));
             return (
               <tr key={row.id} className="border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50">
                 <td className="py-4">
@@ -111,35 +111,19 @@ export default function ProjectTable({ rows, employees, onViewDetail, canDelete,
                 <td className="px-4 py-4 text-[#272220]">{formatBudget(row.budget)}</td>
                 <td className="px-4 py-4 whitespace-nowrap">
                   <div className="w-28">
-                    <Dropdown
-                      value={row.priority !== undefined ? String(row.priority) : ''}
-                      options={PRIORITY_DROPDOWN_OPTIONS}
-                      onChange={(value) => onUpdatePriority(row, Number(value) as ProjectPriority)}
-                      placeholder="ยังไม่มี"
-                    />
+                    <Tooltip content={isOwner(row.ownerEmployeeIds, currentUserId) ? undefined : 'ต้องขออนุมัติจากผู้รับผิดชอบก่อน — แก้ไขผ่านหน้ารายละเอียดโครงการ'}>
+                      <Dropdown
+                        value={row.priority !== undefined ? String(row.priority) : ''}
+                        options={PRIORITY_DROPDOWN_OPTIONS}
+                        onChange={(value) => onUpdatePriority(row, Number(value) as ProjectPriority)}
+                        placeholder="ยังไม่มี"
+                        disabled={!isOwner(row.ownerEmployeeIds, currentUserId)}
+                      />
+                    </Tooltip>
                   </div>
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap">
-                  {owner && ownerName ? (
-                    <div className="flex items-center gap-2.5">
-                      {owner.avatar ? (
-                        <img src={owner.avatar} alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
-                      ) : (
-                        <div
-                          className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
-                          style={{ backgroundColor: getAvatarColor(ownerName) }}
-                        >
-                          {ownerName.trim().charAt(0).toUpperCase()}
-                        </div>
-                      )}
-                      <div className="min-w-0">
-                        <p className="text-[#272220] font-medium truncate">{ownerName}</p>
-                        <p className="text-[11px] text-[#A0A0A0] truncate">{owner.role}</p>
-                      </div>
-                    </div>
-                  ) : (
-                    <span className="text-[#6F6F6F]">ยังไม่มี</span>
-                  )}
+                  <PeopleCell people={owners} size={32} showRole />
                 </td>
                 <td className="px-4 py-4">
                   {row.progress === null ? (

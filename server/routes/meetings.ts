@@ -15,6 +15,7 @@ interface MeetingRowDb extends RowDataPacket {
   end_time: string | null;
   attendee_ids: string | null;
   location: string | null;
+  meeting_link: string | null;
   created_by: string | null;
   status: 'scheduled' | 'cancelled';
   cancellation_reason: string | null;
@@ -39,13 +40,14 @@ function toMeeting(r: MeetingRowDb) {
     endTime: r.end_time ?? undefined,
     attendeeIds: r.attendee_ids ? JSON.parse(r.attendee_ids) : [],
     location: r.location ?? undefined,
+    meetingLink: r.meeting_link ?? undefined,
     createdBy: r.created_by ?? undefined,
     status: r.status,
     cancellationReason: r.cancellation_reason ?? undefined,
   };
 }
 
-const SELECT_FIELDS = `id, project_id, title, description, date, start_time, end_time, attendee_ids, location, created_by, status, cancellation_reason`;
+const SELECT_FIELDS = `id, project_id, title, description, date, start_time, end_time, attendee_ids, location, meeting_link, created_by, status, cancellation_reason`;
 
 meetingsRouter.get('/', async (_req, res) => {
   try {
@@ -74,12 +76,12 @@ meetingsRouter.post('/', async (req, res) => {
     const now = nowBangkokDateTime();
     await pool.query(
       `INSERT INTO meeting
-         (id, project_id, title, description, date, start_time, end_time, attendee_ids, location, created_by, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, project_id, title, description, date, start_time, end_time, attendee_ids, location, meeting_link, created_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id, m.projectId || null, m.title.trim(), m.description?.trim() || null, m.date, m.startTime,
         m.endTime || null, attendeeIds.length ? JSON.stringify(attendeeIds) : null, m.location?.trim() || null,
-        m.createdBy || null, now, now,
+        m.meetingLink?.trim() || null, m.createdBy || null, now, now,
       ]
     );
 
@@ -108,6 +110,7 @@ meetingsRouter.put('/:id', async (req, res) => {
     values.push(attendeeIds.length ? JSON.stringify(attendeeIds) : null);
   }
   if ('location' in m) { fields.push('location = ?'); values.push(m.location?.trim() || null); }
+  if ('meetingLink' in m) { fields.push('meeting_link = ?'); values.push(m.meetingLink?.trim() || null); }
 
   // Cancelling always requires a reason — set together in the same request so a meeting can
   // never end up cancelled with no explanation on record.

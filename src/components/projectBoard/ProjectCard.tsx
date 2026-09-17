@@ -68,11 +68,19 @@ export default function ProjectCard({ row, employees, onViewDetail }: ProjectCar
   const pill = STATUS_PILL[row.status];
   const StatusIcon = STATUS_ICON[row.status];
   const showDueWarning = row.daysUntilDue !== undefined && row.daysUntilDue <= 2;
-  const owner = row.ownerEmployeeId ? employees.find((e) => e.id === row.ownerEmployeeId) : undefined;
+  const owners = row.ownerEmployeeIds.map((id) => employees.find((e) => e.id === id)).filter((e): e is Employee => Boolean(e));
+  const [owner, ...restOwners] = owners;
   const ownerName = owner ? displayName(owner) : null;
+  const ownerNamesLabel = owners.length > 0 ? owners.map((o) => displayName(o)).join(', ') : null;
 
+  // Whole-card onClick (not role="button"/tabIndex) so mouse users get the click target the
+  // hover-lift already implies, without creating a second, redundant focus stop alongside the
+  // real "ดูรายละเอียด" button below — that button stays the one keyboard/screen-reader path in.
   return (
-    <div className="relative bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] p-5 space-y-3 hover:-translate-y-1 hover:shadow-lg transition-all">
+    <div
+      onClick={onViewDetail}
+      className="relative bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] p-5 space-y-3 hover:-translate-y-1 hover:shadow-lg transition-all cursor-pointer"
+    >
       {showDueWarning && (
         <Tooltip content={row.daysUntilDue! < 0 ? 'เลยกำหนดแล้ว' : `ใกล้ครบกำหนด (อีก ${row.daysUntilDue} วัน)`}>
           <div
@@ -101,7 +109,7 @@ export default function ProjectCard({ row, employees, onViewDetail }: ProjectCar
       <div className="flex items-center gap-4 pt-1 border-t border-slate-50">
         <ProgressRing progress={row.progress ?? 0} color={ringColor} />
         <div className="flex-1 min-w-0 space-y-1.5">
-          <InfoRow label="ผู้รับผิดชอบหลัก" value={ownerName ?? 'ยังไม่มี'} />
+          <InfoRow label="ผู้รับผิดชอบหลัก" value={ownerNamesLabel ?? 'ยังไม่มี'} />
           <InfoRow label="งบประมาณ" value={formatBudget(row.budget)} />
           <InfoRow label="วันที่เริ่ม" value={row.startDate ?? 'ยังไม่มี'} />
           <InfoRow
@@ -115,20 +123,25 @@ export default function ProjectCard({ row, employees, onViewDetail }: ProjectCar
 
       <div className="flex items-center justify-between pt-2 border-t border-slate-50">
         {owner && ownerName ? (
-          owner.avatar ? (
-            <Tooltip content={ownerName}>
-              <img src={owner.avatar} alt="" className="w-8 h-8 rounded-full object-cover ring-2 ring-white shrink-0" />
-            </Tooltip>
-          ) : (
-            <Tooltip content={ownerName}>
-              <div
-                className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ring-2 ring-white shrink-0"
-                style={{ backgroundColor: getAvatarColor(ownerName) }}
-              >
-                {ownerName.trim().charAt(0).toUpperCase()}
-              </div>
-            </Tooltip>
-          )
+          <Tooltip content={ownerNamesLabel ?? ownerName}>
+            <span className="flex items-center -space-x-2 shrink-0">
+              {owner.avatar ? (
+                <img src={owner.avatar} alt="" className="w-8 h-8 rounded-full object-cover ring-2 ring-white shrink-0" />
+              ) : (
+                <div
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ring-2 ring-white shrink-0"
+                  style={{ backgroundColor: getAvatarColor(ownerName) }}
+                >
+                  {ownerName.trim().charAt(0).toUpperCase()}
+                </div>
+              )}
+              {restOwners.length > 0 && (
+                <span className="w-8 h-8 rounded-full bg-slate-200 text-slate-600 text-[10px] font-bold flex items-center justify-center ring-2 ring-white shrink-0">
+                  +{restOwners.length}
+                </span>
+              )}
+            </span>
+          </Tooltip>
         ) : (
           <span className="text-xs text-[#A0A0A0]">ยังไม่มีผู้รับผิดชอบ</span>
         )}

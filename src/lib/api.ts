@@ -165,7 +165,7 @@ export async function fetchProjects(): Promise<ProjectRow[]> {
 }
 
 export type CreateProjectPayload = Partial<
-  Pick<ProjectRow, 'title' | 'description' | 'department' | 'type' | 'abbreviation' | 'priority' | 'budget' | 'ownerEmployeeId' | 'memberEmployeeIds' | 'memberDuties' | 'docFolderId' | 'progress' | 'status'>
+  Pick<ProjectRow, 'title' | 'description' | 'department' | 'type' | 'abbreviation' | 'priority' | 'budget' | 'ownerEmployeeIds' | 'memberEmployeeIds' | 'memberDuties' | 'docFolderId' | 'progress' | 'status'>
 > & { title: string; startDate?: string | null; endDate?: string | null; createdBy?: string | null };
 
 export async function createProject(payload: CreateProjectPayload): Promise<ProjectRow> {
@@ -187,13 +187,16 @@ export async function createProject(payload: CreateProjectPayload): Promise<Proj
   return data as ProjectRow;
 }
 
-export async function updateProjectRemote(id: string, updates: Partial<ProjectRow>): Promise<ProjectRow> {
+// actorEmployeeId lets the server's ownership gate tell "an owner editing" apart from "someone
+// else editing" once the project has ≥1 owner — see server/routes/projects.ts. A 409 here means
+// the caller isn't an owner and must go through createChangeRequest instead.
+export async function updateProjectRemote(id: string, updates: Partial<ProjectRow>, actorEmployeeId: string): Promise<ProjectRow> {
   let res: Response;
   try {
     res = await fetch(`${API_BASE_URL}/api/projects/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates),
+      body: JSON.stringify({ ...updates, actorEmployeeId }),
     });
   } catch {
     throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
@@ -206,10 +209,10 @@ export async function updateProjectRemote(id: string, updates: Partial<ProjectRo
   return data as ProjectRow;
 }
 
-export async function deleteProjectRemote(id: string): Promise<void> {
+export async function deleteProjectRemote(id: string, actorEmployeeId: string): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}/api/projects/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    res = await fetch(`${API_BASE_URL}/api/projects/${encodeURIComponent(id)}?actorEmployeeId=${encodeURIComponent(actorEmployeeId)}`, { method: 'DELETE' });
   } catch {
     throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
   }
@@ -338,13 +341,16 @@ export async function createProjectTask(task: Omit<ProjectTaskItem, 'id'>): Prom
   return data as ProjectTaskItem;
 }
 
-export async function updateProjectTaskRemote(id: string, updates: Partial<ProjectTaskItem>): Promise<ProjectTaskItem> {
+// actorEmployeeId lets the server's ownership gate tell "an assignee editing" apart from "someone
+// else editing" once the task has ≥1 assignee — see server/routes/project-tasks.ts. A 409 here
+// means the caller isn't an assignee and must go through createChangeRequest instead.
+export async function updateProjectTaskRemote(id: string, updates: Partial<ProjectTaskItem>, actorEmployeeId: string): Promise<ProjectTaskItem> {
   let res: Response;
   try {
     res = await fetch(`${API_BASE_URL}/api/project-tasks/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates),
+      body: JSON.stringify({ ...updates, actorEmployeeId }),
     });
   } catch {
     throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
@@ -357,10 +363,10 @@ export async function updateProjectTaskRemote(id: string, updates: Partial<Proje
   return data as ProjectTaskItem;
 }
 
-export async function deleteProjectTaskRemote(id: string): Promise<void> {
+export async function deleteProjectTaskRemote(id: string, actorEmployeeId: string): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}/api/project-tasks/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    res = await fetch(`${API_BASE_URL}/api/project-tasks/${encodeURIComponent(id)}?actorEmployeeId=${encodeURIComponent(actorEmployeeId)}`, { method: 'DELETE' });
   } catch {
     throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
   }
@@ -406,4 +412,77 @@ export async function markAllNotificationsRead(employeeId: string): Promise<void
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ employeeId }),
   });
+}
+
+// Filed whenever someone who isn't one of a project's/task's current owners tries to edit or
+// delete it — see server/routes/change-requests.ts. Any one of the entity's owners approving is
+// enough (equal authority, first-decision-wins), same as the existing task-reviewer pattern.
+export interface ChangeRequest {
+  id: string;
+  entityType: 'project' | 'project_task';
+  entityId: string;
+  requestType: 'edit' | 'delete';
+  proposedChanges?: Record<string, unknown>;
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected';
+  requestedBy?: string;
+  requestedAt: string;
+  decidedBy?: string;
+  decidedAt?: string;
+  decisionNote?: string;
+}
+
+export async function fetchChangeRequests(filter?: { entityType: 'project' | 'project_task'; entityId: string }): Promise<ChangeRequest[]> {
+  const query = filter ? `?entityType=${encodeURIComponent(filter.entityType)}&entityId=${encodeURIComponent(filter.entityId)}` : '';
+  const res = await fetch(`${API_BASE_URL}/api/change-requests${query}`);
+  if (!res.ok) throw new Error(`Failed to fetch change requests: ${res.status}`);
+  return res.json();
+}
+
+export async function createChangeRequest(payload: {
+  entityType: 'project' | 'project_task';
+  entityId: string;
+  requestType: 'edit' | 'delete';
+  proposedChanges?: Record<string, unknown>;
+  reason: string;
+  requestedBy: string;
+}): Promise<ChangeRequest> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/change-requests`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(data.message ?? 'ส่งคำขอไม่สำเร็จ', res.status);
+  }
+  return data as ChangeRequest;
+}
+
+export async function decideChangeRequest(
+  id: string,
+  decision: 'approve' | 'reject',
+  decidedBy: string,
+  note?: string
+): Promise<ChangeRequest> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/change-requests/${encodeURIComponent(id)}/decide`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ decision, decidedBy, note }),
+    });
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(data.message ?? 'บันทึกผลการพิจารณาไม่สำเร็จ', res.status);
+  }
+  return data as ChangeRequest;
 }

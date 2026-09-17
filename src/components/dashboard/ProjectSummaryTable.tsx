@@ -1,9 +1,8 @@
 import { Employee } from '../../types';
 import { ProjectRow } from '../projectBoard/types';
 import { STATUS_LABEL, STATUS_PILL, STATUS_ICON, STATUS_DOT } from '../projectBoard/statusMeta';
-import { displayName } from '../projectBoard/CreateProjectModal';
-import { getAvatarColor } from '../../lib/avatarColor';
 import Tooltip from '../Tooltip';
+import PeopleCell from '../projectBoard/PeopleCell';
 
 function formatBaht(n: number): string {
   return `฿${Math.round(n).toLocaleString('th-TH')}`;
@@ -79,7 +78,7 @@ export default function ProjectSummaryTable({ projects, employees, onSelectProje
             </thead>
             <tbody>
               {filtered.map((p) => {
-                const owner = p.ownerEmployeeId ? employeeById.get(p.ownerEmployeeId) : undefined;
+                const owners = p.ownerEmployeeIds.map((id) => employeeById.get(id)).filter((e): e is Employee => Boolean(e));
                 const StatusIcon = STATUS_ICON[p.status];
                 const overdue = p.daysUntilDue !== undefined && p.daysUntilDue < 0;
                 return (
@@ -94,23 +93,7 @@ export default function ProjectSummaryTable({ projects, employees, onSelectProje
                       </Tooltip>
                     </td>
                     <td className="py-2.5 pr-3">
-                      {owner ? (
-                        <span className="flex items-center gap-1.5 min-w-0">
-                          {owner.avatar ? (
-                            <img src={owner.avatar} alt="" className="w-6 h-6 rounded-full object-cover shrink-0" />
-                          ) : (
-                            <span
-                              className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-bold shrink-0"
-                              style={{ backgroundColor: getAvatarColor(displayName(owner)) }}
-                            >
-                              {displayName(owner).trim().charAt(0).toUpperCase()}
-                            </span>
-                          )}
-                          <span className="truncate text-xs text-[#272220]">{displayName(owner)}</span>
-                        </span>
-                      ) : (
-                        <span className="text-xs text-[#A0A0A0]">ไม่ระบุ</span>
-                      )}
+                      <PeopleCell people={owners} size={24} />
                     </td>
                     <td className="py-2.5 pr-3 whitespace-nowrap">
                       <p className="text-xs text-[#272220]">{p.endDate ?? 'ไม่ระบุ'}</p>

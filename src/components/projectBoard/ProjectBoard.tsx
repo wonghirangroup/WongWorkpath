@@ -7,6 +7,7 @@ import { useAppData } from '../../context/AppDataContext';
 import { Employee } from '../../types';
 import { canDeleteProject } from '../../lib/permissions';
 import { ApiError } from '../../lib/api';
+import { isOwner } from '../../lib/ownership';
 import { buildCsv, downloadCsv } from '../../lib/csv';
 import { useEscapeToClose } from '../../lib/useEscapeToClose';
 import { ProjectRow, ProjectStatus } from './types';
@@ -119,6 +120,7 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
   useEscapeToClose(Boolean(deleteTarget), () => setDeleteTarget(null));
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  const [deleteReason, setDeleteReason] = useState('');
   // Lives in AppDataContext (not local state) so the Header can render the current project's
   // title as a breadcrumb subtitle — same pattern as the Docs page's docCurrentFolderId.
   const {
@@ -126,6 +128,8 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
     projectTasks,
     taskSelectedProjectId,
     setTaskSelectedProjectId,
+    taskSelectedTab,
+    setTaskSelectedTab,
     meetings,
     handleAddMeeting,
     handleUpdateMeeting,
@@ -138,6 +142,11 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
     handleAddProjectTask,
     handleUpdateProjectTask,
     handleDeleteProjectTask,
+    changeRequests,
+    handleRequestChange,
+    handleDecideChangeRequest,
+    documents,
+    handleAddDocument,
     currentUser,
   } = useAppData();
   const selectedProject = projects.find((p) => p.id === taskSelectedProjectId) ?? null;
@@ -145,15 +154,34 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
 
   const canDelete = currentUser ? canDeleteProject(currentUser) : false;
 
+  // canDelete (role-based) decides who even sees the delete icon at all; ownership decides whether
+  // that click deletes right away or has to go through the same request/approve flow as everyone
+  // else editing an owned project — the two checks are independent (see the plan's design decision 3).
+  const deleteTargetProject = deleteTarget ? projects.find((p) => p.id === deleteTarget.id) : undefined;
+  const deleteCanDirectly = !deleteTargetProject || isOwner(deleteTargetProject.ownerEmployeeIds, currentUserId);
+  const deletePendingRequest = deleteTarget
+    ? changeRequests.find((r) => r.entityType === 'project' && r.entityId === deleteTarget.id && r.status === 'pending')
+    : undefined;
+
+  const closeDeleteModal = () => {
+    setDeleteTarget(null);
+    setDeleteReason('');
+    setDeleteError('');
+  };
+
   const confirmDelete = async () => {
     if (!deleteTarget) return;
     setIsDeleting(true);
     setDeleteError('');
     try {
-      await handleDeleteProject(deleteTarget.id);
-      setDeleteTarget(null);
+      if (deleteCanDirectly) {
+        await handleDeleteProject(deleteTarget.id);
+      } else {
+        await handleRequestChange('project', deleteTarget.id, 'delete', undefined, deleteReason.trim());
+      }
+      closeDeleteModal();
     } catch (err) {
-      setDeleteError(err instanceof ApiError ? err.message : 'ลบโครงการไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+      setDeleteError(err instanceof ApiError ? err.message : deleteCanDirectly ? 'ลบโครงการไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' : 'ส่งคำขอไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
     } finally {
       setIsDeleting(false);
     }
@@ -213,12 +241,21 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
     if (currentPage > totalPages) setCurrentPage(totalPages);
   }, [currentPage, totalPages]);
 
+  // taskSelectedTab is a one-shot deep-link (e.g. clicking a meeting on the Calendar page opens
+  // straight to ProjectDetail's "การประชุม" tab) — ProjectDetail's own `useState(initialTab ?? ...)`
+  // already latched it as its starting tab by the time this runs, so it's safe to clear here
+  // right after, or a later re-entry into a project (without an explicit tab request) would
+  // wrongly reopen on whatever tab was last deep-linked to.
+  useEffect(() => {
+    if (selectedProject && taskSelectedTab) setTaskSelectedTab(null);
+  }, [selectedProject, taskSelectedTab, setTaskSelectedTab]);
+
   // Exports the currently-filtered result set (not just the current page) — a report should
   // reflect what the user searched/filtered for, not an incidental screen-sized slice of it.
   const handleExportCsv = () => {
     const headers = ['รหัส', 'เรื่อง', 'รายละเอียด', 'ประเภทโครงการ', 'ตัวย่อชื่อโครงการ', 'งบประมาณ', 'ระดับความสำคัญ', 'ผู้รับผิดชอบหลัก', 'ความคืบหน้า (%)', 'วันที่เริ่ม', 'วันที่สิ้นสุด', 'สร้างเมื่อ', 'สถานะ'];
     const rows = filteredRows.map((row) => {
-      const owner = row.ownerEmployeeId ? employees.find((e) => e.id === row.ownerEmployeeId) : undefined;
+      const owners = row.ownerEmployeeIds.map((id) => employees.find((e) => e.id === id)).filter((e): e is Employee => Boolean(e));
       return [
         row.code,
         row.title,
@@ -227,7 +264,7 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
         row.abbreviation ?? '',
         row.budget ?? '',
         row.priority ? PROJECT_PRIORITY_META[row.priority].label : '',
-        owner ? displayName(owner) : '',
+        owners.map((o) => displayName(o)).join(', '),
         row.progress ?? '',
         row.startDate ?? '',
         row.endDate ?? '',
@@ -246,6 +283,7 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
         meetings={meetings}
         employees={employees}
         currentUserId={currentUserId}
+        initialTab={taskSelectedTab}
         onAddTask={handleAddProjectTask}
         onUpdateTask={handleUpdateProjectTask}
         onDeleteTask={handleDeleteProjectTask}
@@ -255,6 +293,11 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
         onUpdateProject={(updates) => handleUpdateProject(selectedProject.id, updates)}
         existingProjectTitles={projects.map((p) => p.title)}
         customStatuses={customProjectStatuses}
+        changeRequests={changeRequests}
+        onRequestChange={handleRequestChange}
+        onDecideChangeRequest={handleDecideChangeRequest}
+        documents={documents}
+        onAddDocument={handleAddDocument}
       />
     );
   }
@@ -417,6 +460,7 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
               canDelete={canDelete}
               onDelete={(row) => setDeleteTarget({ id: row.id, title: row.title })}
               onUpdatePriority={(row, priority) => handleUpdateProject(row.id, { priority })}
+              currentUserId={currentUserId}
             />
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -480,7 +524,7 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
               <motion.div
                 className="absolute inset-0 bg-black/15 backdrop-blur-sm"
-                onClick={() => setDeleteTarget(null)}
+                onClick={closeDeleteModal}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
@@ -495,12 +539,32 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
               >
                 <div className="flex justify-between items-center pb-2 border-b border-slate-100">
                   <h3 className="text-sm font-bold text-slate-800">ลบโครงการ</h3>
-                  <button type="button" onClick={() => setDeleteTarget(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X size={18} /></button>
+                  <button type="button" onClick={closeDeleteModal} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X size={18} /></button>
                 </div>
 
-                <p className="text-xs text-slate-600">
-                  ยืนยันการลบโครงการ <span className="font-bold text-slate-800">"{deleteTarget?.title}"</span> ออกจากระบบถาวร — ไม่สามารถกู้คืนได้
-                </p>
+                {deletePendingRequest ? (
+                  <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    มีคำขอลบรออนุมัติอยู่แล้วสำหรับ "{deleteTarget?.title}" — เหตุผล: {deletePendingRequest.reason}
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-xs text-slate-600">
+                      {deleteCanDirectly
+                        ? <>ยืนยันการลบโครงการ <span className="font-bold text-slate-800">"{deleteTarget?.title}"</span> ออกจากระบบถาวร — ไม่สามารถกู้คืนได้</>
+                        : <>โครงการ <span className="font-bold text-slate-800">"{deleteTarget?.title}"</span> มีผู้รับผิดชอบหลักแล้ว ต้องขออนุมัติก่อนจึงจะลบได้</>}
+                    </p>
+
+                    {!deleteCanDirectly && (
+                      <textarea
+                        rows={2}
+                        value={deleteReason}
+                        onChange={(e) => setDeleteReason(e.target.value)}
+                        placeholder="เหตุผลที่ขอลบ..."
+                        className="w-full p-2.5 text-xs border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                      />
+                    )}
+                  </>
+                )}
 
                 {deleteError && (
                   <div className="bg-rose-50 border border-rose-100 text-rose-700 text-xs px-3 py-2 rounded-lg">
@@ -509,14 +573,18 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
                 )}
 
                 <div className="flex justify-end gap-2 pt-1">
-                  <button type="button" onClick={() => setDeleteTarget(null)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs font-semibold cursor-pointer hover:bg-slate-50">ยกเลิก</button>
-                  <button
-                    onClick={confirmDelete}
-                    disabled={isDeleting}
-                    className={`px-4 py-2 rounded-lg text-xs font-semibold text-white ${isDeleting ? 'bg-red-300 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700 cursor-pointer'}`}
-                  >
-                    {isDeleting ? 'กำลังลบ...' : 'ยืนยันลบ'}
-                  </button>
+                  <button type="button" onClick={closeDeleteModal} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs font-semibold cursor-pointer hover:bg-slate-50">ยกเลิก</button>
+                  {!deletePendingRequest && (
+                    <button
+                      onClick={confirmDelete}
+                      disabled={isDeleting || (!deleteCanDirectly && !deleteReason.trim())}
+                      className={`px-4 py-2 rounded-lg text-xs font-semibold text-white ${isDeleting || (!deleteCanDirectly && !deleteReason.trim()) ? 'bg-red-300 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700 cursor-pointer'}`}
+                    >
+                      {deleteCanDirectly
+                        ? (isDeleting ? 'กำลังลบ...' : 'ยืนยันลบ')
+                        : (isDeleting ? 'กำลังส่งคำขอ...' : 'ส่งคำขอลบ')}
+                    </button>
+                  )}
                 </div>
               </motion.div>
             </div>

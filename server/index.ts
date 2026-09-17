@@ -9,6 +9,7 @@ import { meetingsRouter } from './routes/meetings.ts';
 import { projectTasksRouter } from './routes/project-tasks.ts';
 import { projectCustomStatusesRouter } from './routes/project-custom-statuses.ts';
 import { notificationsRouter } from './routes/notifications.ts';
+import { changeRequestsRouter } from './routes/change-requests.ts';
 import { assertDbConnection } from './db.ts';
 
 const app = express();
@@ -37,6 +38,7 @@ app.use('/api/meetings', meetingsRouter);
 app.use('/api/project-tasks', projectTasksRouter);
 app.use('/api/project-custom-statuses', projectCustomStatusesRouter);
 app.use('/api/notifications', notificationsRouter);
+app.use('/api/change-requests', changeRequestsRouter);
 
 app.listen(port, () => {
   console.log(`API server listening on http://localhost:${port}`);

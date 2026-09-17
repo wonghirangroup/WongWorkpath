@@ -11,6 +11,7 @@ interface DropdownProps<T extends string> {
   // 'compact' matches a page-level search/filter row; 'cozy' matches h-[44px] text inputs
   // inside a create/edit modal — the two contexts sit next to differently-sized siblings.
   size?: 'compact' | 'cozy';
+  disabled?: boolean;
 }
 
 // Reusable button + floating list dropdown (rounded card, subtle tinted highlight on the selected row)
@@ -23,7 +24,7 @@ interface DropdownProps<T extends string> {
 // since setting overflow-x forces overflow-y to compute to auto too, per the CSS spec. Escaping to a
 // portal sidesteps that entirely, at the cost of having to reposition by hand instead of relying on
 // normal document flow.
-export default function Dropdown<T extends string>({ value, options, onChange, placeholder, size = 'compact' }: DropdownProps<T>) {
+export default function Dropdown<T extends string>({ value, options, onChange, placeholder, size = 'compact', disabled = false }: DropdownProps<T>) {
   const trigger = size === 'cozy'
     ? { height: 'h-11', text: 'text-base', padding: 'pl-4 pr-4' }
     : { height: 'h-10', text: 'text-[13px]', padding: 'pl-3.5 pr-3.5' };
@@ -128,9 +129,12 @@ export default function Dropdown<T extends string>({ value, options, onChange, p
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-controls={listboxId}
-        onClick={() => (isOpen ? setIsOpen(false) : openDropdown())}
-        onKeyDown={handleTriggerKeyDown}
-        className={`w-full ${trigger.height} flex items-center justify-between ${trigger.padding} bg-white border border-[#BAB7B7] ${trigger.text} font-normal cursor-pointer focus:outline-none focus:border-[#FF6537] ${
+        disabled={disabled}
+        onClick={() => !disabled && (isOpen ? setIsOpen(false) : openDropdown())}
+        onKeyDown={disabled ? undefined : handleTriggerKeyDown}
+        className={`w-full ${trigger.height} flex items-center justify-between ${trigger.padding} bg-white border border-[#BAB7B7] ${trigger.text} font-normal focus:outline-none focus:border-[#FF6537] ${
+          disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+        } ${
           isOpen ? (panelRect.openUpward ? 'rounded-b-xl rounded-t-none' : 'rounded-t-xl rounded-b-none') : 'rounded-xl'
         }`}
       >

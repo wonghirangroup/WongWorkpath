@@ -104,8 +104,7 @@ export const INITIAL_DOCS: LinkedDoc[] = [
     kind: 'link',
     parentId: null,
     url: 'https://docs.google.com/spreadsheets/d/1XyZABC123/edit',
-    scope: 'ทีม',
-    team: 'แผนกการเงินและการบัญชี',
+    scope: 'ส่วนตัว',
     version: 3,
     lastUpdated: '2026-07-01 14:30',
     updatedBy: 'อานนท์ เลิศวิทยา',
@@ -121,8 +120,7 @@ export const INITIAL_DOCS: LinkedDoc[] = [
     kind: 'link',
     parentId: null,
     url: 'https://docs.google.com/document/d/1YzDEF456/edit',
-    scope: 'ทีม',
-    team: 'แผนกเทคโนโลยีและไอที',
+    scope: 'ส่วนตัว',
     version: 1,
     lastUpdated: '2026-06-30 11:20',
     updatedBy: 'สมศักดิ์ รักดี',
@@ -136,8 +134,7 @@ export const INITIAL_DOCS: LinkedDoc[] = [
     kind: 'link',
     parentId: null,
     url: 'https://figma.com/file/1Z_UIUX_Design/edit',
-    scope: 'ทีม',
-    team: 'แผนกเทคโนโลยีและไอที',
+    scope: 'ส่วนตัว',
     version: 5,
     lastUpdated: '2026-07-02 16:45',
     updatedBy: 'ณิชา วงศ์สุวรรณ',
@@ -165,7 +162,6 @@ export const INITIAL_TASKS: Task[] = [
     contributorIds: ['E04'],
     dependencies: [],
     approvalStatus: 'None',
-    recurringPattern: 'None',
     linkedDocIds: ['DOC03'],
     handovers: [
       {
@@ -197,7 +193,6 @@ export const INITIAL_TASKS: Task[] = [
     contributorIds: [],
     dependencies: [],
     approvalStatus: 'None',
-    recurringPattern: 'None',
     linkedDocIds: ['DOC02'],
     handovers: []
   },
@@ -217,7 +212,6 @@ export const INITIAL_TASKS: Task[] = [
     contributorIds: ['E01', 'E03'],
     dependencies: [],
     approvalStatus: 'None',
-    recurringPattern: 'Monthly',
     linkedDocIds: ['DOC01'],
     handovers: []
   },
@@ -238,7 +232,6 @@ export const INITIAL_TASKS: Task[] = [
     contributorIds: [],
     dependencies: [],
     approvalStatus: 'None',
-    recurringPattern: 'Weekly',
     linkedDocIds: [],
     handovers: []
   },
@@ -260,7 +253,6 @@ export const INITIAL_TASKS: Task[] = [
     dependencies: ['TASK01'],
     approvalStatus: 'Approved',
     approvalNote: 'ระบบผ่านการทดสอบอย่างสมบูรณ์ ไม่มีจุดติดขัดเรื่องการแสดงผล',
-    recurringPattern: 'None',
     linkedDocIds: [],
     handovers: [
       {

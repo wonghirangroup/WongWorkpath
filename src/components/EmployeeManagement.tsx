@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
-import { Plus, X, Search, Mail, Briefcase, Pencil, Trash2, Eye, AtSign, ScrollText, LayoutGrid, List, Crown, Network } from 'lucide-react';
+import { Plus, X, Search, Mail, Briefcase, Pencil, Trash2, Eye, AtSign, ScrollText, LayoutGrid, List, Crown, Network, LocateFixed } from 'lucide-react';
 import { Employee, Division, AccountType, AuditLog } from '../types';
 import { ApiError } from '../lib/api';
 import { getAvatarColor } from '../lib/avatarColor';
@@ -9,7 +9,7 @@ import { getDepartmentTagClass } from '../lib/departmentColors';
 import { ACCOUNT_TYPE_LABELS, canEditOrDeleteTarget, isNavAllowedByRole } from '../lib/permissions';
 import { useAppData } from '../context/AppDataContext';
 import Dropdown from './Dropdown';
-import OrgChart from './OrgChart';
+import OrgChart, { OrgChartHandle, EmployeeLocateSearch } from './OrgChart';
 import EmployeeProfileModal from './EmployeeProfileModal';
 import {
   readFileAsDataUrl,
@@ -113,6 +113,13 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
   const [logDateFilter, setLogDateFilter] = useState('');
   const [logDepartmentFilter, setLogDepartmentFilter] = useState<string>('__all__');
   const [logActionFilter, setLogActionFilter] = useState<string>('__all__');
+  // "โครงสร้างองค์กร" tab's own search/filter row now lives up here (see the toolbar block below),
+  // matching every other tab, instead of inside <OrgChart> itself — its canvas still owns the
+  // pan/zoom/DOM-measurement machinery, reached imperatively via orgChartRef (see OrgChartHandle).
+  const [orgFilterDivision, setOrgFilterDivision] = useState('__all__');
+  const [orgEditMode, setOrgEditMode] = useState(false);
+  const orgChartRef = useRef<OrgChartHandle>(null);
+  const currentUserInOrgChart = Boolean(currentUserId && employees.some((e) => e.id === currentUserId));
 
   // Click-to-mark a single card/row (purely visual — a persistent "hover-look" pin, not a
   // multi-select). Only clicking outside every card/row unmarks it, via data-markable-id below.
@@ -155,6 +162,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
   const [newName, setNewName] = useState('');
   const [newNickname, setNewNickname] = useState('');
   const [newEmail, setNewEmail] = useState('');
+  const [newPhone, setNewPhone] = useState('');
   const [newUsername, setNewUsername] = useState('');
   const [newRole, setNewRole] = useState('');
   const [newDivision, setNewDivision] = useState<Division>(orgDivisions[0]?.name ?? '');
@@ -218,6 +226,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
     setNewName('');
     setNewNickname('');
     setNewEmail('');
+    setNewPhone('');
     setNewUsername('');
     setNewRole('');
     setNewDivision(orgDivisions[0]?.name ?? '');
@@ -253,6 +262,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
         name: newName.trim(),
         nickname: newNickname.trim() || newName.trim(),
         email: newEmail.trim(),
+        phone: newPhone.trim() || undefined,
         username: newUsername.trim(),
         role: newRole.trim(),
         department: hidesDepartmentField ? '' : newDepartment,
@@ -435,6 +445,56 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                 ล้างตัวกรอง
               </button>
             )}
+          </div>
+        </div>
+      ) : activeTab === 'org' ? (
+        <div className="flex flex-col lg:flex-row gap-3 lg:items-center">
+          <div className="w-full lg:w-137.5 lg:flex-none">
+            <EmployeeLocateSearch employees={employees} onSelect={(id) => orgChartRef.current?.focusOnEmployee(id)} />
+          </div>
+
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <div className="w-44 h-9 shrink-0">
+              <Dropdown<string>
+                value={orgFilterDivision}
+                onChange={setOrgFilterDivision}
+                size="compact"
+                options={[{ value: '__all__', label: 'ทุกฝ่าย' }, ...orgDivisions.map((d) => ({ value: d.name, label: d.name }))]}
+              />
+            </div>
+            {currentUserInOrgChart && (
+              <Tooltip content="ไปที่ตำแหน่งของฉันในผังองค์กร">
+                <button
+                  type="button"
+                  onClick={() => orgChartRef.current?.focusOnEmployee(currentUserId!)}
+                  aria-label="ตำแหน่งของฉัน"
+                  className="flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-semibold text-[#6F6F6F] bg-[#F4F4F5] hover:bg-slate-200 cursor-pointer transition-colors shrink-0"
+                >
+                  <LocateFixed size={13} /> ตำแหน่งของฉัน
+                </button>
+              </Tooltip>
+            )}
+
+            <div className="flex items-center gap-2 lg:ml-auto shrink-0">
+              {orgEditMode && (
+                <button
+                  type="button"
+                  onClick={() => orgChartRef.current?.openAddDivisionPrompt()}
+                  className="flex items-center gap-1 h-9 px-3 rounded-lg text-xs font-semibold text-[#FF6537] border border-[#FF6537] hover:bg-[#FFF1EC] cursor-pointer"
+                >
+                  <Plus size={13} /> เพิ่มฝ่าย
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setOrgEditMode((v) => !v)}
+                className={`flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
+                  orgEditMode ? 'bg-[#FF6537] text-white' : 'bg-[#F4F4F5] text-[#6F6F6F] hover:bg-slate-200'
+                }`}
+              >
+                <Pencil size={13} /> {orgEditMode ? 'เสร็จสิ้นการแก้ไข' : 'แก้ไขโครงสร้าง'}
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
@@ -636,8 +696,13 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
       </>
       ) : activeTab === 'org' ? (
         <OrgChart
+          ref={orgChartRef}
           employees={employees}
           orgDivisions={orgDivisions}
+          filterDivision={orgFilterDivision}
+          onFilterDivisionChange={setOrgFilterDivision}
+          editMode={orgEditMode}
+          onEditModeChange={setOrgEditMode}
           onAddDivision={handleAddDivision}
           onRenameDivision={handleRenameDivision}
           onDeleteDivision={handleDeleteDivision}
@@ -672,7 +737,30 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                     className={`border-b border-[#EDEEEF] last:border-b-0 cursor-pointer ${markedId === log.id ? 'bg-slate-200' : 'bg-white hover:bg-slate-50'}`}
                   >
                     <td className="px-4 py-3 whitespace-nowrap text-[12px] font-normal text-[#6F6F6F]">{log.timestamp}</td>
-                    <td className="px-4 py-3 whitespace-nowrap text-[13px] font-bold text-slate-900">{log.user}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {(() => {
+                        // `log.user` is a name snapshot taken at log time (see handleLogAudit), not
+                        // a stored employee id, so the avatar is a best-effort lookup by current
+                        // nickname/name — falls back to the plain initial-circle when nobody matches
+                        // (e.g. the employee was later renamed or deleted).
+                        const actor = employees.find((e) => (e.nickname || e.name) === log.user);
+                        return (
+                          <div className="flex items-center gap-2">
+                            {actor?.avatar ? (
+                              <img src={actor.avatar} alt="" className="w-6 h-6 rounded-full object-cover shrink-0 bg-slate-50 border border-slate-100" />
+                            ) : (
+                              <div
+                                className="w-6 h-6 rounded-full flex items-center justify-center text-white font-bold text-[10px] shrink-0"
+                                style={{ backgroundColor: getAvatarColor(log.user) }}
+                              >
+                                {log.user.trim().charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                            <span className="text-[13px] font-bold text-slate-900">{log.user}</span>
+                          </div>
+                        );
+                      })()}
+                    </td>
                     <td className="px-4 py-3 whitespace-nowrap text-[12px] font-normal text-[#6F6F6F]">{log.role}</td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <span className="inline-block text-[11px] font-semibold text-[#FF6537] bg-[#FFF1EC] px-2 py-0.5 rounded-full">{log.action}</span>
@@ -752,6 +840,17 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                       placeholder="name@company.com"
                       value={newEmail}
                       onChange={(e) => setNewEmail(e.target.value)}
+                      className="w-full p-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#FF6537]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[#272220] font-bold text-[11px] mb-1">เบอร์โทร <span className="font-normal text-slate-400">(ไม่บังคับ)</span></label>
+                    <input
+                      type="tel"
+                      placeholder="เช่น 081-234-5678"
+                      value={newPhone}
+                      onChange={(e) => setNewPhone(e.target.value)}
                       className="w-full p-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#FF6537]"
                     />
                   </div>
