@@ -15,6 +15,12 @@ interface DashboardToolbarProps {
   projects: ProjectRow[];
   widgetPrefs: DashboardWidgetPrefs;
   onWidgetPrefsChange: (next: DashboardWidgetPrefs) => void;
+  // ผู้บริหาร-only extra filter — every other role only ever sees its own responsible projects, so
+  // narrowing by department on top of that would just be a smaller version of the same thing.
+  showDepartmentFilter: boolean;
+  departmentFilter: string;
+  onDepartmentFilterChange: (value: string) => void;
+  departments: string[];
 }
 
 // Same popover shell as every other small menu in the app (SortMenu, WidgetSettingsMenu) —
@@ -82,7 +88,7 @@ function ExportMenu({ onExportCsv, onExportPdf }: { onExportCsv: () => void; onE
 // background — no separate hero/banner card, since the Header above it already carries the page
 // title. The dashboard used to open with a dark gradient "welcome" hero that nothing else in the
 // app has; that stood out as visually inconsistent rather than as an intentional accent.
-export default function DashboardToolbar({ onCreateProject, onExportCsv, onExportPdf, projectFilter, onProjectFilterChange, projects, widgetPrefs, onWidgetPrefsChange }: DashboardToolbarProps) {
+export default function DashboardToolbar({ onCreateProject, onExportCsv, onExportPdf, projectFilter, onProjectFilterChange, projects, widgetPrefs, onWidgetPrefsChange, showDepartmentFilter, departmentFilter, onDepartmentFilterChange, departments }: DashboardToolbarProps) {
   return (
     <div className="flex flex-col lg:flex-row gap-3 lg:items-center">
       <div className="w-full lg:w-52">
@@ -92,6 +98,16 @@ export default function DashboardToolbar({ onCreateProject, onExportCsv, onExpor
           options={[{ value: 'All', label: 'ทุกโครงการ' }, ...projects.map((p) => ({ value: p.id, label: p.title }))]}
         />
       </div>
+
+      {showDepartmentFilter && (
+        <div className="w-full lg:w-48">
+          <Dropdown
+            value={departmentFilter}
+            onChange={onDepartmentFilterChange}
+            options={[{ value: '__all__', label: 'ทุกแผนก' }, ...departments.map((d) => ({ value: d, label: d }))]}
+          />
+        </div>
+      )}
 
       <div className="flex items-center gap-3 print:hidden lg:ml-auto">
         <WidgetSettingsMenu prefs={widgetPrefs} onChange={onWidgetPrefsChange} />

@@ -1,4 +1,4 @@
-import { Employee, CredentialItem, Meeting, Notification } from '../types';
+import { Employee, CredentialItem, Meeting, Notification, LinkedDoc } from '../types';
 import type { ProjectRow, ProjectTaskItem, CustomProjectStatus } from '../components/projectBoard/types';
 
 // Vite only exposes env vars prefixed VITE_ to client code — set in .env,
@@ -95,16 +95,20 @@ export async function createEmployee(employee: Employee & { password: string }):
   return data as Employee;
 }
 
+// actorEmployeeId lets the server's "admin can't touch admin-like accounts" gate tell a
+// self-edit/superadmin/executive apart from a plain admin overreaching — same trust level as
+// every other actorEmployeeId check in this app (no real session/auth layer to verify it against).
 export async function updateEmployeeRemote(
   id: string,
-  updates: Partial<Pick<Employee, 'name' | 'nickname' | 'role' | 'avatar' | 'department' | 'division' | 'username' | 'accountType' | 'restrictedMenuIds' | 'phone' | 'address'>> & { password?: string }
+  updates: Partial<Pick<Employee, 'name' | 'nickname' | 'role' | 'avatar' | 'department' | 'division' | 'username' | 'accountType' | 'restrictedMenuIds' | 'phone' | 'address'>> & { password?: string },
+  actorEmployeeId?: string
 ): Promise<void> {
   let res: Response;
   try {
     res = await fetch(`${API_BASE_URL}/api/employees/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates),
+      body: JSON.stringify({ ...updates, actorEmployeeId }),
     });
   } catch {
     throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
@@ -116,10 +120,10 @@ export async function updateEmployeeRemote(
   }
 }
 
-export async function deleteEmployeeRemote(id: string): Promise<void> {
+export async function deleteEmployeeRemote(id: string, actorEmployeeId?: string): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}/api/employees/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    res = await fetch(`${API_BASE_URL}/api/employees/${encodeURIComponent(id)}?actorEmployeeId=${encodeURIComponent(actorEmployeeId ?? '')}`, { method: 'DELETE' });
   } catch {
     throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
   }
@@ -129,8 +133,11 @@ export async function deleteEmployeeRemote(id: string): Promise<void> {
   }
 }
 
-export async function fetchCredentials(): Promise<CredentialItem[]> {
-  const res = await fetch(`${API_BASE_URL}/api/credentials`);
+// Server-side pre-filters to only what actorEmployeeId is allowed to see (personal by creator id,
+// team by department, project by project membership — ผู้บริหาร sees every team/project row) —
+// mirrors fetchDocuments' own actor-scoped shape. No actorEmployeeId means nobody's logged in yet.
+export async function fetchCredentials(actorEmployeeId: string): Promise<CredentialItem[]> {
+  const res = await fetch(`${API_BASE_URL}/api/credentials?actorEmployeeId=${encodeURIComponent(actorEmployeeId)}`);
   if (!res.ok) throw new Error(`Failed to fetch credentials: ${res.status}`);
   return res.json();
 }
@@ -165,7 +172,7 @@ export async function fetchProjects(): Promise<ProjectRow[]> {
 }
 
 export type CreateProjectPayload = Partial<
-  Pick<ProjectRow, 'title' | 'description' | 'department' | 'type' | 'abbreviation' | 'priority' | 'budget' | 'ownerEmployeeIds' | 'memberEmployeeIds' | 'memberDuties' | 'docFolderId' | 'progress' | 'status'>
+  Pick<ProjectRow, 'id' | 'title' | 'description' | 'department' | 'type' | 'abbreviation' | 'priority' | 'budget' | 'ownerEmployeeIds' | 'memberEmployeeIds' | 'memberDuties' | 'docFolderId' | 'progress' | 'status'>
 > & { title: string; startDate?: string | null; endDate?: string | null; createdBy?: string | null };
 
 export async function createProject(payload: CreateProjectPayload): Promise<ProjectRow> {
@@ -373,6 +380,66 @@ export async function deleteProjectTaskRemote(id: string, actorEmployeeId: strin
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new ApiError(data.message ?? 'ลบงานไม่สำเร็จ', res.status);
+  }
+}
+
+// Server-side pre-filters to only what `actorEmployeeId` is allowed to see (personal docs by
+// creator, project docs by project ownership/membership) — see server/routes/documents.ts. No
+// actorEmployeeId means nobody's logged in yet, so the server returns an empty list.
+export async function fetchDocuments(actorEmployeeId: string): Promise<LinkedDoc[]> {
+  const res = await fetch(`${API_BASE_URL}/api/documents?actorEmployeeId=${encodeURIComponent(actorEmployeeId)}`);
+  if (!res.ok) throw new Error(`Failed to fetch documents: ${res.status}`);
+  return res.json();
+}
+
+export async function createDocument(doc: Omit<LinkedDoc, 'id'>): Promise<LinkedDoc> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/documents`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(doc),
+    });
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(data.message ?? 'บันทึกเอกสารไม่สำเร็จ', res.status);
+  }
+  return data as LinkedDoc;
+}
+
+export async function updateDocumentRemote(id: string, updates: Partial<LinkedDoc>): Promise<LinkedDoc> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/documents/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(data.message ?? 'บันทึกเอกสารไม่สำเร็จ', res.status);
+  }
+  return data as LinkedDoc;
+}
+
+export async function deleteDocumentRemote(id: string): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/documents/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(data.message ?? 'ลบเอกสารไม่สำเร็จ', res.status);
   }
 }
 

@@ -15,6 +15,8 @@ import { buildCsv, downloadCsv } from '../lib/csv';
 import { STATUS_LABEL, TASK_STATUS_LABEL } from './projectBoard/statusMeta';
 import { displayName } from './projectBoard/CreateProjectModal';
 import { CreateProjectPayload } from '../lib/api';
+import { canSeeAllProjects } from '../lib/permissions';
+import { isResponsibleForProject } from '../lib/ownership';
 
 function formatBaht(n: number): string {
   return `฿${Math.round(n).toLocaleString('th-TH')}`;
@@ -26,9 +28,10 @@ interface DashboardProps {
   employees: Employee[];
   currentUser: Employee | null;
   onCreateProject: (payload: Omit<CreateProjectPayload, 'createdBy'>) => Promise<void>;
-  onCreateFolder: (name: string, parentId?: string | null, taskId?: string) => string;
+  onCreateFolder: (name: string, parentId: string | null, taskId: string | undefined, projectId: string) => Promise<string>;
   customProjectStatuses: CustomProjectStatus[];
   onSelectProject: (id: string) => void;
+  orgSections: string[];
 }
 
 export default function Dashboard({
@@ -39,9 +42,23 @@ export default function Dashboard({
   onCreateProject,
   onCreateFolder,
   customProjectStatuses,
-  onSelectProject
+  onSelectProject,
+  orgSections
 }: DashboardProps) {
   const [projectFilter, setProjectFilter] = useState('All');
+  const [departmentFilter, setDepartmentFilter] = useState('__all__');
+  const isExecutive = currentUser ? canSeeAllProjects(currentUser) : false;
+  // Non-executive roles only ever see projects they own or are a member of — ผู้บริหาร sees the
+  // whole company by default and gets an extra department filter (see below) on top of the
+  // existing single-project picker.
+  const visibleProjects = useMemo(
+    () => (!currentUser || isExecutive ? projects : projects.filter((p) => isResponsibleForProject(p, currentUser.id))),
+    [projects, currentUser, isExecutive]
+  );
+  const departmentFilteredProjects = useMemo(
+    () => (isExecutive && departmentFilter !== '__all__' ? visibleProjects.filter((p) => p.department === departmentFilter) : visibleProjects),
+    [visibleProjects, isExecutive, departmentFilter]
+  );
   const [widgetPrefs, setWidgetPrefs] = useState(loadWidgetPrefs);
   useEffect(() => saveWidgetPrefs(widgetPrefs), [widgetPrefs]);
 
@@ -67,7 +84,7 @@ export default function Dashboard({
   // "which tasks in this one project" — a single-row project table (or a 100%-one-status donut)
   // isn't useful once the scope is already down to one project.
   const isSingleProjectView = projectFilter !== 'All';
-  const filteredProjects = isSingleProjectView ? projects.filter((p) => p.id === projectFilter) : projects;
+  const filteredProjects = isSingleProjectView ? departmentFilteredProjects.filter((p) => p.id === projectFilter) : departmentFilteredProjects;
   const singleProject = isSingleProjectView ? filteredProjects[0] : undefined;
   const filteredProjectIds = useMemo(() => new Set(filteredProjects.map((p) => p.id)), [filteredProjects]);
   const filteredProjectTasks = projectTasks.filter((t) => filteredProjectIds.has(t.projectId));
@@ -113,9 +130,13 @@ export default function Dashboard({
           onExportPdf={handleExportPdf}
           projectFilter={projectFilter}
           onProjectFilterChange={setProjectFilter}
-          projects={projects}
+          projects={departmentFilteredProjects}
           widgetPrefs={widgetPrefs}
           onWidgetPrefsChange={setWidgetPrefs}
+          showDepartmentFilter={isExecutive}
+          departmentFilter={departmentFilter}
+          onDepartmentFilterChange={setDepartmentFilter}
+          departments={orgSections}
         />
       </div>
 

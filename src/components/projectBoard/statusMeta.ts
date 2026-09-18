@@ -136,11 +136,11 @@ export const TASK_STATUS_COLOR: Record<ProjectTaskStatus, string> = {
 // (detail meta grid, project table). Same color ramp, simplified to bg+text since this renders
 // as a plain pill rather than a bordered button.
 export const PROJECT_PRIORITY_META: Record<ProjectPriority, { label: string; className: string }> = {
-  1: { label: '1 (สูงสุด)', className: 'bg-red-50 text-red-600' },
-  2: { label: '2', className: 'bg-orange-50 text-orange-600' },
-  3: { label: '3', className: 'bg-[#FFF1EC] text-[#FF6537]' },
-  4: { label: '4', className: 'bg-blue-50 text-blue-600' },
-  5: { label: '5 (ต่ำสุด)', className: 'bg-slate-100 text-slate-600' },
+  1: { label: '1 (สูงที่สุด)', className: 'bg-red-50 text-red-600' },
+  2: { label: '2 (สูง)', className: 'bg-orange-50 text-orange-600' },
+  3: { label: '3 (ปานกลาง)', className: 'bg-[#FFF1EC] text-[#FF6537]' },
+  4: { label: '4 (ต่ำ)', className: 'bg-blue-50 text-blue-600' },
+  5: { label: '5 (ต่ำที่สุด)', className: 'bg-slate-100 text-slate-600' },
 };
 
 // "ประเภทโครงการ" — label shown wherever a project's type appears, and the abbreviation used to

@@ -9,6 +9,7 @@ import NotificationToast from './NotificationToast';
 import { createDocFolder } from '../../lib/docFolder';
 import Tooltip from '../Tooltip';
 import { STATUS_LABEL, STATUS_PILL, STATUS_ICON } from '../projectBoard/statusMeta';
+import { canManageEmployees } from '../../lib/permissions';
 
 // Title/subtitle shown in the Header for each route — kept separate from NAV_ITEMS' short
 // sidebar labels since some pages (e.g. docs) use different, longer wording for their page title.
@@ -34,7 +35,6 @@ export default function AppLayout() {
   }, [pathname]);
 
   const activeId = NAV_ITEMS.find((item) => pathname === `/${item.id}`)?.id;
-  const pageMeta = activeId ? PAGE_META[activeId] : undefined;
 
   const {
     isTaskModalOpen,
@@ -44,7 +44,7 @@ export default function AppLayout() {
     employees,
     projects,
     documents,
-    saveDocuments,
+    handleAddDocument,
     docCurrentFolderId,
     setDocCurrentFolderId,
     taskSelectedProjectId,
@@ -52,8 +52,15 @@ export default function AppLayout() {
     currentUser
   } = useAppData();
 
-  const handleCreateFolder = (name: string, parentId: string | null = null, taskId?: string) =>
-    createDocFolder(name, parentId, taskId, documents, saveDocuments, currentUser?.name || 'ผู้ใช้งานปัจจุบัน');
+  // "employees" gets a different subtitle for a plain employee — they only ever reach the
+  // read-only directory there (see EmployeesPage.tsx), not the create/manage flow this text
+  // otherwise describes.
+  const pageMeta = activeId === 'employees' && currentUser && !canManageEmployees(currentUser)
+    ? { title: 'พนักงาน', subtitle: 'ดูรายชื่อพนักงานและโครงสร้างองค์กร' }
+    : activeId ? PAGE_META[activeId] : undefined;
+
+  const handleCreateFolder = (name: string, parentId: string | null, taskId: string | undefined, projectId: string) =>
+    createDocFolder(name, parentId, taskId, projectId, handleAddDocument, currentUser?.name || 'ผู้ใช้งานปัจจุบัน');
 
   // On the Tasks page, once a project's detail view is open, the Header swaps to the project's
   // own title (with status pill + code as its subtitle) plus a back arrow to return to the list —

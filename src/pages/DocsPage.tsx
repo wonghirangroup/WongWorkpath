@@ -19,6 +19,7 @@ export default function DocsPage() {
   return (
     <DocVault
       documents={documents}
+      currentUserId={currentUser?.id || ''}
       currentUserName={currentUser?.name || ''}
       onAddDocument={handleAddDocument}
       onEditDocument={handleEditDocument}

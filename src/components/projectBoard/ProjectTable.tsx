@@ -40,9 +40,11 @@ interface ProjectTableProps {
   onDelete: (row: ProjectRow) => void;
   onUpdatePriority: (row: ProjectRow, priority: ProjectPriority) => void;
   currentUserId: string;
+  // ผู้บริหาร can always change priority inline, regardless of ownership.
+  isExecutive: boolean;
 }
 
-export default function ProjectTable({ rows, employees, onViewDetail, canDelete, onDelete, onUpdatePriority, currentUserId }: ProjectTableProps) {
+export default function ProjectTable({ rows, employees, onViewDetail, canDelete, onDelete, onUpdatePriority, currentUserId, isExecutive }: ProjectTableProps) {
   // Same live-measurement technique as EmployeeManagement's table wrapper — a hardcoded
   // calc(100vh - Npx) guess drifts whenever the toolbar/status-cards above it change height, so
   // this keeps the table's bottom edge matching the sidebar's real bottom edge instead of
@@ -65,21 +67,24 @@ export default function ProjectTable({ rows, employees, onViewDetail, canDelete,
     <div ref={tableWrapRef} style={{ maxHeight: tableMaxHeight }} className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] overflow-x-auto overflow-y-auto">
       <table className="w-full text-sm border-collapse min-w-340">
         <thead>
+          {/* Sticky lives on each <th> (not <thead>/<tr>, which position:sticky is inert on) —
+              same technique as EmployeeManagement/DocVault's own list tables — so the header stays
+              put while this box's own internal overflow-y scrolls the rows underneath it. */}
           <tr className="bg-[#F9F9F9] text-[12px] font-semibold text-[#000000] border-b border-[#EDEEEF] whitespace-nowrap">
-            <th className="w-4 py-3"></th>
-            <th className="px-4 py-3">ลำดับ</th>
-            <th className="px-4 py-3">รหัส</th>
-            <th className="px-4 py-3">เรื่อง</th>
-            <th className="px-4 py-3">รายละเอียด</th>
-            <th className="px-4 py-3">งบประมาณ</th>
-            <th className="px-4 py-3">ระดับความสำคัญ</th>
-            <th className="px-4 py-3">ผู้รับผิดชอบหลัก</th>
-            <th className="px-4 py-3">ความคืบหน้า</th>
-            <th className="px-4 py-3">วันที่เริ่ม</th>
-            <th className="px-4 py-3">วันที่สิ้นสุด</th>
-            <th className="px-4 py-3">สร้างเมื่อ</th>
-            <th className="px-4 py-3">สถานะ</th>
-            <th className="px-4 py-3">การกระทำ</th>
+            <th className="w-4 py-3 sticky top-0 z-20 bg-[#F9F9F9]"></th>
+            <th className="px-4 py-3 sticky top-0 z-20 bg-[#F9F9F9]">ลำดับ</th>
+            <th className="px-4 py-3 sticky top-0 z-20 bg-[#F9F9F9]">รหัส</th>
+            <th className="px-4 py-3 sticky top-0 z-20 bg-[#F9F9F9]">เรื่อง</th>
+            <th className="px-4 py-3 sticky top-0 z-20 bg-[#F9F9F9]">รายละเอียด</th>
+            <th className="px-4 py-3 sticky top-0 z-20 bg-[#F9F9F9]">งบประมาณ</th>
+            <th className="px-4 py-3 sticky top-0 z-20 bg-[#F9F9F9]">ระดับความสำคัญ</th>
+            <th className="px-4 py-3 sticky top-0 z-20 bg-[#F9F9F9]">ผู้รับผิดชอบหลัก</th>
+            <th className="px-4 py-3 sticky top-0 z-20 bg-[#F9F9F9]">ความคืบหน้า</th>
+            <th className="px-4 py-3 sticky top-0 z-20 bg-[#F9F9F9]">วันที่เริ่ม</th>
+            <th className="px-4 py-3 sticky top-0 z-20 bg-[#F9F9F9]">วันที่สิ้นสุด</th>
+            <th className="px-4 py-3 sticky top-0 z-20 bg-[#F9F9F9]">สร้างเมื่อ</th>
+            <th className="px-4 py-3 sticky top-0 z-20 bg-[#F9F9F9]">สถานะ</th>
+            <th className="px-4 py-3 sticky top-0 z-20 bg-[#F9F9F9]">การกระทำ</th>
           </tr>
         </thead>
         <tbody>
@@ -111,13 +116,13 @@ export default function ProjectTable({ rows, employees, onViewDetail, canDelete,
                 <td className="px-4 py-4 text-[#272220]">{formatBudget(row.budget)}</td>
                 <td className="px-4 py-4 whitespace-nowrap">
                   <div className="w-28">
-                    <Tooltip content={isOwner(row.ownerEmployeeIds, currentUserId) ? undefined : 'ต้องขออนุมัติจากผู้รับผิดชอบก่อน — แก้ไขผ่านหน้ารายละเอียดโครงการ'}>
+                    <Tooltip content={isExecutive || isOwner(row.ownerEmployeeIds, currentUserId) ? undefined : 'ต้องขออนุมัติจากผู้รับผิดชอบก่อน — แก้ไขผ่านหน้ารายละเอียดโครงการ'}>
                       <Dropdown
                         value={row.priority !== undefined ? String(row.priority) : ''}
                         options={PRIORITY_DROPDOWN_OPTIONS}
                         onChange={(value) => onUpdatePriority(row, Number(value) as ProjectPriority)}
                         placeholder="ยังไม่มี"
-                        disabled={!isOwner(row.ownerEmployeeIds, currentUserId)}
+                        disabled={!isExecutive && !isOwner(row.ownerEmployeeIds, currentUserId)}
                       />
                     </Tooltip>
                   </div>

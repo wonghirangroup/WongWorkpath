@@ -30,6 +30,9 @@ interface EditProjectModalProps {
   existingTitles: string[];
   customStatuses: CustomProjectStatus[];
   currentUserId: string;
+  // ผู้บริหาร bypasses the owner-approval gate regardless of whether they're actually an
+  // owner of this project.
+  isExecutive: boolean;
   changeRequests: ChangeRequest[];
   onRequestChange: (
     entityType: 'project' | 'project_task',
@@ -44,12 +47,13 @@ interface EditProjectModalProps {
 // show every field at once rather than re-running a step-by-step flow each time. Only fields the
 // create wizard itself collects are editable here (see CreateProjectModal's own note on why
 // "department" has no field yet) — this stays a straight edit of what's already there.
-export default function EditProjectModal({ isOpen, onClose, row, employees, onSave, existingTitles, customStatuses, currentUserId, changeRequests, onRequestChange }: EditProjectModalProps) {
+export default function EditProjectModal({ isOpen, onClose, row, employees, onSave, existingTitles, customStatuses, currentUserId, isExecutive, changeRequests, onRequestChange }: EditProjectModalProps) {
   useEscapeToClose(isOpen, onClose);
   // Once row.ownerEmployeeIds has ≥1 person, only they may save directly — anyone else's submit
   // files a change_request instead (see ProjectDetail's "คำขอที่รอดำเนินการ" panel for the
   // owner-facing approve/reject side). An unowned project stays open to everyone, as today.
-  const canEditDirectly = isOwner(row.ownerEmployeeIds, currentUserId);
+  // ผู้บริหาร always saves directly.
+  const canEditDirectly = isExecutive || isOwner(row.ownerEmployeeIds, currentUserId);
   const pendingRequest = changeRequests.find(
     (r) => r.entityType === 'project' && r.entityId === row.id && r.status === 'pending'
   );

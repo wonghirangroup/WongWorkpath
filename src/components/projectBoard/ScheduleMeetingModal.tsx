@@ -5,6 +5,7 @@ import { X, Users2 } from 'lucide-react';
 import { Employee, Meeting } from '../../types';
 import { ProjectRow } from './types';
 import { EmployeeMultiSelect, formatThaiDateShort } from './CreateProjectModal';
+import { ApiError } from '../../lib/api';
 import Dropdown from '../Dropdown';
 import ThaiDatePicker from '../ThaiDatePicker';
 import { useEscapeToClose } from '../../lib/useEscapeToClose';
@@ -22,22 +23,25 @@ interface ScheduleMeetingModalProps {
   // via the normal audit trail so there's still a record of why a scheduled meeting changed.
   meetingToEdit?: Meeting | null;
   onUpdateMeeting?: (id: string, updates: Partial<Meeting>, reasonForChange: string) => Promise<void>;
+  orgSections: string[];
 }
 
 // A standalone meeting scheduler for the Calendar page, where there's no project already open to
 // borrow context from (unlike AddTaskModal's "การประชุม" tab, always launched from inside a
 // specific project). โครงการ here is a real optional picker instead of an implicit prop — picking
 // one still clamps the date to that project's own range, same rule AddTaskModal enforces.
-export default function ScheduleMeetingModal({ isOpen, onClose, projects, employees, currentUserId, onAddMeeting, meetingToEdit, onUpdateMeeting }: ScheduleMeetingModalProps) {
+export default function ScheduleMeetingModal({ isOpen, onClose, projects, employees, currentUserId, onAddMeeting, meetingToEdit, onUpdateMeeting, orgSections }: ScheduleMeetingModalProps) {
   const isEditMode = Boolean(meetingToEdit);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [projectId, setProjectId] = useState('');
+  const [department, setDepartment] = useState('');
   const [meetingDate, setMeetingDate] = useState('');
   const [meetingStartTime, setMeetingStartTime] = useState('');
   const [meetingEndTime, setMeetingEndTime] = useState('');
   const [attendeeIds, setAttendeeIds] = useState<string[]>([]);
   const [location, setLocation] = useState('');
+  const [locationLink, setLocationLink] = useState('');
   const [meetingLink, setMeetingLink] = useState('');
   const [reasonForChange, setReasonForChange] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -49,21 +53,25 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
       setTitle(meetingToEdit.title);
       setDescription(meetingToEdit.description ?? '');
       setProjectId(meetingToEdit.projectId ?? '');
+      setDepartment(meetingToEdit.department ?? '');
       setMeetingDate(meetingToEdit.date);
       setMeetingStartTime(meetingToEdit.startTime);
       setMeetingEndTime(meetingToEdit.endTime ?? '');
       setAttendeeIds(meetingToEdit.attendeeIds);
       setLocation(meetingToEdit.location ?? '');
+      setLocationLink(meetingToEdit.locationLink ?? '');
       setMeetingLink(meetingToEdit.meetingLink ?? '');
     } else {
       setTitle('');
       setDescription('');
       setProjectId('');
+      setDepartment('');
       setMeetingDate('');
       setMeetingStartTime('');
       setMeetingEndTime('');
       setAttendeeIds([]);
       setLocation('');
+      setLocationLink('');
       setMeetingLink('');
     }
     setReasonForChange('');
@@ -82,9 +90,19 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
     () => new Set([...(selectedProject?.ownerEmployeeIds ?? []), ...(selectedProject?.memberEmployeeIds ?? [])]),
     [selectedProject]
   );
-  const selectableEmployees = projectMemberIdSet.size === 0
-    ? employees
-    : employees.filter((e) => projectMemberIdSet.has(e.id) || attendeeIds.includes(e.id));
+  // Department works as a second, independent narrowing filter on top of the project one (e.g. a
+  // project meeting that should only pull in that project's people from a specific department) —
+  // an attendee already picked always stays selectable even if a later filter would exclude them.
+  const selectableEmployees = useMemo(() => {
+    let pool = employees;
+    if (projectMemberIdSet.size > 0) {
+      pool = pool.filter((e) => projectMemberIdSet.has(e.id) || attendeeIds.includes(e.id));
+    }
+    if (department) {
+      pool = pool.filter((e) => e.department === department || attendeeIds.includes(e.id));
+    }
+    return pool;
+  }, [employees, projectMemberIdSet, department, attendeeIds]);
 
   const titleValid = title.trim() !== '';
   const meetingTimeOrderValid = !(meetingStartTime && meetingEndTime && meetingEndTime < meetingStartTime);
@@ -111,6 +129,8 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
     onClose();
   };
 
+  useEscapeToClose(isOpen, resetAndClose);
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!isFormValid || isSubmitting) return;
@@ -119,6 +139,7 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
     try {
       const payload = {
         projectId: projectId || undefined,
+        department: department || undefined,
         title: title.trim(),
         description: description.trim() || undefined,
         date: meetingDate,
@@ -126,6 +147,7 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
         endTime: meetingEndTime || undefined,
         attendeeIds,
         location: location.trim() || undefined,
+        locationLink: locationLink.trim() || undefined,
         meetingLink: meetingLink.trim() || undefined,
       };
       if (isEditMode && meetingToEdit && onUpdateMeeting) {
@@ -134,8 +156,8 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
         await onAddMeeting({ ...payload, createdBy: currentUserId, status: 'scheduled' });
       }
       resetAndClose();
-    } catch {
-      setFormError(isEditMode ? 'บันทึกการแก้ไขไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' : 'นัดประชุมไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : isEditMode ? 'บันทึกการแก้ไขไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' : 'นัดประชุมไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
     } finally {
       setIsSubmitting(false);
     }
@@ -158,7 +180,7 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ type: 'spring', stiffness: 300, damping: 24, mass: 0.9 }}
-            className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-md mx-4 max-h-[85vh] overflow-hidden flex flex-col"
+            className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-xl mx-4 max-h-[85vh] overflow-hidden flex flex-col"
           >
             <div className="flex justify-between items-center px-5 pt-5 pb-2 shrink-0">
               <div>
@@ -188,14 +210,25 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
                   />
                 </div>
 
-                <div>
-                  <label className="block text-[#272220] font-bold text-[11px] mb-1">โครงการ (ไม่บังคับ)</label>
-                  <Dropdown
-                    value={projectId}
-                    onChange={(value) => { setProjectId(value); setMeetingDate(''); }}
-                    placeholder="ไม่ผูกกับโครงการ"
-                    options={[{ value: '', label: 'ไม่ผูกกับโครงการ' }, ...projects.map((p) => ({ value: p.id, label: p.title }))]}
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[#272220] font-bold text-[11px] mb-1">โครงการ (ไม่บังคับ)</label>
+                    <Dropdown
+                      value={projectId}
+                      onChange={(value) => { setProjectId(value); setMeetingDate(''); }}
+                      placeholder="ไม่ผูกกับโครงการ"
+                      options={[{ value: '', label: 'ไม่ผูกกับโครงการ' }, ...projects.map((p) => ({ value: p.id, label: p.title }))]}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[#272220] font-bold text-[11px] mb-1">แผนก (ไม่บังคับ)</label>
+                    <Dropdown
+                      value={department}
+                      onChange={setDepartment}
+                      placeholder="ทุกแผนก"
+                      options={[{ value: '', label: 'ทุกแผนก' }, ...orgSections.map((d) => ({ value: d, label: d }))]}
+                    />
+                  </div>
                 </div>
 
                 <div>
@@ -275,15 +308,26 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
                     />
                   </div>
                   <div>
-                    <label className="block text-[#272220] font-bold text-[11px] mb-1">ลิงก์ประชุมออนไลน์ (ไม่บังคับ)</label>
+                    <label className="block text-[#272220] font-bold text-[11px] mb-1">ลิงก์แผนที่ (ไม่บังคับ)</label>
                     <input
                       type="text"
-                      placeholder="เช่น https://meet.google.com/..."
-                      value={meetingLink}
-                      onChange={(e) => setMeetingLink(e.target.value)}
+                      placeholder="เช่น https://maps.google.com/..."
+                      value={locationLink}
+                      onChange={(e) => setLocationLink(e.target.value)}
                       className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
                     />
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-[#272220] font-bold text-[11px] mb-1">ลิงก์ประชุมออนไลน์ (ไม่บังคับ)</label>
+                  <input
+                    type="text"
+                    placeholder="เช่น https://meet.google.com/..."
+                    value={meetingLink}
+                    onChange={(e) => setMeetingLink(e.target.value)}
+                    className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                  />
                 </div>
 
                 {isEditMode && (

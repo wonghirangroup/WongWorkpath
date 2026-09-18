@@ -1,6 +1,6 @@
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
-import { X, Clock, MapPin, Link2, Ban } from 'lucide-react';
+import { X, Clock, MapPin, Link2, Ban, Pencil } from 'lucide-react';
 import { Employee, Meeting } from '../../types';
 import { displayName, formatThaiDateShort } from './CreateProjectModal';
 import { getAvatarColor } from '../../lib/avatarColor';
@@ -11,14 +11,16 @@ interface MeetingDetailModalProps {
   meeting: Meeting | null;
   employees: Employee[];
   onClose: () => void;
+  onEdit: (meeting: Meeting) => void;
 }
 
-// Read-only detail view for a meeting that isn't tied to any project — those only ever showed up
-// as an inert (non-clickable, disabled) row on the Calendar page before, since project-linked
-// meetings already had somewhere to navigate to (the project itself) and standalone ones had
-// nowhere to go. This gives them a real destination: time, description, and location/link spelled
-// out in full, mirroring TaskDetailModal's own read-only pattern.
-export default function MeetingDetailModal({ meeting, employees, onClose }: MeetingDetailModalProps) {
+// Detail view for a meeting that isn't tied to any project — those only ever showed up as an
+// inert (non-clickable, disabled) row on the Calendar page before, since project-linked meetings
+// already had somewhere to navigate to (the project itself) and standalone ones had nowhere to
+// go. This gives them a real destination: time, description, location/link spelled out in full
+// (mirroring TaskDetailModal's own read-only pattern), plus an edit entry point since a standalone
+// meeting has no project page where that could otherwise happen.
+export default function MeetingDetailModal({ meeting, employees, onClose, onEdit }: MeetingDetailModalProps) {
   useEscapeToClose(Boolean(meeting), onClose);
   const attendees = meeting ? employees.filter((e) => meeting.attendeeIds.includes(e.id)) : [];
   const creator = meeting?.createdBy ? employees.find((e) => e.id === meeting.createdBy) : undefined;
@@ -55,9 +57,21 @@ export default function MeetingDetailModal({ meeting, employees, onClose }: Meet
                 )}
                 <h3 className={`text-base font-bold text-slate-800 break-words ${isCancelled ? 'line-through' : ''}`}>{meeting.title}</h3>
               </div>
-              <button onClick={onClose} className="text-slate-400 hover:text-slate-600 cursor-pointer shrink-0" type="button">
-                <X size={18} />
-              </button>
+              <div className="flex items-center gap-1 shrink-0">
+                {!isCancelled && (
+                  <button
+                    onClick={() => onEdit(meeting)}
+                    className="text-slate-400 hover:text-[#FF6537] cursor-pointer p-1"
+                    type="button"
+                    aria-label="แก้ไขการประชุม"
+                  >
+                    <Pencil size={16} />
+                  </button>
+                )}
+                <button onClick={onClose} className="text-slate-400 hover:text-slate-600 cursor-pointer" type="button">
+                  <X size={18} />
+                </button>
+              </div>
             </div>
 
             <div className="px-5 py-4 space-y-4">
@@ -94,6 +108,17 @@ export default function MeetingDetailModal({ meeting, employees, onClose }: Meet
                       <MapPin size={14} className="text-[#A0A0A0] shrink-0" />
                       {meeting.location}
                     </p>
+                  )}
+                  {meeting.locationLink && (
+                    <a
+                      href={meeting.locationLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-[#FF6537] hover:underline break-all flex items-center gap-1.5 mt-1"
+                    >
+                      <Link2 size={14} className="shrink-0" />
+                      เปิดแผนที่
+                    </a>
                   )}
                 </div>
               )}

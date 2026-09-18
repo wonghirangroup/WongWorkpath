@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Task, Meeting } from '../types';
+import { Task, Meeting, Employee } from '../types';
 import { useAppData } from '../context/AppDataContext';
 import {
   Calendar as CalIcon,
@@ -19,7 +19,8 @@ import CancelMeetingModal from './projectBoard/CancelMeetingModal';
 import MeetingDetailModal from './projectBoard/MeetingDetailModal';
 import { ProjectRow } from './projectBoard/types';
 import { STATUS_DOT, STATUS_LABEL, STATUS_ICON, TASK_STATUS_COLOR, TASK_STATUS_LABEL } from './projectBoard/statusMeta';
-import { formatThaiDateShort } from './projectBoard/CreateProjectModal';
+import { formatThaiDateShort, displayName } from './projectBoard/CreateProjectModal';
+import { isResponsibleForProject } from '../lib/ownership';
 import Tooltip from './Tooltip';
 
 interface CalendarViewProps {
@@ -53,6 +54,7 @@ interface CalendarTaskItem {
   colorHex?: string;
   projectLabel: string;
   projectId?: string;
+  assigneeNames?: string; // display name(s) of whoever's responsible — undefined when nobody's assigned yet
 }
 
 type UpcomingItem =
@@ -99,6 +101,10 @@ export default function CalendarView({
   // below for how a meeting click branches between the two.
   const [cancellingMeeting, setCancellingMeeting] = useState<Meeting | null>(null);
   const [viewingMeeting, setViewingMeeting] = useState<Meeting | null>(null);
+  // A standalone (no-project) meeting being edited from its detail view — reuses the same
+  // ScheduleMeetingModal instance below rather than a second one, same as ProjectDetail.tsx does
+  // for its own project-scoped meetings.
+  const [editingMeeting, setEditingMeeting] = useState<Meeting | null>(null);
   // Opens on the real current month/year — this used to be hardcoded to July 2026 (leftover from
   // whenever the mock data was authored), so the page never showed "today" highlighted at all
   // unless you clicked "วันนี้" yourself first.
@@ -107,6 +113,12 @@ export default function CalendarView({
 
   const [filterType, setFilterType] = useState<FilterType>('All');
   const [selectedDept, setSelectedDept] = useState<string>('All');
+  // Every role defaults to "เฉพาะของฉัน" (meetings I created/attend, tasks assigned to me, projects
+  // I'm responsible for) with a toggle to see the full company overview — no accountType branching
+  // here at all, same capability for every role.
+  const [scope, setScope] = useState<'mine' | 'all'>('mine');
+  const currentUserId = currentUser?.id ?? '';
+  const isMineOnly = (ids: string[]) => scope === 'all' || ids.includes(currentUserId);
 
   // Which day cell's "show everything on this day" popover is open — only one at a time.
   const [openDayKey, setOpenDayKey] = useState<string | null>(null);
@@ -127,6 +139,11 @@ export default function CalendarView({
   // available for tasks from the older Task/Gantt/Calendar data model (its `project` field is
   // just a free-text label with no matching id to link to).
   const projectById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
+  const employeeById = useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
+  const namesFor = (ids: string[]) => {
+    const names = ids.map((id) => employeeById.get(id)).filter((e): e is Employee => Boolean(e)).map(displayName);
+    return names.length ? names.join(', ') : undefined;
+  };
   const goToProject = (projectId: string) => {
     setTaskSelectedProjectId(projectId);
     navigate('/tasks');
@@ -239,6 +256,7 @@ export default function CalendarView({
   const allCalendarTasks = useMemo<CalendarTaskItem[]>(() => {
     const fromOldTasks: CalendarTaskItem[] = tasks
       .filter((task) => selectedDept === 'All' || task.department === selectedDept)
+      .filter((task) => isMineOnly([task.primaryOwnerId, ...task.secondaryAssigneeIds]))
       .map((task) => ({
         id: `task-${task.id}`,
         title: task.title,
@@ -246,11 +264,13 @@ export default function CalendarView({
         startDateISO: task.startDate,
         colorClasses: getTaskStatusColor(task.status),
         projectLabel: task.project,
+        assigneeNames: namesFor([task.primaryOwnerId, ...task.secondaryAssigneeIds]),
       }));
 
     // No department field to filter by — shown regardless of the department dropdown.
     const fromProjectTasks: CalendarTaskItem[] = projectTasks
       .filter((t) => t.dueDateISO)
+      .filter((t) => isMineOnly(t.assigneeEmployeeIds))
       .map((t) => ({
         id: `ptask-${t.id}`,
         title: t.title,
@@ -260,10 +280,11 @@ export default function CalendarView({
         colorHex: TASK_STATUS_COLOR[t.status],
         projectLabel: projectById.get(t.projectId)?.title ?? 'ไม่ทราบโครงการ',
         projectId: t.projectId,
+        assigneeNames: namesFor(t.assigneeEmployeeIds),
       }));
 
     return [...fromOldTasks, ...fromProjectTasks];
-  }, [tasks, projectTasks, selectedDept, projectById]);
+  }, [tasks, projectTasks, selectedDept, projectById, employeeById, scope, currentUserId]);
 
   // Check if a date has tasks falling on it
   const getTasksOnDate = (date: Date) => {
@@ -282,9 +303,15 @@ export default function CalendarView({
   // Check if a date has meetings scheduled on it — meetings created from a project's "เพิ่มงาน"
   // modal (see AddTaskModal.tsx's "การประชุม" tab) land here via AppDataContext's shared
   // `meetings` state, the same record shown on that project's own "การประชุม" tab.
+  const isMyMeeting = (meeting: Meeting) => isMineOnly([meeting.createdBy ?? '', ...meeting.attendeeIds]);
+  const scopedProjects = useMemo(
+    () => (scope === 'all' ? projects : projects.filter((p) => isResponsibleForProject(p, currentUserId))),
+    [projects, scope, currentUserId]
+  );
+
   const getMeetingsOnDate = (date: Date) => {
     const dateString = toLocalDateString(date);
-    return meetings.filter(meeting => meeting.date === dateString);
+    return meetings.filter(meeting => meeting.date === dateString && isMyMeeting(meeting));
   };
 
   // A project's own deadline (endDate) — shown as its own marker on the day it's due, separate
@@ -292,7 +319,7 @@ export default function CalendarView({
   // (see the render below) since a single-day marker doesn't convey a project's actual duration.
   const getProjectsOnDate = (date: Date) => {
     const dateString = toLocalDateString(date);
-    return projects.filter((p) => p.endDateISO === dateString);
+    return scopedProjects.filter((p) => p.endDateISO === dateString);
   };
 
   const todayString = toLocalDateString(new Date());
@@ -306,7 +333,7 @@ export default function CalendarView({
     // "เฉพาะโครงการ" swaps the whole main area to a Gantt timeline (see the render below), so the
     // sidebar switches with it to upcoming project deadlines instead of tasks/meetings.
     if (filterType === 'Projects') {
-      projects.forEach((p) => {
+      scopedProjects.forEach((p) => {
         if (!p.endDateISO || p.endDateISO < todayString) return;
         items.push({ kind: 'project', sortKey: `${p.endDateISO}T99:99`, project: p });
       });
@@ -321,11 +348,12 @@ export default function CalendarView({
     if (filterType !== 'Tasks') {
       meetings.forEach((meeting) => {
         if (meeting.date < todayString) return;
+        if (!isMyMeeting(meeting)) return;
         items.push({ kind: 'meeting', sortKey: `${meeting.date}T${meeting.startTime}`, meeting });
       });
     }
     return items.sort((a, b) => a.sortKey.localeCompare(b.sortKey)).slice(0, 6);
-  }, [allCalendarTasks, meetings, projects, filterType, todayString]);
+  }, [allCalendarTasks, meetings, scopedProjects, filterType, todayString, scope, currentUserId]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-full" id="calendar-tab">
@@ -343,6 +371,27 @@ export default function CalendarView({
           >
             <Users2 size={15} /> นัดประชุม
           </button>
+
+          <div className="flex items-center gap-0.5 bg-[#F4F4F5] rounded-xl p-1">
+            <button
+              type="button"
+              onClick={() => setScope('mine')}
+              className={`flex-1 text-xs font-semibold h-8 rounded-lg cursor-pointer transition-colors ${
+                scope === 'mine' ? 'bg-white text-[#272220] shadow-[0px_1px_3px_rgba(0,0,0,0.08)]' : 'text-[#6F6F6F] hover:text-[#272220]'
+              }`}
+            >
+              เฉพาะของฉัน
+            </button>
+            <button
+              type="button"
+              onClick={() => setScope('all')}
+              className={`flex-1 text-xs font-semibold h-8 rounded-lg cursor-pointer transition-colors ${
+                scope === 'all' ? 'bg-white text-[#272220] shadow-[0px_1px_3px_rgba(0,0,0,0.08)]' : 'text-[#6F6F6F] hover:text-[#272220]'
+              }`}
+            >
+              ภาพรวมทั้งบริษัท
+            </button>
+          </div>
 
           <h3 className="text-sm font-bold text-[#272220] flex items-center gap-1.5">
             <CalIcon size={16} className="text-[#FF6537]" /> ตัวกรองปฏิทิน
@@ -502,7 +551,7 @@ export default function CalendarView({
                 {filterType === 'Projects' ? 'ภาพรวมโครงการทั้งหมด' : `${monthsThai[currentMonth]} ${currentYear + 543}`}
               </h2>
               <p className="text-xs text-[#6F6F6F]">
-                {filterType === 'Projects' ? 'มุมมอง Gantt Chart ของทุกโครงการ' : `ปีคริสต์ศักราช ${currentYear} · มุมมองปฏิทินแบบบูรณาการ`}
+                {filterType === 'Projects' ? 'มุมมอง Gantt Chart ของทุกโครงการ' : 'มุมมองปฏิทินแบบบูรณาการ'}
               </p>
             </div>
           </div>
@@ -547,7 +596,7 @@ export default function CalendarView({
 
         {filterType === 'Projects' ? (
           <div className="mt-4 flex-1 min-h-0 flex flex-col border border-slate-100 rounded-xl">
-            <ProjectsGanttChart projects={projects} projectTasks={projectTasks} onSelectProject={goToProject} />
+            <ProjectsGanttChart projects={scopedProjects} projectTasks={projectTasks} onSelectProject={goToProject} />
           </div>
         ) : (
         <>
@@ -598,7 +647,7 @@ export default function CalendarView({
             // real row count (not a literal 4) so it still flips correctly on a 5-row month.
             const col = index % 7;
             const row = Math.floor(index / 7);
-            const popoverHorizontal = col >= 5 ? 'right-full mr-1.5' : 'left-full ml-1.5';
+            const popoverHorizontal = col >= 4 ? 'right-full mr-1.5' : 'left-full ml-1.5';
             const popoverVertical = row >= calendarGrid.totalRows - 2 ? 'bottom-0' : 'top-0';
 
             return (
@@ -732,6 +781,7 @@ export default function CalendarView({
                                   {task.title}
                                 </p>
                                 <p className="text-[11px] text-[#A0A0A0] mt-0.5">โครงการ: {task.projectLabel}</p>
+                                <p className="text-[11px] text-[#A0A0A0] mt-0.5">ผู้รับผิดชอบ: {task.assigneeNames ?? 'ยังไม่ระบุ'}</p>
                               </div>
                             </div>
                           ))}
@@ -777,7 +827,7 @@ export default function CalendarView({
                                     )}
                                   </div>
                                 </button>
-                                {!isCancelled && (
+                                {!isCancelled && !isPast && (
                                   <Tooltip content="ยกเลิกประชุม">
                                     <button
                                       type="button"
@@ -880,12 +930,15 @@ export default function CalendarView({
       </div>
 
       <ScheduleMeetingModal
-        isOpen={isScheduleMeetingOpen}
-        onClose={() => setIsScheduleMeetingOpen(false)}
+        isOpen={isScheduleMeetingOpen || Boolean(editingMeeting)}
+        onClose={() => { setIsScheduleMeetingOpen(false); setEditingMeeting(null); }}
         projects={projects}
         employees={employees}
         currentUserId={currentUser?.id ?? ''}
         onAddMeeting={handleAddMeeting}
+        orgSections={orgSections}
+        meetingToEdit={editingMeeting}
+        onUpdateMeeting={handleUpdateMeeting}
       />
 
       <CancelMeetingModal
@@ -898,6 +951,7 @@ export default function CalendarView({
         meeting={viewingMeeting}
         employees={employees}
         onClose={() => setViewingMeeting(null)}
+        onEdit={(m) => { setViewingMeeting(null); setEditingMeeting(m); }}
       />
 
     </div>

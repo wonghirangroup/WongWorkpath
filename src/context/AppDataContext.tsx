@@ -11,37 +11,12 @@ import {
 } from '../types';
 import { DEFAULT_ORG_DIVISIONS, OrgDivisionData } from '../data/orgStructure';
 import {
-  INITIAL_EMPLOYEES,
-  INITIAL_DOCS,
-  INITIAL_CREDENTIALS
+  INITIAL_EMPLOYEES
 } from '../data/mockData';
-import { fetchEmployees, createEmployee, updateEmployeeRemote, deleteEmployeeRemote, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote, fetchProjects, createProject, updateProjectRemote, deleteProjectRemote, CreateProjectPayload, fetchMeetings, createMeeting, updateMeetingRemote, deleteMeetingRemote, fetchProjectTasks, createProjectTask, updateProjectTaskRemote, deleteProjectTaskRemote, fetchProjectCustomStatuses, createProjectCustomStatus, deleteProjectCustomStatusRemote, fetchNotifications, createNotification, markNotificationRead, markAllNotificationsRead, CreateNotificationPayload, fetchChangeRequests, createChangeRequest, decideChangeRequest, ChangeRequest } from '../lib/api';
+import { fetchEmployees, createEmployee, updateEmployeeRemote, deleteEmployeeRemote, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote, fetchProjects, createProject, updateProjectRemote, deleteProjectRemote, CreateProjectPayload, fetchMeetings, createMeeting, updateMeetingRemote, deleteMeetingRemote, fetchProjectTasks, createProjectTask, updateProjectTaskRemote, deleteProjectTaskRemote, fetchProjectCustomStatuses, createProjectCustomStatus, deleteProjectCustomStatusRemote, fetchNotifications, createNotification, markNotificationRead, markAllNotificationsRead, CreateNotificationPayload, fetchChangeRequests, createChangeRequest, decideChangeRequest, ChangeRequest, fetchDocuments, createDocument, updateDocumentRemote, deleteDocumentRemote } from '../lib/api';
 import { nowTimestamp } from '../lib/datetime';
 import type { ProjectRow, ProjectTaskItem, CustomProjectStatus } from '../components/projectBoard/types';
 import { registerCustomStatusLabels } from '../components/projectBoard/statusMeta';
-
-// One-time shape migration for documents saved to localStorage before the Drive redesign added
-// `kind`/`parentId` (folders + file uploads) in place of the old `type` enum — without this,
-// anyone with pre-existing `unityspace_docs` data would have every saved doc silently vanish
-// (root-level filtering keys off `parentId === null`, which a missing field never satisfies).
-//
-// Also migrates the old free-text 'ทีม' (department) scope to the current 'โครงการ' (real project
-// reference) scope — there's no way to map an old department name onto one specific project, so
-// those docs fall back to 'ส่วนตัว' instead of carrying a scope value the rest of the app no
-// longer understands.
-function normalizeStoredDoc(raw: any): LinkedDoc {
-  const scope: LinkedDoc['scope'] = raw.scope === 'โครงการ' ? 'โครงการ' : 'ส่วนตัว';
-  const projectId = scope === 'โครงการ' ? raw.projectId : undefined;
-  if (raw.kind) return { parentId: raw.parentId ?? null, ...raw, scope, projectId };
-  return {
-    ...raw,
-    kind: 'link',
-    parentId: raw.parentId ?? null,
-    url: raw.url ?? '',
-    scope,
-    projectId
-  };
-}
 
 interface AppDataContextValue {
   // Auth
@@ -74,7 +49,7 @@ interface AppDataContextValue {
     id: string,
     updates: Partial<Pick<Employee, 'name' | 'nickname' | 'role' | 'avatar' | 'department' | 'division' | 'username' | 'accountType' | 'restrictedMenuIds' | 'phone' | 'address'>> & { password?: string }
   ) => Promise<void>;
-  handleDeleteEmployee: (id: string) => Promise<void>;
+  handleDeleteEmployee: (id: string, reason: string) => Promise<void>;
   handleAddProject: (payload: CreateProjectPayload) => Promise<ProjectRow>;
   handleUpdateProject: (id: string, updates: Partial<ProjectRow>) => Promise<void>;
   handleDeleteProject: (id: string) => Promise<void>;
@@ -96,11 +71,10 @@ interface AppDataContextValue {
   handleDeleteTask: (id: string) => void;
   handleInitiateHandover: (taskId: string, fromUserId: string, toUserId: string, stageName: string, notes: string) => void;
   handleApproveHandover: (taskId: string, handoverId: string, approved: boolean, notes: string) => void;
-  handleAddDocument: (newDoc: LinkedDoc) => void;
-  handleEditDocument: (docId: string, updates: { name: string; url?: string; scope: LinkedDoc['scope']; projectId?: string }) => void;
-  handleDeleteDocument: (docId: string) => void;
-  handleMoveDocument: (docId: string, newParentId: string) => void;
-  saveDocuments: (newDocs: LinkedDoc[]) => void;
+  handleAddDocument: (newDoc: Omit<LinkedDoc, 'id'>) => Promise<LinkedDoc>;
+  handleEditDocument: (docId: string, updates: { name: string; url?: string; scope: LinkedDoc['scope']; projectId?: string }) => Promise<void>;
+  handleDeleteDocument: (docId: string) => Promise<void>;
+  handleMoveDocument: (docId: string, newParentId: string) => Promise<void>;
   // Which Drive folder is currently open — shared with AppLayout so the Header can render it as
   // a breadcrumb title ("เอกสาร Drive > Grow Store") instead of the page's normal static title.
   docCurrentFolderId: string | null;
@@ -119,9 +93,9 @@ interface AppDataContextValue {
   handleAddMeeting: (newMeeting: Omit<Meeting, 'id'>) => Promise<void>;
   handleUpdateMeeting: (id: string, updates: Partial<Meeting>, reason?: string) => Promise<void>;
   handleDeleteMeeting: (id: string) => Promise<void>;
-  handleAddCredential: (newItem: CredentialItem) => void;
-  handleUpdateCredential: (id: string, updates: Partial<CredentialItem>) => void;
-  handleDeleteCredential: (id: string) => void;
+  handleAddCredential: (newItem: CredentialItem) => Promise<void>;
+  handleUpdateCredential: (id: string, updates: Partial<CredentialItem>) => Promise<void>;
+  handleDeleteCredential: (id: string) => Promise<void>;
   handleLogAudit: (action: string, details: string) => void;
   handleMarkAllNotificationsRead: () => void;
   handleMarkNotificationRead: (id: string) => void;
@@ -210,25 +184,29 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Credential Vault items now live in the real `credential` table too (see
-  // server/routes/credentials.ts) — same show-cached-then-refresh pattern as employees above.
+  // Credential Vault items live in the real `credential` table (see server/routes/credentials.ts);
+  // visibility is server-enforced there (personal/team/project scoping by real employee id, not
+  // the old client-side display-name match) — same actor-scoped shape as the documents fetch below.
   useEffect(() => {
+    if (!currentUser) {
+      setCredentials([]);
+      return;
+    }
     let cancelled = false;
 
-    fetchCredentials()
+    fetchCredentials(currentUser.id)
       .then((apiCredentials) => {
         if (cancelled) return;
         setCredentials(apiCredentials);
-        localStorage.setItem('unityspace_credentials', JSON.stringify(apiCredentials));
       })
       .catch((err) => {
-        console.warn('Could not load credentials from the API, using cached/mock data instead:', err);
+        console.warn('Could not load credentials from the API:', err);
       });
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [currentUser]);
 
   // Projects live in the real `project` table (see server/routes/projects.ts) with no
   // localStorage layer at all — unlike employees/credentials there's no legacy mock data worth
@@ -333,6 +311,101 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // Documents (เอกสาร Drive) live in the real `document` table now — same no-localStorage-layer
+  // treatment as projects/tasks/meetings. Unlike those, visibility itself is per-user (a 'ส่วนตัว'
+  // doc only shows to its creator; a 'โครงการ' doc only to that project's owners/members), so the
+  // server needs to know who's asking — this can't fetch until `currentUser` is known, and must
+  // re-fetch whenever it changes (login as someone else must not keep showing the previous
+  // person's personal docs).
+  useEffect(() => {
+    if (!currentUser) {
+      setDocuments([]);
+      return;
+    }
+    let cancelled = false;
+    fetchDocuments(currentUser.id)
+      .then((docs) => {
+        if (cancelled) return;
+        setDocuments(docs);
+      })
+      .catch((err) => {
+        console.warn('Could not load documents from the API:', err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser]);
+
+  // One-time recovery for documents created before today's move to the shared backend — they used
+  // to live in this browser's own `unityspace_docs` localStorage, so anyone opening the app here
+  // would otherwise see an empty Drive (the data isn't gone, the app just stopped reading it).
+  // Runs once per browser: uploads whatever's still sitting in that old key into the real
+  // `document` table, then marks itself done so it never re-runs (and never duplicates) here again.
+  // Waits for `employees` to actually be loaded (not just currentUser) so it can best-effort match
+  // each old doc's original creator by name to a real employee id — matching against an empty list
+  // would silently attribute everything to whoever happens to trigger this first.
+  useEffect(() => {
+    if (!currentUser || employees.length === 0) return;
+    if (localStorage.getItem('unityspace_docs_migrated_v1')) return;
+    const raw = localStorage.getItem('unityspace_docs');
+    // Set the flag before doing any async work — even if the upload below throws partway
+    // through, this must never retry (and re-duplicate whatever already made it across).
+    localStorage.setItem('unityspace_docs_migrated_v1', 'true');
+    if (!raw) return;
+
+    (async () => {
+      try {
+        const oldDocs: any[] = JSON.parse(raw);
+        if (!Array.isArray(oldDocs) || oldDocs.length === 0) return;
+
+        const idMap = new Map<string, string>(); // old localStorage id -> new server id
+        const remaining = [...oldDocs];
+        let progressed = true;
+        while (remaining.length > 0 && progressed) {
+          progressed = false;
+          for (let i = remaining.length - 1; i >= 0; i--) {
+            const d = remaining[i];
+            // A folder must be created (and its new id known) before any child referencing it as
+            // parentId — skip for now if that hasn't happened yet, retried on the next pass.
+            if (d.parentId && !idMap.has(d.parentId) && oldDocs.some((o) => o.id === d.parentId)) continue;
+
+            const creatorName = d.history?.[0]?.updatedBy || d.updatedBy;
+            const matchedCreator = employees.find((e) => (e.nickname || e.name) === creatorName);
+            const created = await createDocument({
+              name: d.name ?? 'ไม่มีชื่อ',
+              kind: d.kind === 'folder' || d.kind === 'file' ? d.kind : 'link',
+              parentId: d.parentId ? idMap.get(d.parentId) ?? null : null,
+              url: d.url,
+              fileDataUrl: d.fileDataUrl,
+              fileMimeType: d.fileMimeType,
+              fileSize: d.fileSize,
+              // The old 'ทีม' (department) scope has no equivalent under the current project-based
+              // model — falls back to 'ส่วนตัว' rather than guessing a project, same call made when
+              // this scope was first retired earlier today.
+              scope: 'ส่วนตัว',
+              creatorEmployeeId: matchedCreator?.id ?? currentUser.id,
+              version: typeof d.version === 'number' ? d.version : 1,
+              lastUpdated: d.lastUpdated || nowTimestamp(),
+              updatedBy: d.updatedBy || currentUser.name,
+              history: Array.isArray(d.history) ? d.history : [],
+            });
+            idMap.set(d.id, created.id);
+            remaining.splice(i, 1);
+            progressed = true;
+          }
+        }
+
+        // Refresh so the recovered documents show up immediately, no manual reload needed.
+        const fresh = await fetchDocuments(currentUser.id);
+        setDocuments(fresh);
+        localStorage.removeItem('unityspace_docs');
+      } catch (err) {
+        console.warn('Could not migrate old localStorage documents:', err);
+      }
+    })();
+  }, [currentUser, employees]);
+
   // Notifications: fetched for the logged-in user and re-polled every 45s. There's no WebSocket
   // layer anywhere in this app, so a notification another user triggers (a task assigned to you,
   // a review result) only lands on this screen at the next poll — an explicitly accepted
@@ -435,8 +508,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   // Initialize remaining domain data on mount (still localStorage/mock-only — no backend yet)
   useEffect(() => {
     const localTasks = localStorage.getItem('unityspace_tasks');
-    const localDocs = localStorage.getItem('unityspace_docs');
-    const localCredentials = localStorage.getItem('unityspace_credentials');
     const localLogs = localStorage.getItem('unityspace_audit_logs');
     const localOrgDivisions = localStorage.getItem('unityspace_org_divisions');
 
@@ -460,18 +531,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     } else {
       setTasks([]);
       localStorage.setItem('unityspace_tasks', JSON.stringify([]));
-    }
-
-    if (localDocs) setDocuments((JSON.parse(localDocs) as any[]).map(normalizeStoredDoc));
-    else {
-      setDocuments(INITIAL_DOCS);
-      localStorage.setItem('unityspace_docs', JSON.stringify(INITIAL_DOCS));
-    }
-
-    if (localCredentials) setCredentials(JSON.parse(localCredentials));
-    else {
-      setCredentials(INITIAL_CREDENTIALS);
-      localStorage.setItem('unityspace_credentials', JSON.stringify(INITIAL_CREDENTIALS));
     }
 
     // The leave-request module was removed from the app entirely — drop its old mock data too.
@@ -533,15 +592,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('unityspace_tasks', JSON.stringify(newTasks));
   };
 
-  const saveDocs = (newDocs: LinkedDoc[]) => {
-    setDocuments(newDocs);
-    localStorage.setItem('unityspace_docs', JSON.stringify(newDocs));
-  };
-
-  const saveCredentials = (newCreds: CredentialItem[]) => {
-    setCredentials(newCreds);
-    localStorage.setItem('unityspace_credentials', JSON.stringify(newCreds));
-  };
 
   // Every notification is a real row owned by one target employee. Fire-and-forget: a failure to
   // notify must never fail (or roll back) the action that triggered it — the task really was
@@ -594,7 +644,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     id: string,
     updates: Partial<Pick<Employee, 'name' | 'nickname' | 'role' | 'avatar' | 'department' | 'division' | 'username' | 'accountType' | 'restrictedMenuIds' | 'phone' | 'address'>> & { password?: string }
   ) => {
-    await updateEmployeeRemote(id, updates);
+    await updateEmployeeRemote(id, updates, currentUser?.id);
     // password is a login-only field, never part of the Employee shape kept in state/localStorage
     const { password: _password, ...employeeFields } = updates;
     const updated = employees.map(emp => (emp.id === id ? { ...emp, ...employeeFields } : emp));
@@ -604,13 +654,13 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     if (target) handleLogAudit('UPDATE_EMPLOYEE', `แก้ไขข้อมูลพนักงาน: "${target.name}"`);
   };
 
-  const handleDeleteEmployee = async (id: string) => {
+  const handleDeleteEmployee = async (id: string, reason: string) => {
     const target = employees.find(emp => emp.id === id);
-    await deleteEmployeeRemote(id);
+    await deleteEmployeeRemote(id, currentUser?.id);
     const updated = employees.filter(emp => emp.id !== id);
     setEmployees(updated);
     localStorage.setItem('unityspace_employees', JSON.stringify(updated));
-    if (target) handleLogAudit('DELETE_EMPLOYEE', `ลบบัญชีพนักงาน: "${target.name}" ออกจากระบบถาวร`);
+    if (target) handleLogAudit('DELETE_EMPLOYEE', `ลบบัญชีพนักงาน: "${target.name}" ออกจากระบบถาวร — เหตุผล: ${reason}`);
   };
 
   // 0a. Project Operations (จัดการงานและโครงการ) — real `project` table, no localStorage layer.
@@ -1028,30 +1078,33 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     handleLogAudit('RESOLVE_HANDOVER', `${approved ? 'อนุมัติ' : 'ปฏิเสธ'} สเตจส่งมอบงานของ ${sender?.name}: "${notes}"`);
   };
 
-  // 3. Document Operations
-  // Functional update (not `[newDoc, ...documents]` off the closed-over `documents` variable) —
-  // callers like SubmitTaskModal call this once per attachment in a loop (a file, then a link),
-  // and building off the stale closure meant every call but the last silently overwrote the ones
-  // before it, since none of them saw each other's additions within the same render cycle.
-  const handleAddDocument = (newDoc: LinkedDoc) => {
-    setDocuments((prev) => {
-      const updated = [newDoc, ...prev];
-      localStorage.setItem('unityspace_docs', JSON.stringify(updated));
-      return updated;
-    });
-    const actionLabel = newDoc.kind === 'folder' ? 'สร้างโฟลเดอร์' : newDoc.kind === 'file' ? 'อัปโหลดไฟล์' : 'แนบลิงก์เอกสาร';
-    handleLogAudit('ADD_DOCUMENT', `${actionLabel}ใน Drive: "${newDoc.name}"`);
+  // 3. Document Operations — documents live in the real `document` table now (see
+  // server/routes/documents.ts); visibility itself (not just these mutations) is server-enforced,
+  // see the `fetchDocuments` effect above.
+  //
+  // Returns the created row (not void) — callers that need the server-assigned id right away
+  // (e.g. SubmitTaskModal linking a just-attached file into `submissionFileIds`) await this call;
+  // callers that don't (DocVault's own create forms) can just fire-and-forget it.
+  const handleAddDocument = async (newDoc: Omit<LinkedDoc, 'id'>): Promise<LinkedDoc> => {
+    const created = await createDocument({ ...newDoc, creatorEmployeeId: newDoc.creatorEmployeeId ?? currentUser?.id });
+    setDocuments((prev) => [created, ...prev]);
+    const actionLabel = created.kind === 'folder' ? 'สร้างโฟลเดอร์' : created.kind === 'file' ? 'อัปโหลดไฟล์' : 'แนบลิงก์เอกสาร';
+    handleLogAudit('ADD_DOCUMENT', `${actionLabel}ใน Drive: "${created.name}"`);
+    return created;
   };
 
-  const handleEditDocument = (docId: string, updates: { name: string; url?: string; scope: LinkedDoc['scope']; projectId?: string }) => {
+  const handleEditDocument = async (docId: string, updates: { name: string; url?: string; scope: LinkedDoc['scope']; projectId?: string }) => {
     const doc = documents.find(d => d.id === docId);
-    saveDocs(documents.map(d => (d.id === docId ? { ...d, ...updates, projectId: updates.scope === 'โครงการ' ? updates.projectId : undefined } : d)));
+    const updated = await updateDocumentRemote(docId, { ...updates, projectId: updates.scope === 'โครงการ' ? updates.projectId : undefined });
+    setDocuments((prev) => prev.map((d) => (d.id === docId ? updated : d)));
     if (doc) handleLogAudit('EDIT_DOCUMENT', `แก้ไข${doc.kind === 'folder' ? 'โฟลเดอร์' : doc.kind === 'file' ? 'ไฟล์' : 'ลิงก์'}: "${doc.name}"${updates.name !== doc.name ? ` → "${updates.name}"` : ''}`);
   };
 
   // Drag-and-drop move: reparents a document into a different folder. Guards against dropping a
-  // folder into itself or into one of its own descendants, which would create a cycle.
-  const handleMoveDocument = (docId: string, newParentId: string) => {
+  // folder into itself or into one of its own descendants, which would create a cycle — checked
+  // against the locally-loaded `documents` tree, same as before; the server itself doesn't need
+  // its own cycle guard since it just writes whatever parent_id it's given.
+  const handleMoveDocument = async (docId: string, newParentId: string) => {
     const doc = documents.find(d => d.id === docId);
     if (!doc || docId === newParentId || doc.parentId === newParentId) return;
 
@@ -1067,17 +1120,20 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     }
 
     const targetFolder = documents.find(d => d.id === newParentId);
-    saveDocs(documents.map(d => (d.id === docId ? { ...d, parentId: newParentId } : d)));
+    const updated = await updateDocumentRemote(docId, { parentId: newParentId });
+    setDocuments((prev) => prev.map((d) => (d.id === docId ? updated : d)));
     if (targetFolder) {
       const label = doc.kind === 'folder' ? 'โฟลเดอร์' : doc.kind === 'file' ? 'ไฟล์' : 'ลิงก์';
       handleLogAudit('MOVE_DOCUMENT', `ย้าย${label} "${doc.name}" ไปยังโฟลเดอร์ "${targetFolder.name}"`);
     }
   };
 
-  // Deleting a folder cascades to everything nested inside it (files, links, and sub-folders),
-  // walked breadth-first via parentId — otherwise those items would be silently orphaned.
-  const handleDeleteDocument = (docId: string) => {
+  // Deleting a folder cascades to everything nested inside it server-side (parent_id's own
+  // ON DELETE CASCADE) — the breadth-first walk here is now only for an instant local UI update,
+  // not because anything would otherwise be orphaned.
+  const handleDeleteDocument = async (docId: string) => {
     const doc = documents.find(d => d.id === docId);
+    await deleteDocumentRemote(docId);
     const idsToDelete = new Set<string>([docId]);
     let frontier = [docId];
     while (frontier.length > 0) {
@@ -1085,7 +1141,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       children.forEach(id => idsToDelete.add(id));
       frontier = children;
     }
-    saveDocs(documents.filter(d => !idsToDelete.has(d.id)));
+    setDocuments((prev) => prev.filter(d => !idsToDelete.has(d.id)));
     if (doc) {
       const label = doc.kind === 'folder' ? `โฟลเดอร์ "${doc.name}" และเนื้อหาข้างในทั้งหมด` : `เอกสาร "${doc.name}"`;
       handleLogAudit('DELETE_DOCUMENT', `ลบ${label}ออกจาก Drive ถาวร`);
@@ -1144,27 +1200,27 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     setMeetings((prev) => prev.filter((m) => m.id !== id));
   };
 
-  // 5. Credential Safe Operations
-  // Local state/localStorage is updated immediately so the UI never blocks on the network;
-  // the API call underneath is best-effort — if it fails (backend down, offline, etc.) the
-  // change still stands locally and just doesn't reach the shared database yet.
-  const handleAddCredential = (newItem: CredentialItem) => {
-    saveCredentials([newItem, ...credentials]);
-    createCredential(newItem).catch((err) => console.warn('Could not save credential to the API:', err));
+  // 5. Credential Safe Operations — visibility itself (not just these mutations) is
+  // server-enforced now, see the fetchCredentials effect above. creatorEmployeeId is stamped here
+  // (not trusted from the form) so a personal-scope item is always attributable to a real id.
+  const handleAddCredential = async (newItem: CredentialItem) => {
+    const withCreator = { ...newItem, creatorEmployeeId: currentUser?.id };
+    setCredentials((prev) => [withCreator, ...prev]);
+    await createCredential(withCreator);
   };
 
-  const handleUpdateCredential = (id: string, updates: Partial<CredentialItem>) => {
+  const handleUpdateCredential = async (id: string, updates: Partial<CredentialItem>) => {
     const updated = credentials.map(c => (c.id === id ? { ...c, ...updates } : c));
-    saveCredentials(updated);
+    setCredentials(updated);
     const updatedItem = updated.find(c => c.id === id);
     if (updatedItem) {
-      updateCredentialRemote(id, updatedItem).catch((err) => console.warn('Could not update credential in the API:', err));
+      await updateCredentialRemote(id, updatedItem);
     }
   };
 
-  const handleDeleteCredential = (id: string) => {
-    saveCredentials(credentials.filter(c => c.id !== id));
-    deleteCredentialRemote(id).catch((err) => console.warn('Could not delete credential in the API:', err));
+  const handleDeleteCredential = async (id: string) => {
+    setCredentials((prev) => prev.filter(c => c.id !== id));
+    await deleteCredentialRemote(id);
   };
 
   // Unread Count
@@ -1248,7 +1304,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     handleEditDocument,
     handleDeleteDocument,
     handleMoveDocument,
-    saveDocuments: saveDocs,
     docCurrentFolderId,
     setDocCurrentFolderId,
     taskSelectedProjectId,

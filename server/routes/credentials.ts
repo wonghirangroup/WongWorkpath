@@ -2,6 +2,7 @@ import { Router } from 'express';
 import type { RowDataPacket } from 'mysql2';
 import { pool } from '../db.ts';
 import { nowBangkokDateTime } from '../lib/datetime.ts';
+import { isExecutiveActor } from '../lib/ownership.ts';
 
 export const credentialsRouter = Router();
 
@@ -11,6 +12,7 @@ interface CredentialRow extends RowDataPacket {
   type: string;
   scope: string;
   team: string | null;
+  project_id: string | null;
   username: string;
   password: string | null;
   key_value: string | null;
@@ -19,6 +21,7 @@ interface CredentialRow extends RowDataPacket {
   logo_url: string | null;
   last_viewed_at: string | null;
   created_by: string;
+  creator_employee_id: string | null;
   created_at: string;
 }
 
@@ -32,6 +35,7 @@ function toCredentialItem(r: CredentialRow) {
     type: r.type,
     scope: r.scope,
     team: r.team ?? undefined,
+    projectId: r.project_id ?? undefined,
     username: r.username,
     password: r.password ?? undefined,
     keyValue: r.key_value ?? undefined,
@@ -41,17 +45,49 @@ function toCredentialItem(r: CredentialRow) {
     lastViewedAt: r.last_viewed_at ?? undefined,
     createdAt: r.created_at,
     createdBy: r.created_by,
+    creatorEmployeeId: r.creator_employee_id ?? undefined,
   };
 }
 
-credentialsRouter.get('/', async (_req, res) => {
+const SELECT_FIELDS = `id, label, type, scope, team, project_id, username, password, key_value, notes,
+              url, logo_url, last_viewed_at, created_by, creator_employee_id, created_at`;
+
+// Server-enforced visibility, matching documents.ts's own pattern: 'ส่วนตัว' only to its creator
+// (by real employee id, not display name — the old client-side check matched by name and broke on
+// renames/duplicates); 'ทีม' only to the same department; 'โครงการ' only to that project's owners
+// or members. ผู้บริหาร sees every 'ทีม'/'โครงการ' row regardless, but still only their own
+// 'ส่วนตัว' rows — same split Docs uses for its own executive bypass.
+credentialsRouter.get('/', async (req, res) => {
+  const actorEmployeeId = typeof req.query.actorEmployeeId === 'string' ? req.query.actorEmployeeId : undefined;
+  if (!actorEmployeeId) return res.json([]);
+
   try {
-    const [rows] = await pool.query<CredentialRow[]>(
-      `SELECT id, label, type, scope, team, username, password, key_value, notes,
-              url, logo_url, last_viewed_at, created_by, created_at
-       FROM credential ORDER BY created_at DESC`
-    );
-    res.json(rows.map(toCredentialItem));
+    const [[actor]] = await pool.query<RowDataPacket[]>('SELECT department FROM employee WHERE id = ?', [actorEmployeeId]);
+    const actorDepartment: string | null = actor?.department ?? null;
+    const isExecutive = await isExecutiveActor(actorEmployeeId);
+
+    const [rows] = await pool.query<CredentialRow[]>(`SELECT ${SELECT_FIELDS} FROM credential ORDER BY created_at DESC`);
+
+    let myProjectIds: Set<string> | null = null;
+    if (!isExecutive) {
+      const [projectRows] = await pool.query<RowDataPacket[]>('SELECT id, owner_employee_ids, member_employee_ids FROM project');
+      myProjectIds = new Set(
+        projectRows
+          .filter((p) => {
+            const owners: string[] = p.owner_employee_ids ? JSON.parse(p.owner_employee_ids) : [];
+            const members: string[] = p.member_employee_ids ? JSON.parse(p.member_employee_ids) : [];
+            return owners.includes(actorEmployeeId) || members.includes(actorEmployeeId);
+          })
+          .map((p) => p.id)
+      );
+    }
+
+    const visible = rows.filter((r) => {
+      if (r.scope === 'ส่วนตัว') return r.creator_employee_id === actorEmployeeId;
+      if (r.scope === 'ทีม') return isExecutive || (actorDepartment !== null && r.team === actorDepartment);
+      return isExecutive || Boolean(r.project_id && myProjectIds?.has(r.project_id));
+    });
+    res.json(visible.map(toCredentialItem));
   } catch (err) {
     console.error('GET /api/credentials failed:', err);
     res.status(500).json({ message: 'เกิดข้อผิดพลาดในระบบ กรุณาลองใหม่อีกครั้ง' });
@@ -68,12 +104,12 @@ credentialsRouter.post('/', async (req, res) => {
     const now = nowBangkokDateTime();
     await pool.query(
       `INSERT INTO credential
-         (id, label, type, scope, team, username, password, key_value, notes, url, logo_url, created_by, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, label, type, scope, team, project_id, username, password, key_value, notes, url, logo_url, created_by, creator_employee_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        c.id, c.label, c.type, c.scope ?? 'ส่วนตัว', c.team ?? null,
+        c.id, c.label, c.type, c.scope ?? 'ส่วนตัว', c.team ?? null, c.projectId ?? null,
         c.username ?? '', c.password ?? null, c.keyValue ?? null, c.notes ?? null,
-        c.url ?? null, c.logoUrl ?? null, c.createdBy ?? '', now, now,
+        c.url ?? null, c.logoUrl ?? null, c.createdBy ?? '', c.creatorEmployeeId ?? null, now, now,
       ]
     );
     res.status(201).json({ id: c.id });
@@ -88,11 +124,11 @@ credentialsRouter.put('/:id', async (req, res) => {
   try {
     await pool.query(
       `UPDATE credential SET
-         label = ?, type = ?, scope = ?, team = ?, username = ?, password = ?,
+         label = ?, type = ?, scope = ?, team = ?, project_id = ?, username = ?, password = ?,
          key_value = ?, notes = ?, url = ?, logo_url = ?, last_viewed_at = ?, updated_at = ?
        WHERE id = ?`,
       [
-        c.label, c.type, c.scope, c.team ?? null, c.username, c.password ?? null,
+        c.label, c.type, c.scope, c.team ?? null, c.projectId ?? null, c.username, c.password ?? null,
         c.keyValue ?? null, c.notes ?? null, c.url ?? null, c.logoUrl ?? null,
         c.lastViewedAt ?? null, nowBangkokDateTime(), req.params.id,
       ]

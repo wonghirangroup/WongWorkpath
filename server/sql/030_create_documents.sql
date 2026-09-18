@@ -1,0 +1,23 @@
+CREATE TABLE document (
+  id VARCHAR(30) PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  kind ENUM('folder', 'file', 'link') NOT NULL,
+  parent_id VARCHAR(30) NULL,
+  url TEXT NULL,
+  file_data_url LONGTEXT NULL,
+  file_mime_type VARCHAR(255) NULL,
+  file_size INT NULL,
+  scope ENUM('ส่วนตัว', 'โครงการ') NOT NULL DEFAULT 'ส่วนตัว',
+  project_id VARCHAR(30) NULL,
+  task_id VARCHAR(30) NULL,
+  creator_employee_id VARCHAR(64) NULL,
+  version INT NOT NULL DEFAULT 1,
+  last_updated DATETIME NOT NULL,
+  updated_by VARCHAR(255) NOT NULL,
+  history JSON NULL,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  FOREIGN KEY (parent_id) REFERENCES document(id) ON DELETE CASCADE,
+  FOREIGN KEY (project_id) REFERENCES project(id) ON DELETE SET NULL,
+  FOREIGN KEY (creator_employee_id) REFERENCES employee(id) ON DELETE SET NULL
+);

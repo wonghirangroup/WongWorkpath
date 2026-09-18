@@ -6,7 +6,7 @@ import { Employee, Division, AccountType, AuditLog } from '../types';
 import { ApiError } from '../lib/api';
 import { getAvatarColor } from '../lib/avatarColor';
 import { getDepartmentTagClass } from '../lib/departmentColors';
-import { ACCOUNT_TYPE_LABELS, canEditOrDeleteTarget, isNavAllowedByRole } from '../lib/permissions';
+import { ACCOUNT_TYPE_LABELS, canEditOrDeleteTarget, canEditOrgStructure, isNavAllowedByRole } from '../lib/permissions';
 import { useAppData } from '../context/AppDataContext';
 import Dropdown from './Dropdown';
 import OrgChart, { OrgChartHandle, EmployeeLocateSearch } from './OrgChart';
@@ -88,7 +88,7 @@ interface EmployeeManagementProps {
     id: string,
     updates: Partial<Pick<Employee, 'name' | 'nickname' | 'role' | 'avatar' | 'department' | 'division' | 'username' | 'accountType' | 'restrictedMenuIds' | 'phone' | 'address'>> & { password?: string }
   ) => Promise<void>;
-  onDeleteEmployee: (id: string) => Promise<void>;
+  onDeleteEmployee: (id: string, reason: string) => Promise<void>;
 }
 
 export default function EmployeeManagement({ employees, auditLogs, currentUserId, onAddEmployee, onUpdateEmployee, onDeleteEmployee }: EmployeeManagementProps) {
@@ -186,6 +186,10 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
   // (admin or superadmin) account — see canEditOrDeleteTarget for the exact rule. Viewing (as
   // opposed to editing) another admin's details is always allowed — it's not destructive.
   const isEditLockedForAdmin = (emp: Employee) => !actingUser || !canEditOrDeleteTarget(actingUser, emp);
+  // Admin can view the org chart but not add/rename/delete divisions or sections — only Super
+  // Admin/ผู้บริหาร can. Org structure has no backend route (still localStorage-only), so this is
+  // a pure client-side gate.
+  const canEditOrg = Boolean(actingUser && canEditOrgStructure(actingUser));
 
   const openProfile = (emp: Employee, mode: 'view' | 'edit') => {
     if (mode === 'edit' && isEditLockedForAdmin(emp)) return;
@@ -202,19 +206,27 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
     setNewAvatar(await readFileAsDataUrl(file));
   };
 
-  // Delete confirmation
+  // Delete confirmation — requires a reason, logged to the audit trail alongside the deletion.
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [deleteReason, setDeleteReason] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
-  useEscapeToClose(Boolean(deleteTarget), () => setDeleteTarget(null));
+
+  const closeDeleteModal = () => {
+    setDeleteTarget(null);
+    setDeleteReason('');
+    setDeleteError('');
+  };
+
+  useEscapeToClose(Boolean(deleteTarget), closeDeleteModal);
 
   const confirmDelete = async () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget || !deleteReason.trim()) return;
     setIsDeleting(true);
     setDeleteError('');
     try {
-      await onDeleteEmployee(deleteTarget.id);
-      setDeleteTarget(null);
+      await onDeleteEmployee(deleteTarget.id, deleteReason.trim());
+      closeDeleteModal();
     } catch (err) {
       setDeleteError(err instanceof ApiError ? err.message : 'ลบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
     } finally {
@@ -475,6 +487,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
               </Tooltip>
             )}
 
+            {canEditOrg && (
             <div className="flex items-center gap-2 lg:ml-auto shrink-0">
               {orgEditMode && (
                 <button
@@ -495,6 +508,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                 <Pencil size={13} /> {orgEditMode ? 'เสร็จสิ้นการแก้ไข' : 'แก้ไขโครงสร้าง'}
               </button>
             </div>
+            )}
           </div>
         </div>
       ) : null}
@@ -584,7 +598,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                   onView={() => openProfile(emp, 'view')}
                   onEdit={() => openProfile(emp, 'edit')}
                   onDelete={() => setDeleteTarget({ id: emp.id, name: emp.name })}
-                  deleteDisabled={emp.id === currentUserId}
+                  deleteDisabled={emp.id === currentUserId || isEditLockedForAdmin(emp)}
                   editDisabled={isEditLockedForAdmin(emp)}
                 />
               </div>
@@ -683,7 +697,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                       onView={() => openProfile(emp, 'view')}
                       onEdit={() => openProfile(emp, 'edit')}
                       onDelete={() => setDeleteTarget({ id: emp.id, name: emp.name })}
-                      deleteDisabled={emp.id === currentUserId}
+                      deleteDisabled={emp.id === currentUserId || isEditLockedForAdmin(emp)}
                       editDisabled={isEditLockedForAdmin(emp)}
                     />
                   </td>
@@ -1019,7 +1033,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
               <motion.div
                 className="absolute inset-0 bg-black/15 backdrop-blur-sm"
-                onClick={() => setDeleteTarget(null)}
+                onClick={closeDeleteModal}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
@@ -1034,12 +1048,26 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
               >
                 <div className="flex justify-between items-center pb-2 border-b border-slate-100">
                   <h3 className="text-sm font-bold text-slate-800">ลบบัญชีพนักงาน</h3>
-                  <button type="button" onClick={() => setDeleteTarget(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X size={18} /></button>
+                  <button type="button" onClick={closeDeleteModal} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X size={18} /></button>
                 </div>
 
                 <p className="text-xs text-slate-600">
                   ยืนยันการลบบัญชี <span className="font-bold text-slate-800">"{deleteTarget.name}"</span> ออกจากระบบถาวร รวมถึงข้อมูล login ที่ใช้เข้าสู่ระบบ — ไม่สามารถกู้คืนได้
                 </p>
+
+                <div>
+                  <label className="block text-[#272220] font-bold text-[11px] mb-1">
+                    เหตุผลที่ลบ <span className="text-[#FF6537]">*</span>
+                  </label>
+                  <textarea
+                    autoFocus
+                    rows={2}
+                    placeholder="ระบุเหตุผล..."
+                    value={deleteReason}
+                    onChange={(e) => setDeleteReason(e.target.value)}
+                    className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                  />
+                </div>
 
                 {deleteError && (
                   <div className="bg-rose-50 border border-rose-100 text-rose-700 text-xs px-3 py-2 rounded-lg">
@@ -1048,10 +1076,10 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                 )}
 
                 <div className="flex justify-end gap-2 pt-1">
-                  <button type="button" onClick={() => setDeleteTarget(null)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs font-semibold cursor-pointer hover:bg-slate-50">ยกเลิก</button>
+                  <button type="button" onClick={closeDeleteModal} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs font-semibold cursor-pointer hover:bg-slate-50">ยกเลิก</button>
                   <button
                     onClick={confirmDelete}
-                    disabled={isDeleting}
+                    disabled={isDeleting || !deleteReason.trim()}
                     className="px-5 py-2 rounded-lg text-xs font-bold bg-rose-600 text-white hover:bg-rose-700 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     {isDeleting ? 'กำลังลบ...' : 'ลบถาวร'}

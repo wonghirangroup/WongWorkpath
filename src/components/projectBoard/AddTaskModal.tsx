@@ -6,7 +6,7 @@ import { Employee, Meeting } from '../../types';
 import { ProjectRow, ProjectTaskItem, ProjectTaskStatus } from './types';
 import { EmployeeMultiSelect, displayName, formatThaiDateShort, PRIORITY_OPTIONS, Priority } from './CreateProjectModal';
 import { TASK_STATUS_LABEL, TASK_STATUS_COLOR } from './statusMeta';
-import { ChangeRequest } from '../../lib/api';
+import { ApiError, ChangeRequest } from '../../lib/api';
 import { isOwner } from '../../lib/ownership';
 import Dropdown from '../Dropdown';
 import EmployeeAvatar from '../EmployeeAvatar';
@@ -32,7 +32,7 @@ interface AddTaskModalProps {
   onSave: (task: Omit<ProjectTaskItem, 'id'>) => Promise<ProjectTaskItem>;
   onAddMeeting: (meeting: Omit<Meeting, 'id'>) => Promise<void>;
   onUpdateTask?: (id: string, updates: Partial<ProjectTaskItem>) => Promise<void>;
-  onCreateFolder: (name: string, parentId?: string | null, taskId?: string) => string;
+  onCreateFolder: (name: string, parentId: string | null, taskId: string | undefined, projectId: string) => Promise<string>;
   // '' means there's no fixed project context (e.g. opened from the Dashboard's quick-add, not
   // from inside a project) — the modal then shows its own required project picker and resolves
   // projectDocFolderId/projectStartDate/projectEndDate from whichever project gets picked, using
@@ -53,6 +53,9 @@ interface AddTaskModalProps {
   projectMemberIds?: string[];
   employees: Employee[];
   currentUserId: string;
+  // ผู้บริหาร bypasses the owner-approval gate below regardless of whether they're actually an
+  // assignee of the task being edited.
+  isExecutive?: boolean;
   // When set, the modal opens straight into "แก้ไขงาน" for this task instead of a blank "เพิ่มงาน
   // ใหม่" form — locked to task mode (editing an existing task into a meeting doesn't make sense).
   editingTask?: ProjectTaskItem | null;
@@ -78,7 +81,7 @@ interface AddTaskModalProps {
 // branches of handleSubmit await the call and show an inline error instead of closing blind. The
 // "create a folder" option also writes to the shared document store via onCreateFolder, same as
 // CreateProjectModal's own folder step.
-export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, onUpdateTask, onCreateFolder, projectId, projectDocFolderId, projectStartDate, projectEndDate, projects, projectMemberIds, employees, currentUserId, editingTask, parentTask, changeRequests, onRequestChange }: AddTaskModalProps) {
+export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, onUpdateTask, onCreateFolder, projectId, projectDocFolderId, projectStartDate, projectEndDate, projects, projectMemberIds, employees, currentUserId, isExecutive, editingTask, parentTask, changeRequests, onRequestChange }: AddTaskModalProps) {
   const needsProjectPicker = !projectId;
   const [mode, setMode] = useState<ModalMode>('task');
   const [pickedProjectId, setPickedProjectId] = useState('');
@@ -94,6 +97,10 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
   const [dueDate, setDueDate] = useState('');
   const [createFolder, setCreateFolder] = useState(false);
   const [folderName, setFolderName] = useState('');
+  // Tracks whether the user has typed into the folder-name field themselves — while untouched, it
+  // keeps mirroring the task title as it's typed; once touched, it stops so a manual edit doesn't
+  // get clobbered by the next keystroke in the title field above it.
+  const [folderNameTouched, setFolderNameTouched] = useState(false);
 
   const [meetingDate, setMeetingDate] = useState('');
   const [meetingStartTime, setMeetingStartTime] = useState('');
@@ -110,7 +117,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
   // of) still saves directly; anyone else's edit files a change_request instead (see
   // ProjectDetail's "คำขอที่รอดำเนินการ" panel for the owner-facing approve/reject side). งานย่อย
   // is exempt from this gate entirely — only the main task needs approval, per the product decision.
-  const canEditDirectly = !editingTask || Boolean(editingTask.parentTaskId) || isOwner(editingTask.assigneeEmployeeIds, currentUserId);
+  const canEditDirectly = Boolean(isExecutive) || !editingTask || Boolean(editingTask.parentTaskId) || isOwner(editingTask.assigneeEmployeeIds, currentUserId);
   const pendingRequest = editingTask && !editingTask.parentTaskId
     ? changeRequests?.find((r) => r.entityType === 'project_task' && r.entityId === editingTask.id && r.status === 'pending')
     : undefined;
@@ -144,6 +151,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
     }
     setCreateFolder(true);
     setFolderName('');
+    setFolderNameTouched(false);
     setMeetingDate('');
     setMeetingStartTime('');
     setMeetingEndTime('');
@@ -158,7 +166,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
   // name synced to the task title as it's typed, the same "only if not already set" rule the
   // checkbox's own onChange used before it defaulted to checked at all.
   useEffect(() => {
-    if (!isEditing && createFolder && !folderName.trim()) setFolderName(title.trim());
+    if (!isEditing && createFolder && !folderNameTouched) setFolderName(title.trim());
   }, [title]);
 
   const creator = employees.find((e) => e.id === currentUserId);
@@ -277,13 +285,15 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
           });
           // Folder creation is create-only — re-offering it on every edit-save would spawn a fresh
           // duplicate folder each time, since there's no "already created" flag to check against.
-          if (createFolder && folderName.trim()) onCreateFolder(folderName.trim(), effectiveProjectDocFolderId ?? null, createdTask.id);
+          if (createFolder && folderName.trim()) await onCreateFolder(folderName.trim(), effectiveProjectDocFolderId ?? null, createdTask.id, createdTask.projectId);
         }
       }
       resetAndClose();
-    } catch {
+    } catch (err) {
       setFormError(
-        mode === 'meeting' ? 'นัดประชุมไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' : isEditing ? 'บันทึกการแก้ไขไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' : 'เพิ่มงานไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'
+        err instanceof ApiError
+          ? err.message
+          : mode === 'meeting' ? 'นัดประชุมไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' : isEditing ? 'บันทึกการแก้ไขไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' : 'เพิ่มงานไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'
       );
     } finally {
       setIsSubmitting(false);
@@ -567,7 +577,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                           onChange={(e) => {
                             const checked = e.target.checked;
                             setCreateFolder(checked);
-                            if (checked && !folderName.trim()) setFolderName(title.trim());
+                            if (checked && !folderNameTouched) setFolderName(title.trim());
                           }}
                           className="rounded border-[#E5E5E5] text-[#FF6537] focus:ring-[#FF6537] cursor-pointer"
                         />
@@ -581,7 +591,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                           type="text"
                           placeholder="ชื่อโฟลเดอร์"
                           value={folderName}
-                          onChange={(e) => setFolderName(e.target.value)}
+                          onChange={(e) => { setFolderName(e.target.value); setFolderNameTouched(true); }}
                           className="w-full mt-2 p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
                         />
                       )}

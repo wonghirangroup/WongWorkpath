@@ -5,9 +5,9 @@ import { ChevronDown, ChevronLeft, ChevronRight, Download, LayoutGrid, List, Plu
 import searchIcon from '../../../images/icon/Search pass.png';
 import { useAppData } from '../../context/AppDataContext';
 import { Employee } from '../../types';
-import { canDeleteProject } from '../../lib/permissions';
+import { canDeleteProject, canSeeAllProjects } from '../../lib/permissions';
 import { ApiError } from '../../lib/api';
-import { isOwner } from '../../lib/ownership';
+import { isOwner, isResponsibleForProject } from '../../lib/ownership';
 import { buildCsv, downloadCsv } from '../../lib/csv';
 import { useEscapeToClose } from '../../lib/useEscapeToClose';
 import { ProjectRow, ProjectStatus } from './types';
@@ -23,10 +23,11 @@ import ProjectDetail from './ProjectDetail';
 import CreateProjectModal from './CreateProjectModal';
 import Tooltip from '../Tooltip';
 
-type SortBy = 'latest' | 'near_deadline' | 'progress' | 'name';
+type SortBy = 'newest' | 'oldest' | 'near_deadline' | 'progress' | 'name';
 
 const SORT_OPTIONS: { value: SortBy; label: string }[] = [
-  { value: 'latest', label: 'ล่าสุด' },
+  { value: 'newest', label: 'ใหม่ไปเก่า' },
+  { value: 'oldest', label: 'เก่าไปใหม่' },
   { value: 'near_deadline', label: 'ใกล้ครบกำหนด' },
   { value: 'progress', label: 'ความคืบหน้า' },
   { value: 'name', label: 'ชื่อ (ก-ฮ)' },
@@ -94,9 +95,58 @@ function SortMenu({ value, onChange }: { value: SortBy; onChange: (v: SortBy) =>
   );
 }
 
+// Shared by both places pagination shows up (the result-count row and, again, next to the status
+// filter tabs right above the table — added there since scrolling down to actually read the table
+// left the top one out of reach) so the two copies can never drift out of sync with each other.
+function PaginationControls({
+  currentPage,
+  totalPages,
+  onPrev,
+  onNext,
+  onPage,
+}: {
+  currentPage: number;
+  totalPages: number;
+  onPrev: () => void;
+  onNext: () => void;
+  onPage: (page: number) => void;
+}) {
+  return (
+    <div className="flex justify-center items-center gap-1.5 shrink-0">
+      <button
+        onClick={onPrev}
+        disabled={currentPage === 1}
+        className="w-9 h-9 lg:w-8 lg:h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-[#FF6537] hover:bg-orange-50 disabled:text-slate-300 disabled:hover:bg-white disabled:cursor-not-allowed cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1"
+      >
+        <ChevronLeft size={16} />
+      </button>
+      {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
+        <button
+          key={pageNum}
+          onClick={() => onPage(pageNum)}
+          className={`w-9 h-9 lg:w-8 lg:h-8 rounded-lg text-sm font-bold cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1 ${
+            pageNum === currentPage
+              ? 'bg-[#FF6537] text-white shadow-sm'
+              : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+          }`}
+        >
+          {pageNum}
+        </button>
+      ))}
+      <button
+        onClick={onNext}
+        disabled={currentPage === totalPages}
+        className="w-9 h-9 lg:w-8 lg:h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-[#FF6537] hover:bg-orange-50 disabled:text-slate-300 disabled:hover:bg-white disabled:cursor-not-allowed cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1"
+      >
+        <ChevronRight size={16} />
+      </button>
+    </div>
+  );
+}
+
 interface ProjectBoardProps {
   employees: Employee[];
-  onCreateFolder: (name: string, parentId?: string | null, taskId?: string) => string;
+  onCreateFolder: (name: string, parentId: string | null, taskId: string | undefined, projectId: string) => Promise<string>;
   currentUserId: string;
 }
 
@@ -106,7 +156,7 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
   const [search, setSearch] = useState('');
   const [view, setView] = useState<'list' | 'grid'>('list');
   const [filter, setFilter] = useState<ProjectFilter>('all');
-  const [sortBy, setSortBy] = useState<SortBy>('latest');
+  const [sortBy, setSortBy] = useState<SortBy>('newest');
   const [currentPage, setCurrentPage] = useState(1);
   // Which up-to-5 statuses the summary cards show — owned here rather than inside
   // StatusSummaryCards because its settings button lives up in this page's toolbar.
@@ -148,17 +198,26 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
     documents,
     handleAddDocument,
     currentUser,
+    orgSections,
   } = useAppData();
   const selectedProject = projects.find((p) => p.id === taskSelectedProjectId) ?? null;
   const setSelectedProject = (row: ProjectRow | null) => setTaskSelectedProjectId(row?.id ?? null);
 
   const canDelete = currentUser ? canDeleteProject(currentUser) : false;
+  // ผู้บริหาร bypasses every ownership-approval gate on this page (delete, inline priority edit,
+  // and — via the isExecutive prop threaded into ProjectDetail/AddTaskModal/EditProjectModal —
+  // every edit made from inside a project's own detail page too).
+  const isExecutive = currentUser ? canSeeAllProjects(currentUser) : false;
+  // ผู้บริหาร sees everything by default; every other role defaults to just their own responsible
+  // projects with the option to switch to "ทั้งหมด" — see isResponsibleForProject for the exact
+  // owner-or-member definition (matches MyWorkspace.tsx's "งานของฉัน" page).
+  const [scope, setScope] = useState<'mine' | 'all'>(() => (isExecutive ? 'all' : 'mine'));
 
   // canDelete (role-based) decides who even sees the delete icon at all; ownership decides whether
   // that click deletes right away or has to go through the same request/approve flow as everyone
   // else editing an owned project — the two checks are independent (see the plan's design decision 3).
   const deleteTargetProject = deleteTarget ? projects.find((p) => p.id === deleteTarget.id) : undefined;
-  const deleteCanDirectly = !deleteTargetProject || isOwner(deleteTargetProject.ownerEmployeeIds, currentUserId);
+  const deleteCanDirectly = !deleteTargetProject || isExecutive || isOwner(deleteTargetProject.ownerEmployeeIds, currentUserId);
   const deletePendingRequest = deleteTarget
     ? changeRequests.find((r) => r.entityType === 'project' && r.entityId === deleteTarget.id && r.status === 'pending')
     : undefined;
@@ -192,6 +251,14 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
     setTimeout(() => setActionToast((current) => (current === message ? null : current)), 3000);
   };
 
+  // Everything below the toolbar (status cards, counts, the table itself) reflects the current
+  // "ของฉัน"/"ทั้งหมด" scope — otherwise the summary cards would count projects that then don't
+  // appear anywhere in the filtered/paginated list underneath them.
+  const scopedProjects = useMemo(
+    () => (scope === 'mine' && currentUserId ? projects.filter((p) => isResponsibleForProject(p, currentUserId)) : projects),
+    [projects, scope, currentUserId]
+  );
+
   // Record<string, number> (not Record<ProjectStatus, number>) since a project's status can now
   // also be a custom status id — every built-in and every known custom status is seeded at 0 so
   // its card can render even with no projects on it yet, plus whatever other status strings
@@ -200,29 +267,38 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
     const base: Record<string, number> = {};
     PROJECT_STATUS_OPTIONS.forEach((s) => { base[s] = 0; });
     customProjectStatuses.forEach((s) => { base[s.id] = 0; });
-    projects.forEach((p) => {
+    scopedProjects.forEach((p) => {
       base[p.status] = (base[p.status] ?? 0) + 1;
     });
     return base;
-  }, [projects, customProjectStatuses]);
+  }, [scopedProjects, customProjectStatuses]);
 
   const hasNearDeadline = useMemo(
-    () => projects.some((p) => p.daysUntilDue !== undefined && p.daysUntilDue <= 2),
-    [projects]
+    () => scopedProjects.some((p) => p.daysUntilDue !== undefined && p.daysUntilDue <= 2),
+    [scopedProjects]
   );
 
   const filteredRows = useMemo(() => {
-    const rows = projects.filter((p) => {
+    const rows = scopedProjects.filter((p) => {
       if (search.trim() && !p.title.toLowerCase().includes(search.trim().toLowerCase())) return false;
       if (filter === 'all') return true;
       if (filter === 'near_deadline') return p.daysUntilDue !== undefined && p.daysUntilDue <= 2;
       return p.status === filter;
     });
 
-    if (sortBy === 'latest') return rows;
+    // A project's own id is `PROJ_<created-at-epoch-ms>` (server-generated, or client-pre-generated
+    // for the "create matching Drive folder" flow — same format either way) — no separate sortable
+    // timestamp is exposed to the client, so this doubles as one instead of adding a field just for
+    // this. `createdDate` alone can't do it: it's a pre-formatted Thai display string ("18 ก.ย.
+    // 2569"), not something that sorts correctly as text.
+    const createdAtMs = (p: ProjectRow) => Number(p.id.replace(/^PROJ_/, '')) || 0;
 
     const sorted = [...rows];
-    if (sortBy === 'near_deadline') {
+    if (sortBy === 'newest') {
+      sorted.sort((a, b) => createdAtMs(b) - createdAtMs(a));
+    } else if (sortBy === 'oldest') {
+      sorted.sort((a, b) => createdAtMs(a) - createdAtMs(b));
+    } else if (sortBy === 'near_deadline') {
       sorted.sort((a, b) => (a.daysUntilDue ?? Infinity) - (b.daysUntilDue ?? Infinity));
     } else if (sortBy === 'progress') {
       sorted.sort((a, b) => (b.progress ?? -1) - (a.progress ?? -1));
@@ -230,7 +306,7 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
       sorted.sort((a, b) => a.title.localeCompare(b.title, 'th'));
     }
     return sorted;
-  }, [projects, search, filter, sortBy]);
+  }, [scopedProjects, search, filter, sortBy]);
 
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
   const paginatedRows = filteredRows.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
@@ -298,6 +374,8 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
         onDecideChangeRequest={handleDecideChangeRequest}
         documents={documents}
         onAddDocument={handleAddDocument}
+        orgSections={orgSections}
+        isExecutive={isExecutive}
       />
     );
   }
@@ -334,6 +412,27 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
         </div>
 
         <div className="flex items-center gap-3 flex-wrap lg:flex-nowrap lg:flex-1 lg:min-w-max">
+          <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-xl p-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => { setScope('mine'); setCurrentPage(1); }}
+              className={`px-3 h-8 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
+                scope === 'mine' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'
+              }`}
+            >
+              ของฉัน
+            </button>
+            <button
+              type="button"
+              onClick={() => { setScope('all'); setCurrentPage(1); }}
+              className={`px-3 h-8 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
+                scope === 'all' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'
+              }`}
+            >
+              ทั้งหมด
+            </button>
+          </div>
+
           <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-xl p-1 shrink-0">
             <Tooltip content="มุมมองตาราง">
               <button
@@ -392,53 +491,34 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
       </div>
       </div>
 
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <p className="font-normal text-[16px] text-[#6F6F6F] leading-none">ทั้งหมด {filteredRows.length} โครงการ</p>
-          <SortMenu value={sortBy} onChange={(v) => { setSortBy(v); setCurrentPage(1); }} />
-        </div>
-
-        {filteredRows.length > PAGE_SIZE && (
-          <div className="flex justify-center items-center gap-1.5">
-            <button
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="w-9 h-9 lg:w-8 lg:h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-[#FF6537] hover:bg-orange-50 disabled:text-slate-300 disabled:hover:bg-white disabled:cursor-not-allowed cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1"
-            >
-              <ChevronLeft size={16} />
-            </button>
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
-              <button
-                key={pageNum}
-                onClick={() => setCurrentPage(pageNum)}
-                className={`w-9 h-9 lg:w-8 lg:h-8 rounded-lg text-sm font-bold cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1 ${
-                  pageNum === currentPage
-                    ? 'bg-[#FF6537] text-white shadow-sm'
-                    : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
-                }`}
-              >
-                {pageNum}
-              </button>
-            ))}
-            <button
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              className="w-9 h-9 lg:w-8 lg:h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-[#FF6537] hover:bg-orange-50 disabled:text-slate-300 disabled:hover:bg-white disabled:cursor-not-allowed cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1"
-            >
-              <ChevronRight size={16} />
-            </button>
-          </div>
-        )}
+      <div className="flex items-center gap-2">
+        <p className="font-normal text-[16px] text-[#6F6F6F] leading-none">ทั้งหมด {filteredRows.length} โครงการ</p>
+        <SortMenu value={sortBy} onChange={(v) => { setSortBy(v); setCurrentPage(1); }} />
       </div>
 
       <StatusSummaryCards counts={counts} selectedIds={selectedStatusIds} />
 
-      <ProjectFilterTabs
-        active={filter}
-        onChange={(v) => { setFilter(v); setCurrentPage(1); }}
-        hasNearDeadline={hasNearDeadline}
-        customStatuses={customProjectStatuses}
-      />
+      <div className="flex items-center justify-between gap-2">
+        {/* min-w-0 lets this shrink below its content's natural width — without it, a flex row's
+            default min-width:auto would push the pagination controls off to the side (or force
+            the whole row to overflow) once there are enough tabs/custom statuses to fill the row,
+            instead of letting the tabs' own overflow-x-auto handle it. */}
+        <div className="min-w-0">
+          <ProjectFilterTabs
+            active={filter}
+            onChange={(v) => { setFilter(v); setCurrentPage(1); }}
+            hasNearDeadline={hasNearDeadline}
+            customStatuses={customProjectStatuses}
+          />
+        </div>
+        <PaginationControls
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPrev={() => setCurrentPage((p) => Math.max(1, p - 1))}
+          onNext={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+          onPage={setCurrentPage}
+        />
+      </div>
 
       <AnimatePresence mode="wait">
         <motion.div
@@ -461,6 +541,7 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
               onDelete={(row) => setDeleteTarget({ id: row.id, title: row.title })}
               onUpdatePriority={(row, priority) => handleUpdateProject(row.id, { priority })}
               currentUserId={currentUserId}
+              isExecutive={isExecutive}
             />
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

@@ -80,8 +80,12 @@ export interface LinkedDoc {
   fileDataUrl?: string; // kind === 'file' — base64 data: URL, read via FileReader on upload
   fileMimeType?: string; // kind === 'file'
   fileSize?: number; // kind === 'file' — bytes
+  // 'ส่วนตัว' is visible only to its own creator; 'โครงการ' is visible only to that project's
+  // current owners/members ("คนที่รับผิดชอบโครงการนั้น") — enforced server-side, see
+  // server/routes/documents.ts. Required for real access control, not just a display tag.
   scope: 'ส่วนตัว' | 'โครงการ';
-  projectId?: string; // scope === 'โครงการ' — id of a real ProjectRow this item is explicitly tagged with
+  projectId?: string; // required when scope === 'โครงการ' — id of the real ProjectRow this item belongs to
+  creatorEmployeeId?: string; // who created this item — drives 'ส่วนตัว' visibility, unlike `updatedBy` (a display name)
   // Set only on a folder created via a project task's own "create folder" checkbox (see
   // AddTaskModal.tsx) — lets DocVault show which task (and, via the task's own projectId, which
   // project) owns this folder. Anything nested inside it inherits the tag by walking up parentId,
@@ -104,8 +108,9 @@ export interface CredentialItem {
   id: string;
   label: string;
   type: 'Username & Password' | 'API Key' | 'Bank Account' | 'Access Token';
-  scope: 'ส่วนตัว' | 'ทีม';
+  scope: 'ส่วนตัว' | 'ทีม' | 'โครงการ';
   team?: string; // Matches the creator's `Employee.department` (real org-chart section) at creation time
+  projectId?: string; // set when scope === 'โครงการ' — visible to that project's owners/members
   username: string;
   password?: string;
   keyValue?: string;
@@ -114,7 +119,8 @@ export interface CredentialItem {
   logoUrl?: string;
   lastViewedAt?: string;
   createdAt: string;
-  createdBy: string;
+  createdBy: string; // display name — kept for legacy rows created before creatorEmployeeId existed
+  creatorEmployeeId?: string; // real id — server-side visibility filtering keys off this, not createdBy
 }
 
 export interface AuditLog {
@@ -136,6 +142,7 @@ export interface AuditLog {
 export interface Meeting {
   id: string;
   projectId?: string;
+  department?: string; // แผนกที่จัดประชุม (ไม่บังคับ) — ใช้ช่วยกรองผู้เข้าร่วมและเป็น tag บนปฏิทิน
   title: string;
   description?: string;
   date: string; // YYYY-MM-DD
@@ -148,6 +155,7 @@ export interface Meeting {
   // split may still hold a URL in here (no backfill was run) — display code should still detect
   // and link-ify that case for them.
   meetingLink?: string; // an online meeting URL (Zoom/Meet/Teams/etc.)
+  locationLink?: string; // a map link (e.g. Google Maps) for `location`, for meetings held outside the office
   createdBy?: string; // Employee id
   status: 'scheduled' | 'cancelled';
   cancellationReason?: string; // required whenever status is 'cancelled' — see ScheduleMeetingModal's cancel flow

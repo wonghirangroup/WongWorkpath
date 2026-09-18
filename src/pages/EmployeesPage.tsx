@@ -1,8 +1,15 @@
 import EmployeeManagement from '../components/EmployeeManagement';
+import EmployeeDirectory from '../components/EmployeeDirectory';
 import { useAppData } from '../context/AppDataContext';
+import { canManageEmployees } from '../lib/permissions';
 
 export default function EmployeesPage() {
-  const { employees, auditLogs, currentUser, handleAddEmployee, handleUpdateEmployee, handleDeleteEmployee } = useAppData();
+  const { employees, auditLogs, currentUser, orgDivisions, handleAddEmployee, handleUpdateEmployee, handleDeleteEmployee } = useAppData();
+
+  if (!currentUser || !canManageEmployees(currentUser)) {
+    return <EmployeeDirectory employees={employees} orgDivisions={orgDivisions} />;
+  }
+
   return (
     <EmployeeManagement
       employees={employees}

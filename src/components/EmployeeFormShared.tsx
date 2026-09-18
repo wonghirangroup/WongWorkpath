@@ -7,11 +7,14 @@ import { NAV_ITEMS } from './layout/Sidebar';
 // Shared between EmployeeManagement's create form and EmployeeProfileModal's edit mode — kept in
 // one file so the two can't drift apart on what an admin is allowed to set.
 
-// Only a superadmin can hand out the superadmin level itself — a plain admin can promote someone
-// up to admin (mirroring the old "ตั้งเป็น Admin" checkbox, which any admin could freely tick) but
-// not past their own level.
+// A plain admin can only ever hand out the "employee" level — admin/superadmin/ผู้บริหาร accounts
+// can only be created or changed by a Super Admin or ผู้บริหาร (mirrors canEditOrDeleteTarget's
+// "admin can't touch admin-like accounts" rule, extended to account-type assignment itself).
 export function assignableAccountTypes(actingUser: Employee | undefined): AccountType[] {
-  return ACCOUNT_TYPES.filter((t) => t !== 'superadmin' || actingUser?.accountType === 'superadmin');
+  if (actingUser?.accountType === 'superadmin' || actingUser?.accountType === 'executive') {
+    return [...ACCOUNT_TYPES];
+  }
+  return ['employee'];
 }
 
 // Menu ids an admin can restrict per-employee — dashboard is deliberately excluded since it's the

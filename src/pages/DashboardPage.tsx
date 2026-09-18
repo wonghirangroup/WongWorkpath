@@ -11,9 +11,9 @@ export default function DashboardPage() {
     currentUser,
     handleAddProject,
     customProjectStatuses,
-    documents,
-    saveDocuments,
+    handleAddDocument,
     setTaskSelectedProjectId,
+    orgSections,
   } = useAppData();
   const navigate = useNavigate();
 
@@ -22,8 +22,8 @@ export default function DashboardPage() {
     navigate('/tasks');
   };
 
-  const handleCreateFolder = (name: string, parentId: string | null = null, taskId?: string) =>
-    createDocFolder(name, parentId, taskId, documents, saveDocuments, currentUser?.name || 'ผู้ใช้งานปัจจุบัน');
+  const handleCreateFolder = (name: string, parentId: string | null, taskId: string | undefined, projectId: string) =>
+    createDocFolder(name, parentId, taskId, projectId, handleAddDocument, currentUser?.name || 'ผู้ใช้งานปัจจุบัน');
 
   return (
     <Dashboard
@@ -35,6 +35,7 @@ export default function DashboardPage() {
       onCreateFolder={handleCreateFolder}
       customProjectStatuses={customProjectStatuses}
       onSelectProject={goToProject}
+      orgSections={orgSections}
     />
   );
 }

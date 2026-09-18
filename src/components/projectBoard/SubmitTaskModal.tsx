@@ -18,8 +18,9 @@ interface SubmitTaskModalProps {
   // members) instead of every employee in the company — an empty list (no owners/members set
   // yet) leaves it open to everyone, same "unowned = open" convention used elsewhere.
   projectMemberIds?: string[];
+  currentUserId: string;
   currentUserName: string;
-  onAddDocument: (doc: LinkedDoc) => void;
+  onAddDocument: (doc: Omit<LinkedDoc, 'id'>) => Promise<LinkedDoc>;
   onSubmit: (taskId: string, updates: Partial<ProjectTaskItem>) => Promise<void>;
   onClose: () => void;
 }
@@ -28,7 +29,7 @@ interface SubmitTaskModalProps {
 // attaches files (each becomes a real Doc Vault file tagged with this task's LinkedDoc.taskId, so
 // it shows up in "เอกสาร Drive" too, filed alongside the task's own folder when it has one). This
 // moves the task to 'review'; ReviewTaskModal is the other half of the loop.
-export default function SubmitTaskModal({ task, employees, documents, projectDocFolderId, projectMemberIds, currentUserName, onAddDocument, onSubmit, onClose }: SubmitTaskModalProps) {
+export default function SubmitTaskModal({ task, employees, documents, projectDocFolderId, projectMemberIds, currentUserId, currentUserName, onAddDocument, onSubmit, onClose }: SubmitTaskModalProps) {
   useEscapeToClose(Boolean(task), onClose);
   const [reviewerIds, setReviewerIds] = useState<string[]>([]);
   const [note, setNote] = useState('');
@@ -107,12 +108,12 @@ export default function SubmitTaskModal({ task, employees, documents, projectDoc
       const parentId = taskFolder?.id ?? projectDocFolderId ?? null;
       const date = nowTimestamp();
 
+      // Scoped 'โครงการ' (not 'ส่วนตัว') so the task's reviewer — and the rest of the project team
+      // — can actually see/open what was attached, not just the assignee who submitted it.
       const newFileIds: string[] = [];
       for (const file of pickedFiles) {
         const dataUrl = await readFileAsDataUrl(file);
-        const id = 'DOC' + Date.now() + Math.random().toString(36).slice(2, 6);
-        const newDoc: LinkedDoc = {
-          id,
+        const newDoc: Omit<LinkedDoc, 'id'> = {
           name: file.name,
           kind: 'file',
           parentId,
@@ -120,36 +121,38 @@ export default function SubmitTaskModal({ task, employees, documents, projectDoc
           fileDataUrl: dataUrl,
           fileMimeType: file.type || 'application/octet-stream',
           fileSize: file.size,
-          scope: 'ส่วนตัว',
+          scope: 'โครงการ',
+          projectId: task.projectId,
+          creatorEmployeeId: currentUserId,
           version: 1,
           lastUpdated: date,
           updatedBy: currentUserName,
           history: [{ version: 1, updatedBy: currentUserName, date, note: 'แนบไฟล์ตอนส่งงาน' }],
         };
-        onAddDocument(newDoc);
-        newFileIds.push(id);
+        const created = await onAddDocument(newDoc);
+        newFileIds.push(created.id);
       }
 
       // A link attaches the same way a file does — both are just Doc Vault LinkedDoc ids in
       // submissionFileIds, which is schema-agnostic about kind — so reviewers/the Doc Vault see
       // it identically to a real file, no separate "links" field needed on ProjectTaskItem.
       for (const link of pickedLinks) {
-        const id = 'DOC' + Date.now() + Math.random().toString(36).slice(2, 6);
-        const newDoc: LinkedDoc = {
-          id,
+        const newDoc: Omit<LinkedDoc, 'id'> = {
           name: link.name,
           kind: 'link',
           parentId,
           taskId: task.id,
           url: link.url,
-          scope: 'ส่วนตัว',
+          scope: 'โครงการ',
+          projectId: task.projectId,
+          creatorEmployeeId: currentUserId,
           version: 1,
           lastUpdated: date,
           updatedBy: currentUserName,
           history: [{ version: 1, updatedBy: currentUserName, date, note: 'แนบลิงก์ตอนส่งงาน' }],
         };
-        onAddDocument(newDoc);
-        newFileIds.push(id);
+        const created = await onAddDocument(newDoc);
+        newFileIds.push(created.id);
       }
 
       await onSubmit(task.id, {

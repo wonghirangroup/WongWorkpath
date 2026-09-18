@@ -3,7 +3,7 @@ import type { RowDataPacket } from 'mysql2';
 import { pool } from '../db.ts';
 import { nowBangkokDateTime, formatThaiDateShort } from '../lib/datetime.ts';
 import { customStatusIds } from './project-custom-statuses.ts';
-import { isOwner } from '../lib/ownership.ts';
+import { isOwner, isExecutiveActor } from '../lib/ownership.ts';
 
 export const projectsRouter = Router();
 
@@ -167,7 +167,11 @@ projectsRouter.post('/', async (req, res) => {
 
   try {
     const code = await generateProjectCode(abbreviation, type);
-    const id = `PROJ_${Date.now()}`;
+    // Normally server-generated, but CreateProjectModal's own "create matching Drive folder"
+    // checkbox needs the project's real id before the project itself exists (so the new folder's
+    // document row can be tagged scope='โครงการ' + this projectId right away, instead of briefly
+    // existing untagged) — it pre-generates and sends one in that case.
+    const id = typeof p.id === 'string' && p.id ? p.id : `PROJ_${Date.now()}`;
     const now = nowBangkokDateTime();
 
     await pool.query(
@@ -261,7 +265,7 @@ projectsRouter.put('/:id', async (req, res) => {
   const [[existing]] = await pool.query<RowDataPacket[]>('SELECT owner_employee_ids FROM project WHERE id = ?', [req.params.id]);
   if (!existing) return res.status(404).json({ message: 'ไม่พบโครงการนี้' });
   const currentOwnerIds: string[] = existing.owner_employee_ids ? JSON.parse(existing.owner_employee_ids) : [];
-  if (!isOwner(currentOwnerIds, p.actorEmployeeId)) {
+  if (!isOwner(currentOwnerIds, p.actorEmployeeId) && !(await isExecutiveActor(p.actorEmployeeId))) {
     return res.status(409).json({ message: 'ต้องขออนุมัติจากผู้รับผิดชอบหลักก่อนจึงจะแก้ไขได้', requiresApproval: true });
   }
 
@@ -283,7 +287,8 @@ projectsRouter.delete('/:id', async (req, res) => {
     const [[existing]] = await pool.query<RowDataPacket[]>('SELECT owner_employee_ids FROM project WHERE id = ?', [req.params.id]);
     if (!existing) return res.status(404).json({ message: 'ไม่พบโครงการนี้' });
     const currentOwnerIds: string[] = existing.owner_employee_ids ? JSON.parse(existing.owner_employee_ids) : [];
-    if (!isOwner(currentOwnerIds, typeof req.query.actorEmployeeId === 'string' ? req.query.actorEmployeeId : undefined)) {
+    const deleteActorId = typeof req.query.actorEmployeeId === 'string' ? req.query.actorEmployeeId : undefined;
+    if (!isOwner(currentOwnerIds, deleteActorId) && !(await isExecutiveActor(deleteActorId))) {
       return res.status(409).json({ message: 'ต้องขออนุมัติจากผู้รับผิดชอบหลักก่อนจึงจะลบได้', requiresApproval: true });
     }
 

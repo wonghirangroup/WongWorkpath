@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarRange } from 'lucide-react';
 import { Employee } from '../../types';
 import { ProjectTaskItem } from './types';
@@ -88,7 +88,20 @@ interface ProjectGanttProps {
 
 export default function ProjectGantt({ tasks, employees }: ProjectGanttProps) {
   const [zoom, setZoom] = useState<GanttZoom>('day');
-  const pxPerDay = PX_PER_DAY[zoom];
+
+  // Measures the scroll container's visible width so a short date range can stretch its day
+  // columns to fill the card instead of leaving a block of empty space after the last column —
+  // only ever widens columns beyond their normal PX_PER_DAY, never shrinks them (a long range
+  // still scrolls horizontally as before).
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => setContainerWidth(entries[0].contentRect.width));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const employeeById = useMemo(() => {
     const map = new Map<string, Employee>();
@@ -135,6 +148,8 @@ export default function ProjectGantt({ tasks, employees }: ProjectGanttProps) {
     );
   }
 
+  const availableColumnsWidth = containerWidth > LABEL_COL_WIDTH ? containerWidth - LABEL_COL_WIDTH : 0;
+  const pxPerDay = Math.max(PX_PER_DAY[zoom], availableColumnsWidth / range.totalDays);
   const dayOffset = (d: Date) => (d.getTime() - range.min.getTime()) / DAY_MS;
   const totalWidth = range.totalDays * pxPerDay;
 
@@ -196,7 +211,7 @@ export default function ProjectGantt({ tasks, employees }: ProjectGanttProps) {
       {/* The one scroll container for the whole chart — sliding it horizontally is how you move
           through the timeline at any zoom level, since both the header row and every task row
           below share this exact same scroll position. */}
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto" ref={scrollRef}>
         <div style={{ width: LABEL_COL_WIDTH + totalWidth }}>
           {/* Header row — day zoom draws one cell per real day; month/year zoom draws one wider
               cell per calendar month/year instead, sized to how many days of it are in view. */}

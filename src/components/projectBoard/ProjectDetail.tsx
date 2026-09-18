@@ -155,7 +155,7 @@ interface ProjectDetailProps {
   onDeleteTask: (id: string) => Promise<void>;
   onAddMeeting: (meeting: Omit<Meeting, 'id'>) => Promise<void>;
   onUpdateMeeting: (id: string, updates: Partial<Meeting>, reason?: string) => Promise<void>;
-  onCreateFolder: (name: string, parentId?: string | null, taskId?: string) => string;
+  onCreateFolder: (name: string, parentId: string | null, taskId: string | undefined, projectId: string) => Promise<string>;
   onUpdateProject: (updates: Partial<ProjectRow>) => Promise<void>;
   existingProjectTitles: string[];
   customStatuses: CustomProjectStatus[];
@@ -169,7 +169,11 @@ interface ProjectDetailProps {
   ) => Promise<void>;
   onDecideChangeRequest: (requestId: string, decision: 'approve' | 'reject', note?: string) => Promise<void>;
   documents: LinkedDoc[];
-  onAddDocument: (doc: LinkedDoc) => void;
+  onAddDocument: (doc: Omit<LinkedDoc, 'id'>) => Promise<LinkedDoc>;
+  orgSections: string[];
+  // ผู้บริหาร bypasses the owner-approval gate everywhere in this component — sees an "unowned"
+  // experience (direct save/delete) regardless of whether they're actually an owner/assignee.
+  isExecutive: boolean;
   // One-shot deep-link (e.g. from the Calendar page's meeting click) — which tab to open on first
   // mount instead of the usual "ภาพรวม" default. Any value outside DetailTab's own set is ignored.
   initialTab?: string | null;
@@ -177,7 +181,7 @@ interface ProjectDetailProps {
 
 const DETAIL_TABS: DetailTab[] = ['overview', 'tasks', 'team', 'meetings', 'timeline'];
 
-export default function ProjectDetail({ row, tasks, meetings, employees, currentUserId, onAddTask, onUpdateTask, onDeleteTask, onAddMeeting, onUpdateMeeting, onCreateFolder, onUpdateProject, existingProjectTitles, customStatuses, changeRequests, onRequestChange, onDecideChangeRequest, documents, onAddDocument, initialTab }: ProjectDetailProps) {
+export default function ProjectDetail({ row, tasks, meetings, employees, currentUserId, onAddTask, onUpdateTask, onDeleteTask, onAddMeeting, onUpdateMeeting, onCreateFolder, onUpdateProject, existingProjectTitles, customStatuses, changeRequests, onRequestChange, onDecideChangeRequest, documents, onAddDocument, orgSections, isExecutive, initialTab }: ProjectDetailProps) {
   const [tab, setTab] = useState<DetailTab>(() => (
     initialTab && (DETAIL_TABS as string[]).includes(initialTab) ? (initialTab as DetailTab) : 'overview'
   ));
@@ -429,7 +433,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
             <InlineDeleteConfirm
               label="ลบ"
               disabled={!t.parentTaskId && changeRequests.some((r) => r.entityType === 'project_task' && r.entityId === t.id && r.status === 'pending')}
-              requiresReason={!t.parentTaskId && !isOwner(t.assigneeEmployeeIds, currentUserId)}
+              requiresReason={!isExecutive && !t.parentTaskId && !isOwner(t.assigneeEmployeeIds, currentUserId)}
               onConfirm={() => onDeleteTask(t.id)}
               onRequestReason={() => setDeleteReasonTarget({
                 label: 'ลบงาน',
@@ -785,7 +789,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                             <InlineDeleteConfirm
                               label="ลบ"
                               disabled={!t.parentTaskId && changeRequests.some((r) => r.entityType === 'project_task' && r.entityId === t.id && r.status === 'pending')}
-                              requiresReason={!t.parentTaskId && !isOwner(t.assigneeEmployeeIds, currentUserId)}
+                              requiresReason={!isExecutive && !t.parentTaskId && !isOwner(t.assigneeEmployeeIds, currentUserId)}
                               onConfirm={() => onDeleteTask(t.id)}
                               onRequestReason={() => setDeleteReasonTarget({
                                 label: 'ลบงาน',
@@ -959,6 +963,17 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                           ) : (
                             <Tooltip content={meeting.location}><span className="block truncate">{meeting.location || (meeting.meetingLink ? '' : 'ยังไม่มี')}</span></Tooltip>
                           )}
+                          {meeting.locationLink && (
+                            <a
+                              href={meeting.locationLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="block truncate text-[#FF6537] hover:underline text-[11px] mt-0.5"
+                            >
+                              เปิดแผนที่
+                            </a>
+                          )}
                           {meeting.meetingLink && (
                             <a
                               href={meeting.meetingLink}
@@ -1042,6 +1057,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
         projectMemberIds={[...row.ownerEmployeeIds, ...(row.memberEmployeeIds ?? [])]}
         employees={employees}
         currentUserId={currentUserId}
+        isExecutive={isExecutive}
         editingTask={editingTask}
         parentTask={addingSubtaskFor}
         changeRequests={changeRequests}
@@ -1056,6 +1072,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
         documents={documents}
         projectDocFolderId={row.docFolderId}
         projectMemberIds={[...row.ownerEmployeeIds, ...(row.memberEmployeeIds ?? [])]}
+        currentUserId={currentUserId}
         currentUserName={employeeById.get(currentUserId) ? displayName(employeeById.get(currentUserId)!) : 'ผู้ใช้งานปัจจุบัน'}
         onAddDocument={onAddDocument}
         onSubmit={onUpdateTask}
@@ -1081,6 +1098,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
         existingTitles={existingProjectTitles}
         customStatuses={customStatuses}
         currentUserId={currentUserId}
+        isExecutive={isExecutive}
         changeRequests={changeRequests}
         onRequestChange={onRequestChange}
       />
@@ -1094,6 +1112,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
         onAddMeeting={onAddMeeting}
         meetingToEdit={editingMeeting}
         onUpdateMeeting={onUpdateMeeting}
+        orgSections={orgSections}
       />
 
       <CancelMeetingModal

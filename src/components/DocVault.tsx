@@ -43,11 +43,12 @@ import Tooltip from './Tooltip';
 
 interface DocVaultProps {
   documents: LinkedDoc[];
+  currentUserId: string;
   currentUserName: string;
-  onAddDocument: (doc: LinkedDoc) => void;
-  onEditDocument: (docId: string, updates: { name: string; url?: string; scope: LinkedDoc['scope']; projectId?: string }) => void;
-  onDeleteDocument: (docId: string) => void;
-  onMoveDocument: (docId: string, newParentId: string) => void;
+  onAddDocument: (doc: Omit<LinkedDoc, 'id'>) => Promise<LinkedDoc>;
+  onEditDocument: (docId: string, updates: { name: string; url?: string; scope: LinkedDoc['scope']; projectId?: string }) => Promise<void>;
+  onDeleteDocument: (docId: string) => Promise<void>;
+  onMoveDocument: (docId: string, newParentId: string) => Promise<void>;
   // Lifted to AppDataContext (not local state) so AppLayout can render the current folder as a
   // breadcrumb title in the shared Header, and navigate it from there too.
   currentFolderId: string | null;
@@ -311,6 +312,7 @@ export function getItemVisual(doc: Pick<LinkedDoc, 'kind' | 'name'> & Partial<Pi
 
 export default function DocVault({
   documents,
+  currentUserId,
   currentUserName,
   onAddDocument,
   onEditDocument,
@@ -335,6 +337,21 @@ export default function DocVault({
   const projectById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
   const taskById = useMemo(() => new Map(projectTasks.map((t) => [t.id, t])), [projectTasks]);
   const getOwnership = (doc: LinkedDoc) => resolveDocOwnership(doc, docsById, projectByFolderId, projectById, taskById);
+
+  // The scope='โครงการ' tag already names the project for anything explicitly tagged that way —
+  // showing the exact same project name again via this folder-derived ownership line right
+  // underneath it (as happens for a project's own root Drive folder, which is both explicitly
+  // tagged AND resolves to itself) is pure duplication. Only worth showing when it says something
+  // the tag doesn't already: which task specifically owns it, or a different project (e.g. an
+  // item nested inside a project's folder despite carrying its own separate/no tag).
+  const getOwnershipLabel = (doc: LinkedDoc, ownership: DocOwnership, withPrefix: boolean) => {
+    const sameProjectAsTag = doc.scope === 'โครงการ' && doc.projectId === ownership.project.id;
+    if (sameProjectAsTag && !ownership.task) return null;
+    const projectPart = withPrefix ? `โครงการ: ${ownership.project.title}` : ownership.project.title;
+    if (!ownership.task) return projectPart;
+    const taskPart = withPrefix ? `งาน: ${ownership.task.title}` : ownership.task.title;
+    return sameProjectAsTag ? taskPart : `${projectPart} · ${taskPart}`;
+  };
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedKind, setSelectedKind] = useState<LinkedDoc['kind'] | 'All'>('All');
@@ -433,8 +450,7 @@ export default function DocVault({
       const file = valid[i];
       const dataUrl = await readFileAsDataUrl(file);
       const date = nowStamp();
-      const newDoc: LinkedDoc = {
-        id: `DOC${Date.now()}${i}`,
+      const newDoc: Omit<LinkedDoc, 'id'> = {
         name: file.name.replace(/\.[^.]+$/, '') || file.name,
         kind: 'file',
         parentId: targetFolderId,
@@ -443,6 +459,7 @@ export default function DocVault({
         fileSize: file.size,
         scope,
         projectId,
+        creatorEmployeeId: currentUserId,
         version: 1,
         lastUpdated: date,
         updatedBy: currentUserName,
@@ -767,6 +784,12 @@ export default function DocVault({
       ? { scope: currentFolder?.scope ?? 'ส่วนตัว', projectId: currentFolder?.projectId }
       : { scope: newScope, projectId: newScope === 'โครงการ' ? (newProjectId || undefined) : undefined };
 
+  // "โครงการ" scope drives real visibility now (see server/routes/documents.ts) — a project must
+  // actually be picked, not left as a decorative maybe-tag, so every create/edit form blocks
+  // submit until one is chosen whenever that scope is selected.
+  const newProjectPickMissing = !currentFolderId && newScope === 'โครงการ' && !newProjectId.trim();
+  const editProjectPickMissing = editScope === 'โครงการ' && !editProjectId.trim();
+
   // Items inside the current folder, then search + kind filter on top of that
   const itemsHere = documents.filter(doc => doc.parentId === currentFolderId);
   const filteredDocs = itemsHere.filter(doc => {
@@ -795,13 +818,13 @@ export default function DocVault({
     const finalName = getUniqueDocName(newName, siblingNames);
     const date = nowStamp();
     const { scope, projectId } = resolveCreateScope();
-    const newDoc: LinkedDoc = {
-      id: 'DOC' + Date.now(),
+    const newDoc: Omit<LinkedDoc, 'id'> = {
       name: finalName,
       kind: 'folder',
       parentId: currentFolderId,
       scope,
       projectId,
+      creatorEmployeeId: currentUserId,
       version: 1,
       lastUpdated: date,
       updatedBy: currentUserName,
@@ -836,8 +859,7 @@ export default function DocVault({
       const dataUrl = await readFileAsDataUrl(pickedFile);
       const date = nowStamp();
       const { scope, projectId } = resolveCreateScope();
-      const newDoc: LinkedDoc = {
-        id: 'DOC' + Date.now(),
+      const newDoc: Omit<LinkedDoc, 'id'> = {
         name: finalName,
         kind: 'file',
         parentId: currentFolderId,
@@ -846,6 +868,7 @@ export default function DocVault({
         fileSize: pickedFile.size,
         scope,
         projectId,
+        creatorEmployeeId: currentUserId,
         version: 1,
         lastUpdated: date,
         updatedBy: currentUserName,
@@ -867,14 +890,14 @@ export default function DocVault({
     const finalName = getUniqueDocName(newName, siblingNames);
     const date = nowStamp();
     const { scope, projectId } = resolveCreateScope();
-    const newDoc: LinkedDoc = {
-      id: 'DOC' + Date.now(),
+    const newDoc: Omit<LinkedDoc, 'id'> = {
       name: finalName,
       kind: 'link',
       parentId: currentFolderId,
       url: newUrl.trim(),
       scope,
       projectId,
+      creatorEmployeeId: currentUserId,
       version: 1,
       lastUpdated: date,
       updatedBy: currentUserName,
@@ -1191,14 +1214,14 @@ export default function DocVault({
                                 </span>
                               )}
                             </div>
-                            {ownership && (
+                            {ownership && getOwnershipLabel(doc, ownership, true) && (
                               <button
                                 type="button"
                                 onClick={(e) => { e.stopPropagation(); goToProject(ownership.project.id); }}
                                 onDoubleClick={(e) => e.stopPropagation()}
                                 className="text-[10px] text-[#A0A0A0] hover:text-[#FF6537] hover:underline leading-tight truncate max-w-65 text-left cursor-pointer"
                               >
-                                {ownership.task ? `โครงการ: ${ownership.project.title} · งาน: ${ownership.task.title}` : `โครงการ: ${ownership.project.title}`}
+                                {getOwnershipLabel(doc, ownership, true)}
                               </button>
                             )}
                           </div>
@@ -1306,14 +1329,14 @@ export default function DocVault({
                             {projectById.get(doc.projectId ?? '')?.title || 'โครงการ'}
                           </span>
                         )}
-                        {ownership && (
+                        {ownership && getOwnershipLabel(doc, ownership, false) && (
                           <button
                             type="button"
                             onClick={(e) => { e.stopPropagation(); goToProject(ownership.project.id); }}
                             onDoubleClick={(e) => e.stopPropagation()}
                             className="text-[10px] text-[#A0A0A0] hover:text-[#FF6537] hover:underline truncate max-w-full px-2 cursor-pointer"
                           >
-                            {ownership.task ? `${ownership.project.title} · ${ownership.task.title}` : ownership.project.title}
+                            {getOwnershipLabel(doc, ownership, false)}
                           </button>
                         )}
                       </div>
@@ -1331,14 +1354,14 @@ export default function DocVault({
                               </span>
                             )}
                           </div>
-                          {ownership && (
+                          {ownership && getOwnershipLabel(doc, ownership, false) && (
                             <button
                               type="button"
                               onClick={(e) => { e.stopPropagation(); goToProject(ownership.project.id); }}
                               onDoubleClick={(e) => e.stopPropagation()}
                               className="text-[10px] text-[#A0A0A0] hover:text-[#FF6537] hover:underline truncate pl-6 text-left cursor-pointer"
                             >
-                              {ownership.task ? `${ownership.project.title} · ${ownership.task.title}` : ownership.project.title}
+                              {getOwnershipLabel(doc, ownership, false)}
                             </button>
                           )}
                         </div>
@@ -1468,16 +1491,13 @@ export default function DocVault({
                         </div>
                         {newScope === 'โครงการ' && (
                           <div>
-                            <label className="block text-[11px] font-bold text-slate-500 mb-1">เลือกโครงการ</label>
+                            <label className="block text-[11px] font-bold text-slate-500 mb-1">เลือกโครงการ *</label>
                             <Dropdown<string>
-                              value={newProjectId || '__unset__'}
-                              onChange={(value) => setNewProjectId(value === '__unset__' ? '' : value)}
-                              placeholder="ไม่ระบุโครงการ"
+                              value={newProjectId}
+                              onChange={setNewProjectId}
+                              placeholder="เลือกโครงการ"
                               size="compact"
-                              options={[
-                                { value: '__unset__', label: 'ไม่ระบุโครงการ' },
-                                ...projects.map((p) => ({ value: p.id, label: p.title }))
-                              ]}
+                              options={projects.map((p) => ({ value: p.id, label: p.title }))}
                             />
                           </div>
                         )}
@@ -1495,8 +1515,8 @@ export default function DocVault({
                       <button type="button" onClick={closeAddForm} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs font-semibold cursor-pointer hover:bg-slate-50">ยกเลิก</button>
                       <button
                         type="submit"
-                        disabled={!newName.trim()}
-                        className={`px-5 py-2 rounded-lg text-xs font-bold transition-colors ${newName.trim() ? 'bg-[#FF6537] text-white hover:bg-[#e6572c] cursor-pointer' : 'bg-[#F68C6C] text-white cursor-not-allowed'}`}
+                        disabled={!newName.trim() || newProjectPickMissing}
+                        className={`px-5 py-2 rounded-lg text-xs font-bold transition-colors ${newName.trim() && !newProjectPickMissing ? 'bg-[#FF6537] text-white hover:bg-[#e6572c] cursor-pointer' : 'bg-[#F68C6C] text-white cursor-not-allowed'}`}
                       >
                         สร้างโฟลเดอร์
                       </button>
@@ -1548,16 +1568,13 @@ export default function DocVault({
                         </div>
                         {newScope === 'โครงการ' && (
                           <div>
-                            <label className="block text-[11px] font-bold text-slate-500 mb-1">เลือกโครงการ</label>
+                            <label className="block text-[11px] font-bold text-slate-500 mb-1">เลือกโครงการ *</label>
                             <Dropdown<string>
-                              value={newProjectId || '__unset__'}
-                              onChange={(value) => setNewProjectId(value === '__unset__' ? '' : value)}
-                              placeholder="ไม่ระบุโครงการ"
+                              value={newProjectId}
+                              onChange={setNewProjectId}
+                              placeholder="เลือกโครงการ"
                               size="compact"
-                              options={[
-                                { value: '__unset__', label: 'ไม่ระบุโครงการ' },
-                                ...projects.map((p) => ({ value: p.id, label: p.title }))
-                              ]}
+                              options={projects.map((p) => ({ value: p.id, label: p.title }))}
                             />
                           </div>
                         )}
@@ -1575,8 +1592,8 @@ export default function DocVault({
                       <button type="button" onClick={closeAddForm} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs font-semibold cursor-pointer hover:bg-slate-50">ยกเลิก</button>
                       <button
                         type="submit"
-                        disabled={!newName.trim() || !pickedFile || isSubmittingFile}
-                        className={`px-5 py-2 rounded-lg text-xs font-bold transition-colors ${newName.trim() && pickedFile && !isSubmittingFile ? 'bg-[#FF6537] text-white hover:bg-[#e6572c] cursor-pointer' : 'bg-[#F68C6C] text-white cursor-not-allowed'}`}
+                        disabled={!newName.trim() || !pickedFile || isSubmittingFile || newProjectPickMissing}
+                        className={`px-5 py-2 rounded-lg text-xs font-bold transition-colors ${newName.trim() && pickedFile && !isSubmittingFile && !newProjectPickMissing ? 'bg-[#FF6537] text-white hover:bg-[#e6572c] cursor-pointer' : 'bg-[#F68C6C] text-white cursor-not-allowed'}`}
                       >
                         {isSubmittingFile ? 'กำลังอัปโหลด...' : 'อัปโหลดไฟล์'}
                       </button>
@@ -1629,16 +1646,13 @@ export default function DocVault({
                         </div>
                         {newScope === 'โครงการ' && (
                           <div>
-                            <label className="block text-[11px] font-bold text-slate-500 mb-1">เลือกโครงการ</label>
+                            <label className="block text-[11px] font-bold text-slate-500 mb-1">เลือกโครงการ *</label>
                             <Dropdown<string>
-                              value={newProjectId || '__unset__'}
-                              onChange={(value) => setNewProjectId(value === '__unset__' ? '' : value)}
-                              placeholder="ไม่ระบุโครงการ"
+                              value={newProjectId}
+                              onChange={setNewProjectId}
+                              placeholder="เลือกโครงการ"
                               size="compact"
-                              options={[
-                                { value: '__unset__', label: 'ไม่ระบุโครงการ' },
-                                ...projects.map((p) => ({ value: p.id, label: p.title }))
-                              ]}
+                              options={projects.map((p) => ({ value: p.id, label: p.title }))}
                             />
                           </div>
                         )}
@@ -1656,8 +1670,8 @@ export default function DocVault({
                       <button type="button" onClick={closeAddForm} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs font-semibold cursor-pointer hover:bg-slate-50">ยกเลิก</button>
                       <button
                         type="submit"
-                        disabled={!newName.trim() || !newUrl.trim()}
-                        className={`px-5 py-2 rounded-lg text-xs font-bold transition-colors ${newName.trim() && newUrl.trim() ? 'bg-[#FF6537] text-white hover:bg-[#e6572c] cursor-pointer' : 'bg-[#F68C6C] text-white cursor-not-allowed'}`}
+                        disabled={!newName.trim() || !newUrl.trim() || newProjectPickMissing}
+                        className={`px-5 py-2 rounded-lg text-xs font-bold transition-colors ${newName.trim() && newUrl.trim() && !newProjectPickMissing ? 'bg-[#FF6537] text-white hover:bg-[#e6572c] cursor-pointer' : 'bg-[#F68C6C] text-white cursor-not-allowed'}`}
                       >
                         แนบลิงก์
                       </button>
@@ -1760,16 +1774,13 @@ export default function DocVault({
 
                   {editScope === 'โครงการ' && (
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-500 mb-1">เลือกโครงการ</label>
+                      <label className="block text-[11px] font-bold text-slate-500 mb-1">เลือกโครงการ *</label>
                       <Dropdown<string>
-                        value={editProjectId || '__unset__'}
-                        onChange={(value) => setEditProjectId(value === '__unset__' ? '' : value)}
-                        placeholder="ไม่ระบุโครงการ"
+                        value={editProjectId}
+                        onChange={setEditProjectId}
+                        placeholder="เลือกโครงการ"
                         size="compact"
-                        options={[
-                          { value: '__unset__', label: 'ไม่ระบุโครงการ' },
-                          ...projects.map((p) => ({ value: p.id, label: p.title }))
-                        ]}
+                        options={projects.map((p) => ({ value: p.id, label: p.title }))}
                       />
                     </div>
                   )}
@@ -1778,8 +1789,8 @@ export default function DocVault({
                     <button type="button" onClick={closeEdit} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs font-semibold cursor-pointer hover:bg-slate-50">ยกเลิก</button>
                     <button
                       type="submit"
-                      disabled={!editName.trim()}
-                      className={`px-5 py-2 rounded-lg text-xs font-bold transition-colors ${editName.trim() ? 'bg-[#FF6537] text-white hover:bg-[#e6572c] cursor-pointer' : 'bg-[#F68C6C] text-white cursor-not-allowed'}`}
+                      disabled={!editName.trim() || editProjectPickMissing}
+                      className={`px-5 py-2 rounded-lg text-xs font-bold transition-colors ${editName.trim() && !editProjectPickMissing ? 'bg-[#FF6537] text-white hover:bg-[#e6572c] cursor-pointer' : 'bg-[#F68C6C] text-white cursor-not-allowed'}`}
                     >
                       บันทึก
                     </button>

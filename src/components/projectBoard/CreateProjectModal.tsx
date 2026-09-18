@@ -227,7 +227,7 @@ interface CreateProjectModalProps {
   onClose: () => void;
   onCreate: (payload: Omit<CreateProjectPayload, 'createdBy'>) => Promise<void>;
   onCreated: (title: string, folderCreated: boolean) => void;
-  onCreateFolder: (name: string, parentId?: string | null, taskId?: string) => string;
+  onCreateFolder: (name: string, parentId: string | null, taskId: string | undefined, projectId: string) => Promise<string>;
   // Best-effort preview only — the real code (and its sequence number) is always generated
   // server-side at submit time; this just reflects it back live as the user picks a type/types
   // in an abbreviation, since the exact code can't be known until then.
@@ -352,10 +352,16 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
     try {
       // Created first (not after) so its id can be saved as the project's own docFolderId in the
       // same request — a task's own "create folder" checkbox later nests inside this folder
-      // instead of always dropping it at the Drive root.
+      // instead of always dropping it at the Drive root. The folder's own document row needs to be
+      // tagged scope='โครงการ' + this project's id right away (so the project's own team can see
+      // it under the new "โครงการ" visibility rule) — but the project doesn't exist yet at this
+      // point, so its id is generated here, client-side, and reused for both this project's own
+      // creation request below and the folder's tag, rather than the usual server-generated one.
       const willCreateFolder = createFolder && folderName.trim() !== '';
-      const newFolderId = willCreateFolder ? onCreateFolder(folderName.trim()) : undefined;
+      const newProjectId = willCreateFolder ? `PROJ_${Date.now()}` : undefined;
+      const newFolderId = willCreateFolder && newProjectId ? await onCreateFolder(folderName.trim(), null, undefined, newProjectId) : undefined;
       await onCreate({
+        id: newProjectId,
         title: finalTitle,
         description: description.trim() || undefined,
         type: type ?? undefined,

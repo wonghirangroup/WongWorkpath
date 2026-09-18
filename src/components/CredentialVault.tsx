@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useId, KeyboardEvent } from 'react';
+import React, { useState, useRef, useEffect, useId, useMemo, KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { CredentialItem, AuditLog } from '../types';
@@ -79,7 +79,8 @@ const KNOWN_SERVICES: { name: string; url: string }[] = [
 const SCOPE_FILTER_OPTIONS: { value: CredentialItem['scope'] | '__all__'; label: string }[] = [
   { value: '__all__', label: 'รายการทั้งหมด' },
   { value: 'ส่วนตัว', label: 'ส่วนตัว' },
-  { value: 'ทีม', label: 'ทีม' }
+  { value: 'ทีม', label: 'ทีม' },
+  { value: 'โครงการ', label: 'โครงการ' }
 ];
 
 const SORT_OPTIONS: { value: 'latest' | 'oldest' | 'az'; label: string }[] = [
@@ -186,11 +187,19 @@ function CredentialCardMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete
   );
 }
 
+interface CredentialProjectOption {
+  id: string;
+  title: string;
+}
+
 interface CredentialVaultProps {
   credentials: CredentialItem[];
   auditLogs: AuditLog[];
   currentUserName: string;
   currentUserDepartment?: string;
+  // Every project visible to this account (already scoped by ProjectBoard's own "ของฉัน/ทั้งหมด"
+  // rules elsewhere) — used only to populate the "โครงการ" scope's project picker here.
+  projects: CredentialProjectOption[];
   onAddCredential: (item: CredentialItem) => void;
   onUpdateCredential: (id: string, updates: Partial<CredentialItem>) => void;
   onDeleteCredential: (id: string) => void;
@@ -202,11 +211,14 @@ export default function CredentialVault({
   auditLogs,
   currentUserName,
   currentUserDepartment,
+  projects,
   onAddCredential,
   onUpdateCredential,
   onDeleteCredential,
   onLogAudit
 }: CredentialVaultProps) {
+
+  const projectById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
 
   // Visible Decrypted Credentials State (id -> decrypted value)
   const [decryptedValues, setDecryptedValues] = useState<Record<string, string>>({});
@@ -254,6 +266,7 @@ export default function CredentialVault({
   const [newLabel, setNewLabel] = useState('');
   const [newType, setNewType] = useState<CredentialItem['type']>('Username & Password');
   const [newScope, setNewScope] = useState<CredentialItem['scope']>('ส่วนตัว');
+  const [newProjectId, setNewProjectId] = useState('');
   const [newUsername, setNewUsername] = useState('');
   const [newKeyValue, setNewKeyValue] = useState('');
   const [newNotes, setNewNotes] = useState('');
@@ -302,8 +315,8 @@ export default function CredentialVault({
     // Only credentials in the same scope (and, for team scope, visible to this account at all —
     // i.e. the same department) count as a collision — "Grow Store" (personal) and "Grow Store"
     // (team) are different things and shouldn't force one of them into "Grow Store2".
-    const existingLabels = visibleCredentials
-      .filter((c) => c.id !== editingId && c.scope === newScope)
+    const existingLabels = credentials
+      .filter((c) => c.id !== editingId && c.scope === newScope && (newScope !== 'โครงการ' || c.projectId === newProjectId))
       .map((c) => c.label);
     const uniqueLabel = getUniqueLabel(candidateLabel, existingLabels);
     setNewLabel(uniqueLabel);
@@ -431,6 +444,7 @@ export default function CredentialVault({
     setNewLabel('');
     setNewType('Username & Password');
     setNewScope('ส่วนตัว');
+    setNewProjectId('');
     setNewUsername('');
     setNewKeyValue('');
     setNewNotes('');
@@ -452,6 +466,7 @@ export default function CredentialVault({
         type: newType,
         scope: newScope,
         team: newScope === 'ทีม' ? currentUserDepartment : undefined,
+        projectId: newScope === 'โครงการ' ? newProjectId : undefined,
         username: newUsername,
         password: newType === 'Username & Password' ? newKeyValue : undefined,
         keyValue: newType !== 'Username & Password' ? newKeyValue : undefined,
@@ -469,6 +484,7 @@ export default function CredentialVault({
         type: newType,
         scope: newScope,
         team: newScope === 'ทีม' ? currentUserDepartment : undefined,
+        projectId: newScope === 'โครงการ' ? newProjectId : undefined,
         username: newUsername,
         password: newType === 'Username & Password' ? newKeyValue : undefined,
         keyValue: newType !== 'Username & Password' ? newKeyValue : undefined,
@@ -494,6 +510,7 @@ export default function CredentialVault({
     setNewLabel(item.label);
     setNewType(item.type);
     setNewScope(item.scope);
+    setNewProjectId(item.projectId ?? '');
     setNewUsername(item.username);
     setNewKeyValue(item.password || item.keyValue || '');
     setNewNotes(item.notes || '');
@@ -584,7 +601,7 @@ export default function CredentialVault({
     return () => { document.body.style.overflow = previousOverflow; };
   }, [showAddForm, deleteTarget]);
 
-  const isCredentialFormValid = !!(newLabel.trim() && newUsername.trim() && newKeyValue.trim());
+  const isCredentialFormValid = !!(newLabel.trim() && newUsername.trim() && newKeyValue.trim() && (newScope !== 'โครงการ' || newProjectId));
 
   const copySecret = (text: string, id: string, noticeMessage = 'คัดลอกไปยังคลิปบอร์ดแล้ว') => {
     navigator.clipboard.writeText(text);
@@ -600,14 +617,10 @@ export default function CredentialVault({
     copySecret(value, item.id, 'คัดลอกรหัสผ่านแล้ว');
   };
 
-  // Access control: a personal item is visible only to whoever created it; a team item is
-  // visible only to people in that same department. This runs before any of the search/scope
-  // filters below — it's not just narrowing what's shown, it's what this account can see at all.
-  const visibleCredentials = credentials.filter((item) =>
-    item.scope === 'ทีม' ? item.team === currentUserDepartment : item.createdBy === currentUserName
-  );
-
-  const filteredCredentials = visibleCredentials.filter((item) => {
+  // Access control (personal by creator id, team by department, project by membership) is now
+  // enforced server-side — see server/routes/credentials.ts — so `credentials` here already only
+  // ever contains what this account can see. Only search/scope narrow it further below.
+  const filteredCredentials = credentials.filter((item) => {
     if (pendingDeleteIds.has(item.id)) return false;
     const matchesScope = scopeFilter === '__all__' || item.scope === scopeFilter;
     const query = searchQuery.trim().toLowerCase();
@@ -637,7 +650,7 @@ export default function CredentialVault({
       <div className="flex flex-col h-full" id="vault-workspace">
           <div className="flex flex-col gap-4 flex-1 min-h-0">
 
-          {visibleCredentials.length - pendingDeleteIds.size === 0 ? (
+          {credentials.length - pendingDeleteIds.size === 0 ? (
             /* Nothing created yet (or everything just got soft-deleted) — big centered empty state, no search/filter controls */
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <img src={firstCreatePassIcon} alt="" className="w-62.5 h-62.5 object-contain" />
@@ -957,11 +970,12 @@ export default function CredentialVault({
                     <label className="block text-[#272220] font-bold text-[11px] mb-1">ประเภทสิทธิ์</label>
                     <Dropdown<CredentialItem['scope']>
                       value={newScope}
-                      onChange={setNewScope}
+                      onChange={(v) => { setNewScope(v); if (v !== 'โครงการ') setNewProjectId(''); }}
                       size="compact"
                       options={[
                         { value: 'ส่วนตัว', label: 'ส่วนตัว' },
-                        { value: 'ทีม', label: 'ทีม' }
+                        { value: 'ทีม', label: 'ทีม' },
+                        { value: 'โครงการ', label: 'โครงการ' }
                       ]}
                     />
                   </div>
@@ -977,6 +991,22 @@ export default function CredentialVault({
                         <span className="text-slate-400">ไม่ทราบแผนกของบัญชีนี้</span>
                       )}
                       <span className="text-slate-400">(เห็นได้เฉพาะแผนกเดียวกัน)</span>
+                    </div>
+                  )}
+
+                  {newScope === 'โครงการ' && (
+                    <div>
+                      <label className="block text-[#272220] font-bold text-[11px] mb-1">
+                        โครงการ <span className="text-[#FF6537]">*</span>
+                      </label>
+                      <Dropdown<string>
+                        value={newProjectId}
+                        onChange={setNewProjectId}
+                        size="compact"
+                        placeholder="เลือกโครงการ"
+                        options={projects.map((p) => ({ value: p.id, label: p.title }))}
+                      />
+                      <p className="text-[11px] text-slate-400 mt-1">เห็นได้เฉพาะผู้รับผิดชอบโครงการนี้</p>
                     </div>
                   )}
 
@@ -1013,7 +1043,7 @@ export default function CredentialVault({
           )}
 
           {/* List elements */}
-          {visibleCredentials.length - pendingDeleteIds.size > 0 && (
+          {credentials.length - pendingDeleteIds.size > 0 && (
           <>
           {viewMode === 'list' ? (
             filteredCredentials.length === 0 ? (
@@ -1026,7 +1056,7 @@ export default function CredentialVault({
                   <thead>
                     <tr className="bg-[#F9F9F9] text-[12px] font-semibold text-[#000000] border-b border-[#EDEEEF]">
                       <th className="px-4 py-3 whitespace-nowrap">ชื่อระบบ</th>
-                      <th className="px-4 py-3 whitespace-nowrap">แผนก</th>
+                      <th className="px-4 py-3 whitespace-nowrap">แผนก/โครงการ</th>
                       <th className="px-4 py-3 whitespace-nowrap">ชื่อผู้ใช้ (Username)</th>
                       <th className="px-4 py-3 whitespace-nowrap">รหัสผ่าน (Password)</th>
                       <th className="px-4 py-3 whitespace-nowrap">สร้างโดย</th>
@@ -1097,6 +1127,10 @@ export default function CredentialVault({
                               <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(item.team)}`}>
                                 {item.team}
                               </span>
+                            ) : item.scope === 'โครงการ' && item.projectId ? (
+                              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full leading-none bg-[#FFF1EC] text-[#FF6537]">
+                                {projectById.get(item.projectId)?.title ?? 'ไม่ทราบโครงการ'}
+                              </span>
                             ) : (
                               <span className="text-[11px] text-slate-400">ส่วนตัว</span>
                             )}
@@ -1163,7 +1197,7 @@ export default function CredentialVault({
           <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-2">
             {filteredCredentials.length === 0 ? (
               <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-400 text-sm lg:col-span-2">
-                {visibleCredentials.length === 0 ? 'ยังไม่ได้สร้างรหัสผ่าน' : 'ไม่พบรายการที่ตรงกับการค้นหา'}
+                {credentials.length === 0 ? 'ยังไม่ได้สร้างรหัสผ่าน' : 'ไม่พบรายการที่ตรงกับการค้นหา'}
               </div>
             ) : (
               paginatedCredentials.map(item => {
@@ -1209,6 +1243,11 @@ export default function CredentialVault({
                             {item.scope === 'ทีม' && item.team && (
                               <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(item.team)}`}>
                                 {item.team}
+                              </span>
+                            )}
+                            {item.scope === 'โครงการ' && item.projectId && (
+                              <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none bg-[#FFF1EC] text-[#FF6537]">
+                                {projectById.get(item.projectId)?.title ?? 'ไม่ทราบโครงการ'}
                               </span>
                             )}
                           </h4>

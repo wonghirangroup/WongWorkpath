@@ -15,7 +15,7 @@ import { ProjectRow, ProjectTaskItem, ProjectTaskStatus } from './projectBoard/t
 import { TASK_STATUS_LABEL, TASK_STATUS_COLOR, STATUS_DOT, STATUS_LABEL, STATUS_PILL, STATUS_ICON } from './projectBoard/statusMeta';
 import { displayName } from './projectBoard/CreateProjectModal';
 import { getAvatarColor } from '../lib/avatarColor';
-import { isOwner } from '../lib/ownership';
+import { isOwner, isResponsibleForProject } from '../lib/ownership';
 import { ChangeRequest } from '../lib/api';
 import ProjectGantt from './projectBoard/ProjectGantt';
 import TaskDetailModal from './projectBoard/TaskDetailModal';
@@ -91,7 +91,7 @@ interface MyWorkspaceProps {
   documents: LinkedDoc[];
   currentUserId: string;
   onUpdateTask: (id: string, updates: Partial<ProjectTaskItem>) => Promise<void>;
-  onAddDocument: (doc: LinkedDoc) => void;
+  onAddDocument: (doc: Omit<LinkedDoc, 'id'>) => Promise<LinkedDoc>;
   onSelectProject: (id: string) => void;
   changeRequests: ChangeRequest[];
   onDecideChangeRequest: (requestId: string, decision: 'approve' | 'reject', note?: string) => Promise<void>;
@@ -126,7 +126,7 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
     [projectTasks, currentUserId]
   );
   const myProjects = useMemo(
-    () => projects.filter((p) => p.ownerEmployeeIds.includes(currentUserId) || (p.memberEmployeeIds ?? []).includes(currentUserId)),
+    () => projects.filter((p) => isResponsibleForProject(p, currentUserId)),
     [projects, currentUserId]
   );
 
@@ -438,6 +438,7 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
         documents={documents}
         projectDocFolderId={submittingTask ? projectById.get(submittingTask.projectId)?.docFolderId : undefined}
         projectMemberIds={submittingTaskProjectMemberIds}
+        currentUserId={currentUserId}
         currentUserName={currentUser ? displayName(currentUser) : 'ผู้ใช้งานปัจจุบัน'}
         onAddDocument={onAddDocument}
         onSubmit={onUpdateTask}

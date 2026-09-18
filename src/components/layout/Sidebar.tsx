@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { Link, useLocation } from 'react-router-dom';
 import { X, Users } from 'lucide-react';
 import { useAppData } from '../../context/AppDataContext';
-import { canAccessNavItem } from '../../lib/permissions';
+import { canAccessNavItem, canManageEmployees } from '../../lib/permissions';
 import LogoutConfirmModal from './LogoutConfirmModal';
 
 import logo from '../../../images/new side bar/Logo.png';
@@ -53,10 +53,14 @@ export default function Sidebar({ isMobileMenuOpen, onCloseMobileMenu }: Sidebar
   const { pathname } = useLocation();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
-  // Role-based defaults (e.g. Employee Management is admin/superadmin-only) plus this specific
-  // account's own `restrictedMenuIds` blocklist, if an admin has denied them a menu individually.
+  // Role-based defaults plus this specific account's own `restrictedMenuIds` blocklist, if an
+  // admin has denied them a menu individually. "employees" is reachable by every role now, but a
+  // plain employee only ever gets the read-only directory there — "จัดการพนักงาน" (Manage) would
+  // misdescribe that, so it relabels to "พนักงาน" for anyone who can't actually manage the roster.
   const visibleNavItems = currentUser
-    ? NAV_ITEMS.filter((item) => canAccessNavItem(currentUser, item.id))
+    ? NAV_ITEMS.filter((item) => canAccessNavItem(currentUser, item.id)).map((item) =>
+        item.id === 'employees' && !canManageEmployees(currentUser) ? { ...item, label: 'พนักงาน' } : item
+      )
     : NAV_ITEMS;
 
   const [isCollapsed, setIsCollapsed] = useState(() => {

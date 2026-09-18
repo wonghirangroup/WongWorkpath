@@ -30,6 +30,21 @@ interface EmployeeRow extends RowDataPacket {
 
 const ACCOUNT_TYPES = ['employee', 'admin', 'superadmin', 'executive'];
 
+// Mirrors src/lib/permissions.ts's canEditOrDeleteTarget exactly: self-edit always allowed;
+// superadmin/executive can touch anyone; a plain admin can touch anyone except another
+// admin-like account (admin/superadmin/executive). Re-implemented here (not imported) since this
+// is plain server-side data, not a shared client/server module.
+function isAdminLike(accountType: string): boolean {
+  return accountType === 'admin' || accountType === 'superadmin' || accountType === 'executive';
+}
+function canEditOrDeleteTarget(actorId: string | undefined, actorType: string | undefined, targetId: string, targetType: string): boolean {
+  if (!actorId || !actorType) return false;
+  if (actorId === targetId) return true;
+  if (actorType === 'superadmin' || actorType === 'executive') return true;
+  if (actorType === 'admin') return !isAdminLike(targetType);
+  return false;
+}
+
 employeesRouter.get('/', async (_req, res) => {
   try {
     const [rows] = await pool.query<EmployeeRow[]>(
@@ -109,6 +124,11 @@ employeesRouter.post('/', async (req, res) => {
     }
 
     const now = nowBangkokDateTime();
+    // Same Super Admin singleton rule as the PUT route below — creating a brand-new employee
+    // directly as superadmin still auto-demotes whoever currently holds it.
+    if (accountType === 'superadmin') {
+      await pool.query(`UPDATE employee SET account_type = 'admin', updated_at = ? WHERE account_type = 'superadmin'`, [now]);
+    }
     await pool.query(
       `INSERT INTO employee (id, name, nickname, email, role, department, division, avatar, account_type, restricted_menu_ids, phone, address, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -151,6 +171,18 @@ employeesRouter.post('/', async (req, res) => {
 // optionally username/password to reset a user's login).
 employeesRouter.put('/:id', async (req, res) => {
   const e = req.body ?? {};
+
+  const [[target], [actor]] = await Promise.all([
+    pool.query<RowDataPacket[]>('SELECT account_type FROM employee WHERE id = ?', [req.params.id]).then(([rows]) => rows),
+    typeof e.actorEmployeeId === 'string' && e.actorEmployeeId
+      ? pool.query<RowDataPacket[]>('SELECT account_type FROM employee WHERE id = ?', [e.actorEmployeeId]).then(([rows]) => rows)
+      : Promise.resolve([undefined]),
+  ]);
+  if (!target) return res.status(404).json({ message: 'ไม่พบพนักงานนี้' });
+  if (!canEditOrDeleteTarget(e.actorEmployeeId, actor?.account_type, req.params.id, target.account_type)) {
+    return res.status(403).json({ message: 'ไม่มีสิทธิ์แก้ไขข้อมูลพนักงานคนนี้' });
+  }
+
   const employeeFields: string[] = [];
   const employeeValues: unknown[] = [];
 
@@ -224,6 +256,15 @@ employeesRouter.put('/:id', async (req, res) => {
       }
     }
 
+    // Super Admin is a singleton — promoting someone new to it auto-demotes whoever currently
+    // holds it, so the system is never left with 0 or 2+ superadmins at once.
+    if (e.accountType === 'superadmin') {
+      await pool.query(
+        `UPDATE employee SET account_type = 'admin', updated_at = ? WHERE account_type = 'superadmin' AND id != ?`,
+        [nowBangkokDateTime(), req.params.id]
+      );
+    }
+
     if (employeeFields.length > 0) {
       employeeFields.push('updated_at = ?');
       employeeValues.push(nowBangkokDateTime());
@@ -255,7 +296,24 @@ employeesRouter.put('/:id', async (req, res) => {
 // task assignments — tasks aren't backend-persisted in this app (still localStorage/mock-only),
 // so there's nothing server-side to check against.
 employeesRouter.delete('/:id', async (req, res) => {
+  const actorEmployeeId = typeof req.query.actorEmployeeId === 'string' ? req.query.actorEmployeeId : undefined;
+  // Deleting your own account is never allowed (unlike editing, which self trivially passes) —
+  // matches EmployeeManagement.tsx's own deleteDisabled rule.
+  if (actorEmployeeId && actorEmployeeId === req.params.id) {
+    return res.status(403).json({ message: 'ไม่สามารถลบบัญชีของตัวเองได้' });
+  }
   try {
+    const [[target], [actor]] = await Promise.all([
+      pool.query<RowDataPacket[]>('SELECT account_type FROM employee WHERE id = ?', [req.params.id]).then(([rows]) => rows),
+      actorEmployeeId
+        ? pool.query<RowDataPacket[]>('SELECT account_type FROM employee WHERE id = ?', [actorEmployeeId]).then(([rows]) => rows)
+        : Promise.resolve([undefined]),
+    ]);
+    if (!target) return res.status(404).json({ message: 'ไม่พบพนักงานนี้' });
+    if (!actor || !(actor.account_type === 'superadmin' || actor.account_type === 'executive' || (actor.account_type === 'admin' && !isAdminLike(target.account_type)))) {
+      return res.status(403).json({ message: 'ไม่มีสิทธิ์ลบพนักงานคนนี้' });
+    }
+
     await pool.query('DELETE FROM login WHERE employee_id = ?', [req.params.id]);
     await pool.query('DELETE FROM employee WHERE id = ?', [req.params.id]);
     res.status(204).end();

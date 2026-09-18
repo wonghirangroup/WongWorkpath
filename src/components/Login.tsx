@@ -40,8 +40,8 @@ const BRAND_LINE = {
   hidden: { opacity: 0, y: 20 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: EASE } },
 } as const;
-// The focus glow shared by every text input on this page.
-const INPUT_FOCUS = { scale: 1.01, boxShadow: '0 0 0 4px rgba(255,101,55,0.15)' };
+// The focus micro-interaction shared by every text input on this page.
+const INPUT_FOCUS = { scale: 1.01 };
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
