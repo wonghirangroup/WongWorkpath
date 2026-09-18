@@ -7,7 +7,7 @@ export default function EmployeesPage() {
   const { employees, auditLogs, currentUser, orgDivisions, handleAddEmployee, handleUpdateEmployee, handleDeleteEmployee } = useAppData();
 
   if (!currentUser || !canManageEmployees(currentUser)) {
-    return <EmployeeDirectory employees={employees} orgDivisions={orgDivisions} />;
+    return <EmployeeDirectory employees={employees} orgDivisions={orgDivisions} currentUserId={currentUser?.id} />;
   }
 
   return (
