@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarRange } from 'lucide-react';
 import { Employee } from '../../types';
-import { ProjectTaskItem } from './types';
+import { ProjectRow, ProjectTaskItem } from './types';
 import { TASK_STATUS_COLOR, TASK_STATUS_LABEL } from './statusMeta';
 import { displayName } from './CreateProjectModal';
 import { getAvatarColor } from '../../lib/avatarColor';
@@ -84,10 +84,15 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 interface ProjectGanttProps {
   tasks: ProjectTaskItem[];
   employees: Employee[];
+  // Only passed by callers that mix tasks from more than one project on the same timeline (e.g.
+  // MyWorkspace's "งานของฉัน" — tasks across every project the account is on). ProjectDetail's own
+  // per-project Timeline tab leaves this unset since every row there is already the same project.
+  projects?: ProjectRow[];
 }
 
-export default function ProjectGantt({ tasks, employees }: ProjectGanttProps) {
+export default function ProjectGantt({ tasks, employees, projects }: ProjectGanttProps) {
   const [zoom, setZoom] = useState<GanttZoom>('day');
+  const projectById = useMemo(() => new Map((projects ?? []).map((p) => [p.id, p])), [projects]);
 
   // Measures the scroll container's visible width so a short date range can stretch its day
   // columns to fill the card instead of leaving a block of empty space after the last column —
@@ -148,8 +153,12 @@ export default function ProjectGantt({ tasks, employees }: ProjectGanttProps) {
     );
   }
 
+  // Stretching short ranges to fill the card only makes sense at day-zoom (individual day cells
+  // widening to stay readable) — doing the same at month/year zoom would inflate pxPerDay right
+  // when those levels are supposed to compress time, making them render almost identically to
+  // day-zoom and turning their header into one meaningless full-width label.
   const availableColumnsWidth = containerWidth > LABEL_COL_WIDTH ? containerWidth - LABEL_COL_WIDTH : 0;
-  const pxPerDay = Math.max(PX_PER_DAY[zoom], availableColumnsWidth / range.totalDays);
+  const pxPerDay = zoom === 'day' ? Math.max(PX_PER_DAY[zoom], availableColumnsWidth / range.totalDays) : PX_PER_DAY[zoom];
   const dayOffset = (d: Date) => (d.getTime() - range.min.getTime()) / DAY_MS;
   const totalWidth = range.totalDays * pxPerDay;
 
@@ -292,6 +301,9 @@ export default function ProjectGantt({ tasks, employees }: ProjectGanttProps) {
                     style={{ width: LABEL_COL_WIDTH }}
                   >
                     <p className="text-sm font-medium text-[#272220] truncate">{t.title}</p>
+                    {projects && (
+                      <p className="text-[10px] text-[#A0A0A0] truncate">โครงการ: {projectById.get(t.projectId)?.title ?? 'ไม่ทราบโครงการ'}</p>
+                    )}
                     <div className="flex items-center gap-1.5 mt-1">
                       {firstAssignee ? (
                         <>

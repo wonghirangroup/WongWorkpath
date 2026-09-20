@@ -150,7 +150,7 @@ interface ProjectBoardProps {
   currentUserId: string;
 }
 
-const PAGE_SIZE = 4;
+const PAGE_SIZE = 3;
 
 export default function ProjectBoard({ employees, onCreateFolder, currentUserId }: ProjectBoardProps) {
   const [search, setSearch] = useState('');

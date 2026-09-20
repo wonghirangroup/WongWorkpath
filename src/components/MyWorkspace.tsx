@@ -425,12 +425,12 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
               <CalendarIcon size={16} /> ยังไม่มีงานที่มีกำหนดส่งสำหรับแสดง Timeline
             </div>
           ) : (
-            <ProjectGantt tasks={myTasks} employees={currentUser ? [currentUser] : employees} />
+            <ProjectGantt tasks={myTasks} employees={currentUser ? [currentUser] : employees} projects={projects} />
           )
         )}
       </div>
 
-      <TaskDetailModal task={viewingTask} employees={employees} onClose={() => setViewingTask(null)} />
+      <TaskDetailModal task={viewingTask} employees={employees} documents={documents} onClose={() => setViewingTask(null)} />
 
       <SubmitTaskModal
         task={submittingTask}

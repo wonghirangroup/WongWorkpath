@@ -1064,7 +1064,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
         onRequestChange={onRequestChange}
       />
 
-      <TaskDetailModal task={selectedTask} employees={employees} onClose={() => setSelectedTask(null)} />
+      <TaskDetailModal task={selectedTask} employees={employees} documents={documents} onClose={() => setSelectedTask(null)} />
 
       <SubmitTaskModal
         task={submittingTask}

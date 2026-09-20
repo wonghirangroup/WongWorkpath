@@ -1,11 +1,12 @@
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
-import { X, Clock } from 'lucide-react';
-import { Employee } from '../../types';
+import { X, Clock, Download, ExternalLink } from 'lucide-react';
+import { Employee, LinkedDoc } from '../../types';
 import { ProjectTaskItem } from './types';
 import { TASK_STATUS_LABEL, TASK_STATUS_COLOR } from './statusMeta';
 import { displayName, PRIORITY_OPTIONS } from './CreateProjectModal';
 import { getAvatarColor } from '../../lib/avatarColor';
+import { getItemVisual } from '../DocVault';
 import { useEscapeToClose } from '../../lib/useEscapeToClose';
 
 function PersonRow({ label, employee }: { label: string; employee: Employee | undefined }) {
@@ -67,18 +68,25 @@ function PeopleRow({ label, employees }: { label: string; employees: Employee[] 
 interface TaskDetailModalProps {
   task: ProjectTaskItem | null;
   employees: Employee[];
+  documents: LinkedDoc[];
   onClose: () => void;
 }
 
 // Read-only — opened from the "การกระทำ" column's "ดูรายละเอียด" button so a truncated row
 // (long description, etc.) can still be read in full without leaving the table.
-export default function TaskDetailModal({ task, employees, onClose }: TaskDetailModalProps) {
+export default function TaskDetailModal({ task, employees, documents, onClose }: TaskDetailModalProps) {
   useEscapeToClose(Boolean(task), onClose);
   const assignees = task ? employees.filter((e) => task.assigneeEmployeeIds.includes(e.id)) : [];
   const creator = task?.creatorEmployeeId ? employees.find((e) => e.id === task.creatorEmployeeId) : undefined;
   const reviewers = task ? employees.filter((e) => (task.reviewerEmployeeIds ?? []).includes(e.id)) : [];
   const priorityMeta = task?.priority ? PRIORITY_OPTIONS.find((p) => p.value === task.priority) : undefined;
   const isUrgent = task?.daysUntilDue !== undefined && task.daysUntilDue <= 2;
+  // Same "ส่งงาน" attachments SubmitTaskModal collects and ReviewTaskModal shows a reviewer —
+  // surfaced here too so anyone just checking a finished task's details can see what was actually
+  // turned in, not just its title/status.
+  const submissionFiles = (task?.submissionFileIds ?? [])
+    .map((id) => documents.find((d) => d.id === id))
+    .filter((d): d is LinkedDoc => Boolean(d));
 
   return createPortal(
     <AnimatePresence>
@@ -183,6 +191,47 @@ export default function TaskDetailModal({ task, employees, onClose }: TaskDetail
                   )}
                 </div>
               </div>
+
+              {(task.submissionNote || submissionFiles.length > 0) && (
+                <div>
+                  <p className="text-[#A0A0A0] text-[11px] mb-1">บันทึกจากผู้ส่งงาน</p>
+                  <p className="text-sm text-[#272220] whitespace-pre-wrap break-words">
+                    {task.submissionNote || 'ไม่มีบันทึกเพิ่มเติม'}
+                  </p>
+                </div>
+              )}
+
+              {submissionFiles.length > 0 && (
+                <div>
+                  <p className="text-[#A0A0A0] text-[11px] mb-1.5">ไฟล์ที่ส่ง ({submissionFiles.length})</p>
+                  <div className="space-y-1.5">
+                    {submissionFiles.map((doc) => {
+                      const { Icon, color } = getItemVisual(doc);
+                      const isLink = doc.kind === 'link';
+                      return (
+                        <a
+                          key={doc.id}
+                          href={isLink ? doc.url : doc.fileDataUrl}
+                          download={isLink ? undefined : doc.name}
+                          target={isLink ? '_blank' : undefined}
+                          rel={isLink ? 'noopener noreferrer' : undefined}
+                          className="flex items-center gap-2.5 p-2.5 border border-slate-200 rounded-xl bg-white hover:bg-slate-50 transition-colors"
+                        >
+                          <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center shrink-0">
+                            <Icon size={16} className={color} />
+                          </div>
+                          <span className="truncate flex-1 text-xs font-medium text-[#272220]">{doc.name}</span>
+                          {isLink ? (
+                            <ExternalLink size={13} className="text-[#A0A0A0] shrink-0" />
+                          ) : (
+                            <Download size={13} className="text-[#A0A0A0] shrink-0" />
+                          )}
+                        </a>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {task.checklist.length > 0 && (
                 <div>

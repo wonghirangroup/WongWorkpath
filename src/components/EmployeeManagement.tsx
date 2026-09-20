@@ -52,18 +52,17 @@ function EmployeeCardMenu({ onView, onEdit, onDelete, deleteDisabled, editDisabl
           <Eye size={15} />
         </button>
       </Tooltip>
-      <Tooltip content={editDisabled ? 'Admin ไม่สามารถแก้ไขข้อมูลของ Admin คนอื่นได้' : 'แก้ไข'}>
-        <button
-          onClick={() => { if (!editDisabled) onEdit(); }}
-          disabled={editDisabled}
-          aria-label={editDisabled ? 'Admin ไม่สามารถแก้ไขข้อมูลของ Admin คนอื่นได้' : 'แก้ไข'}
-          className={`p-1.5 rounded-lg ${
-            editDisabled ? 'text-slate-300 cursor-not-allowed' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer'
-          }`}
-        >
-          <Pencil size={15} />
-        </button>
-      </Tooltip>
+      {!editDisabled && (
+        <Tooltip content="แก้ไข">
+          <button
+            onClick={onEdit}
+            aria-label="แก้ไข"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+          >
+            <Pencil size={15} />
+          </button>
+        </Tooltip>
+      )}
       {!deleteDisabled && (
         <Tooltip content="ลบ">
           <button

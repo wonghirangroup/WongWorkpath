@@ -1,13 +1,106 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Search, X, Briefcase, Network, LayoutGrid, List, Crown, AtSign, Mail, Phone, LocateFixed } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { AnimatePresence, motion } from 'motion/react';
+import { Search, X, Briefcase, Network, LayoutGrid, List, Crown, AtSign, Mail, Phone, LocateFixed, Eye, Building2 } from 'lucide-react';
 import { Employee } from '../types';
 import { ACCOUNT_TYPE_LABELS } from '../lib/permissions';
 import { getAvatarColor } from '../lib/avatarColor';
 import { getDepartmentTagClass } from '../lib/departmentColors';
 import { DEFAULT_ORG_DIVISIONS, OrgDivisionData } from '../data/orgStructure';
+import { useEscapeToClose } from '../lib/useEscapeToClose';
 import Dropdown from './Dropdown';
 import Tooltip from './Tooltip';
 import OrgChart, { OrgChartHandle, EmployeeLocateSearch } from './OrgChart';
+
+// Deliberately scoped to just the 8 fields the spec allows a plain employee to see about a
+// colleague — unlike EmployeeManagement's full EmployeeProfileModal, this never shows that
+// person's own documents or audit-log activity, both of which are meant to stay private/
+// admin-only (see the DocVault and Employee Management permission work this sits alongside).
+function EmployeeQuickViewModal({ employee, onClose }: { employee: Employee | null; onClose: () => void }) {
+  useEscapeToClose(Boolean(employee), onClose);
+  return createPortal(
+    <AnimatePresence>
+      {employee && (
+        <motion.div key="employee-quick-view" className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <motion.div
+            className="absolute inset-0 bg-black/15 backdrop-blur-sm"
+            onClick={onClose}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 24, mass: 0.9 }}
+            className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-sm overflow-hidden"
+          >
+            <div className="flex justify-end px-4 pt-4">
+              <button onClick={onClose} className="text-slate-400 hover:text-slate-600 cursor-pointer" type="button" aria-label="ปิด">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="px-6 pb-6 -mt-2 space-y-5">
+              <div className="flex items-center gap-4">
+                {employee.avatar ? (
+                  <img src={employee.avatar} alt="" className="w-16 h-16 rounded-full object-cover shrink-0 bg-slate-50 border border-slate-100" />
+                ) : (
+                  <div
+                    className="w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-xl shrink-0"
+                    style={{ backgroundColor: getAvatarColor(employee.name) }}
+                  >
+                    {employee.name.trim().charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <h3 className="text-base font-bold text-[#272220] truncate">{employee.nickname || employee.name}</h3>
+                  {employee.nickname && employee.nickname !== employee.name && (
+                    <p className="text-[12px] text-slate-400 truncate">{employee.name}</p>
+                  )}
+                  <span
+                    className={`inline-flex items-center gap-1 mt-1 font-bold uppercase px-2 py-0.5 rounded-full leading-none text-[9px] ${
+                      employee.accountType !== 'employee' ? 'text-[#FF6537] bg-black border border-[#FF6537]' : 'text-[#6F6F6F] bg-slate-100 border border-slate-200'
+                    }`}
+                  >
+                    {employee.accountType !== 'employee' && <Crown size={9} className="fill-current" />}
+                    {ACCOUNT_TYPE_LABELS[employee.accountType]}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-2.5 pt-4 border-t border-slate-100 text-[13px]">
+                <div className="flex items-center gap-2 text-[#272220]">
+                  <Briefcase size={14} className="text-[#A0A0A0] shrink-0" />
+                  <span>{employee.role}</span>
+                </div>
+                <div className="flex items-center gap-2 text-[#272220]">
+                  <Building2 size={14} className="text-[#A0A0A0] shrink-0" />
+                  <span>{employee.division || '—'}</span>
+                  {employee.department && (
+                    <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(employee.department)}`}>
+                      {employee.department}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 text-[#272220]">
+                  <Phone size={14} className="text-[#A0A0A0] shrink-0" />
+                  <span>{employee.phone || '—'}</span>
+                </div>
+                <div className="flex items-center gap-2 text-[#272220]">
+                  <Mail size={14} className="text-[#A0A0A0] shrink-0" />
+                  <span className="break-all">{employee.email}</span>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>,
+    document.body
+  );
+}
 
 interface EmployeeDirectoryProps {
   employees: Employee[];
@@ -25,21 +118,11 @@ export default function EmployeeDirectory({ employees, orgDivisions, currentUser
   const [searchTerm, setSearchTerm] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('__all__');
   const [orgFilterDivision, setOrgFilterDivision] = useState('__all__');
-  const [markedId, setMarkedId] = useState<string | null>(null);
+  const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
   const orgChartRef = useRef<OrgChartHandle>(null);
   const currentUserInOrgChart = Boolean(currentUserId && employees.some((e) => e.id === currentUserId));
   const orgSections = useMemo(() => orgDivisions.flatMap((d) => d.sections), [orgDivisions]);
   const noop = () => {};
-
-  useEffect(() => {
-    if (!markedId) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if ((e.target as HTMLElement).closest('[data-markable-id]')) return;
-      setMarkedId(null);
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [markedId]);
 
   const [tableMaxHeight, setTableMaxHeight] = useState<number>();
   const tableWrapRef = useRef<HTMLDivElement>(null);
@@ -203,12 +286,8 @@ export default function EmployeeDirectory({ employees, orgDivisions, currentUser
               {filteredEmployees.map((emp) => (
                 <div
                   key={emp.id}
-                  data-markable-id={emp.id}
-                  onClick={() => setMarkedId(emp.id)}
-                  className={`bg-white shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] p-4 rounded-2xl space-y-3 transition-all duration-200 hover:-translate-y-1 hover:shadow-lg cursor-pointer ${
-                    markedId === emp.id ? 'shadow-lg' : ''
-                  }`}
-                  style={markedId === emp.id ? { transform: 'translateY(-4px)' } : undefined}
+                  onClick={() => setViewingEmployee(emp)}
+                  className="bg-white shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] p-4 rounded-2xl space-y-3 transition-all duration-200 hover:-translate-y-1 hover:shadow-lg cursor-pointer"
                 >
                   <div className="flex items-start gap-3">
                     {emp.avatar ? (
@@ -235,6 +314,16 @@ export default function EmployeeDirectory({ employees, orgDivisions, currentUser
                         </span>
                       )}
                     </div>
+                    <Tooltip content="ดูรายละเอียด">
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setViewingEmployee(emp); }}
+                        aria-label="ดูรายละเอียด"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer shrink-0"
+                      >
+                        <Eye size={15} />
+                      </button>
+                    </Tooltip>
                   </div>
 
                   <div className="pt-2 border-t border-[#EDEEEF] space-y-1.5">
@@ -269,15 +358,15 @@ export default function EmployeeDirectory({ employees, orgDivisions, currentUser
                     <th className="px-4 py-3 whitespace-nowrap sticky top-0 z-20 bg-[#F9F9F9]">ตำแหน่ง</th>
                     <th className="px-4 py-3 whitespace-nowrap sticky top-0 z-20 bg-[#F9F9F9]">ฝ่าย</th>
                     <th className="px-4 py-3 whitespace-nowrap sticky top-0 z-20 bg-[#F9F9F9]">แผนก</th>
+                    <th className="px-4 py-3 whitespace-nowrap sticky top-0 z-20 bg-[#F9F9F9]"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredEmployees.map((emp) => (
                     <tr
                       key={emp.id}
-                      data-markable-id={emp.id}
-                      onClick={() => setMarkedId(emp.id)}
-                      className={`border-b border-[#EDEEEF] last:border-b-0 cursor-pointer ${markedId === emp.id ? 'bg-slate-200' : 'bg-white hover:bg-slate-50'}`}
+                      onClick={() => setViewingEmployee(emp)}
+                      className="border-b border-[#EDEEEF] last:border-b-0 cursor-pointer bg-white hover:bg-slate-50"
                     >
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="flex items-center gap-2.5">
@@ -311,6 +400,18 @@ export default function EmployeeDirectory({ employees, orgDivisions, currentUser
                           <span className="text-[#A0A0A0]">—</span>
                         )}
                       </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <Tooltip content="ดูรายละเอียด">
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setViewingEmployee(emp); }}
+                            aria-label="ดูรายละเอียด"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+                          >
+                            <Eye size={15} />
+                          </button>
+                        </Tooltip>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -337,6 +438,8 @@ export default function EmployeeDirectory({ employees, orgDivisions, currentUser
           />
         </div>
       )}
+
+      <EmployeeQuickViewModal employee={viewingEmployee} onClose={() => setViewingEmployee(null)} />
     </div>
   );
 }
