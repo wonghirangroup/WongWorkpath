@@ -30,12 +30,13 @@ function beYear2Digits(): string {
 }
 
 // New format: {abbreviation}-{2-digit BE year}-{type}-{sequence}, e.g. "WP-69-P-001" — sequence
-// runs per {year, type} only (NOT per abbreviation): abbreviation is project-specific and almost
-// never repeats, so scoping the counter by abbreviation too made it always land on 001. Matches
-// on the "-{year}-{type}-" substring anywhere in the code and reads the trailing segment (the
-// sequence itself) via SUBSTRING_INDEX(code, '-', -1), so it doesn't care how many hyphens the
-// abbreviation itself contains. Falls back to the old flat scheme when abbreviation/type aren't
-// supplied, so a project can still always get a valid code.
+// runs per year only (not per type or abbreviation), so it reads as "the Nth project created this
+// year" regardless of type/abbreviation — per product decision (2569-09-20), the number should
+// just keep incrementing project to project, not restart at 001 every time a new project happens
+// to be the first of its type. Matches on the "-{year}-" substring anywhere in the code and reads
+// the trailing segment (the sequence itself) via SUBSTRING_INDEX(code, '-', -1), so it doesn't
+// care how many hyphens the abbreviation itself contains. Falls back to the old flat scheme when
+// abbreviation/type aren't supplied, so a project can still always get a valid code.
 async function generateProjectCode(abbreviation: string, type: string | null): Promise<string> {
   // mysql2 returns a MAX(CAST(...AS UNSIGNED)) aggregate as a JS string (BIGINT precision
   // safety), not a number — `Number(maxNum)` actually converts it at runtime; the previous
@@ -46,7 +47,7 @@ async function generateProjectCode(abbreviation: string, type: string | null): P
     const yy = beYear2Digits();
     const [[{ maxNum }]] = await pool.query<RowDataPacket[]>(
       `SELECT COALESCE(MAX(CAST(SUBSTRING_INDEX(code, '-', -1) AS UNSIGNED)), 0) as maxNum FROM project WHERE code LIKE ?`,
-      [`%-${yy}-${type}-%`]
+      [`%-${yy}-%`]
     );
     return `${abbreviation}-${yy}-${type}-${String(Number(maxNum) + 1).padStart(3, '0')}`;
   }

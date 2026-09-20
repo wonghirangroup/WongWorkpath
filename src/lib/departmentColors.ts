@@ -16,21 +16,6 @@ export const DEPARTMENT_TAG_COLORS: Record<string, string> = {
   'แผนกเทคโนโลยีและไอที': 'text-blue-700 bg-blue-100',
 };
 
-// Solid-fill companion palette (same hue per section) for progress bars and other places that
-// need a single solid background instead of a text+tint pair.
-export const DEPARTMENT_BAR_COLORS: Record<string, string> = {
-  'แผนกบุคคล': 'bg-fuchsia-600',
-  'แผนกการเงินและการบัญชี': 'bg-slate-600',
-  'แผนกจัดซื้อ': 'bg-amber-600',
-  'แผนกควบคุมสินค้าและสต็อก': 'bg-orange-600',
-  'แผนกขายและดูแลลูกค้า': 'bg-emerald-600',
-  'แผนกปฏิบัติการคลังและขนส่ง': 'bg-teal-600',
-  'แผนกธุรการการตลาด': 'bg-pink-600',
-  'แผนกออนไลน์': 'bg-cyan-600',
-  'แผนกพัฒนาธุรกิจและองค์กร': 'bg-indigo-600',
-  'แผนกเทคโนโลยีและไอที': 'bg-blue-600',
-};
-
 const FALLBACK_TAG_PALETTE = [
   'text-fuchsia-700 bg-fuchsia-100',
   'text-slate-700 bg-slate-200',
@@ -45,11 +30,6 @@ const FALLBACK_TAG_PALETTE = [
   'text-red-700 bg-red-100',
   'text-lime-700 bg-lime-100',
 ];
-const FALLBACK_BAR_PALETTE = [
-  'bg-fuchsia-600', 'bg-slate-600', 'bg-amber-600', 'bg-orange-600', 'bg-emerald-600',
-  'bg-teal-600', 'bg-pink-600', 'bg-cyan-600', 'bg-indigo-600', 'bg-blue-600', 'bg-red-600', 'bg-lime-600',
-];
-
 function hashName(name: string): number {
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
@@ -60,8 +40,4 @@ function hashName(name: string): number {
 // consistent color — hashed from its name — rather than always falling back to plain gray.
 export function getDepartmentTagClass(dept: string): string {
   return DEPARTMENT_TAG_COLORS[dept] ?? FALLBACK_TAG_PALETTE[hashName(dept) % FALLBACK_TAG_PALETTE.length];
-}
-
-export function getDepartmentBarClass(dept: string): string {
-  return DEPARTMENT_BAR_COLORS[dept] ?? FALLBACK_BAR_PALETTE[hashName(dept) % FALLBACK_BAR_PALETTE.length];
 }

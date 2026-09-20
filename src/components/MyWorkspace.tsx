@@ -23,6 +23,7 @@ import SubmitTaskModal from './projectBoard/SubmitTaskModal';
 import ReviewTaskModal from './projectBoard/ReviewTaskModal';
 import PendingRequestCard from './projectBoard/PendingRequestCard';
 import Tooltip from './Tooltip';
+import StatCard from './dashboard/StatCard';
 
 type WorkTab = 'my_tasks' | 'to_review' | 'my_approvals' | 'my_projects' | 'gantt';
 
@@ -33,20 +34,6 @@ const TABS: { value: WorkTab; label: string; icon: typeof ListChecks }[] = [
   { value: 'my_projects', label: 'โครงการของฉัน', icon: Briefcase },
   { value: 'gantt', label: 'Gantt ของฉัน', icon: GanttChartSquare },
 ];
-
-function StatCard({ icon: Icon, label, count, color }: { icon: typeof ListChecks; label: string; count: number; color: string }) {
-  return (
-    <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] flex items-end justify-between gap-3">
-      <div className="min-w-0">
-        <p className="text-sm text-[#6F6F6F] font-medium truncate mb-2">{label}</p>
-        <h3 className="text-4xl font-bold text-[#374151]">{count}</h3>
-      </div>
-      <div className="w-11 h-11 flex items-center justify-center shrink-0" style={{ color }}>
-        <Icon size={38} strokeWidth={2} />
-      </div>
-    </div>
-  );
-}
 
 function TaskStatusPill({ status, blockedReason }: { status: ProjectTaskStatus; blockedReason?: string }) {
   return (
@@ -151,10 +138,34 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
   return (
     <div className="flex flex-col h-full min-h-0" id="my-workspace">
       <div className="shrink-0 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
-        <StatCard icon={ListChecks} label="งานที่รับผิดชอบ" count={myTasks.length} color="#FF6537" />
-        <StatCard icon={ClipboardCheck} label="งานที่รอฉันตรวจ" count={tasksToReview.length} color="#0EA5E9" />
-        <StatCard icon={ShieldCheck} label="คำขอที่รอฉันอนุมัติ" count={myApprovalRequests.length} color="#D97706" />
-        <StatCard icon={Briefcase} label="โครงการที่ดูแล" count={myProjects.length} color="#0017C1" />
+        <StatCard
+          icon={<ListChecks size={32} strokeWidth={2} />}
+          iconColor="#FF6537"
+          label="งานที่รับผิดชอบ"
+          value={myTasks.length}
+          detail="รวมทุกสถานะ"
+        />
+        <StatCard
+          icon={<ClipboardCheck size={32} strokeWidth={2} />}
+          iconColor="#0EA5E9"
+          label="งานที่รอฉันตรวจ"
+          value={tasksToReview.length}
+          detail="สถานะรอตรวจอยู่ในขณะนี้"
+        />
+        <StatCard
+          icon={<ShieldCheck size={32} strokeWidth={2} />}
+          iconColor="#FFB03D"
+          label="คำขอที่รอฉันอนุมัติ"
+          value={myApprovalRequests.length}
+          detail="คำขอแก้ไข/ลบที่รอการตัดสินใจ"
+        />
+        <StatCard
+          icon={<Briefcase size={32} strokeWidth={2} />}
+          iconColor="#0017C1"
+          label="โครงการที่ดูแล"
+          value={myProjects.length}
+          detail="โครงการที่คุณรับผิดชอบหรือเป็นสมาชิก"
+        />
       </div>
 
       <div className="shrink-0 flex items-center gap-0.5 bg-white border border-slate-200 rounded-xl p-1 w-fit max-w-full overflow-x-auto scrollbar-none mb-4">

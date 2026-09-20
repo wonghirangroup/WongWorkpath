@@ -19,7 +19,6 @@ interface CredentialRow extends RowDataPacket {
   notes: string | null;
   url: string | null;
   logo_url: string | null;
-  last_viewed_at: string | null;
   created_by: string;
   creator_employee_id: string | null;
   created_at: string;
@@ -42,7 +41,6 @@ function toCredentialItem(r: CredentialRow) {
     notes: r.notes ?? undefined,
     url: r.url ?? undefined,
     logoUrl: r.logo_url ?? undefined,
-    lastViewedAt: r.last_viewed_at ?? undefined,
     createdAt: r.created_at,
     createdBy: r.created_by,
     creatorEmployeeId: r.creator_employee_id ?? undefined,
@@ -50,7 +48,7 @@ function toCredentialItem(r: CredentialRow) {
 }
 
 const SELECT_FIELDS = `id, label, type, scope, team, project_id, username, password, key_value, notes,
-              url, logo_url, last_viewed_at, created_by, creator_employee_id, created_at`;
+              url, logo_url, created_by, creator_employee_id, created_at`;
 
 // Server-enforced visibility, matching documents.ts's own pattern: 'ส่วนตัว' only to its creator
 // (by real employee id, not display name — the old client-side check matched by name and broke on
@@ -125,12 +123,12 @@ credentialsRouter.put('/:id', async (req, res) => {
     await pool.query(
       `UPDATE credential SET
          label = ?, type = ?, scope = ?, team = ?, project_id = ?, username = ?, password = ?,
-         key_value = ?, notes = ?, url = ?, logo_url = ?, last_viewed_at = ?, updated_at = ?
+         key_value = ?, notes = ?, url = ?, logo_url = ?, updated_at = ?
        WHERE id = ?`,
       [
         c.label, c.type, c.scope, c.team ?? null, c.projectId ?? null, c.username, c.password ?? null,
         c.keyValue ?? null, c.notes ?? null, c.url ?? null, c.logoUrl ?? null,
-        c.lastViewedAt ?? null, nowBangkokDateTime(), req.params.id,
+        nowBangkokDateTime(), req.params.id,
       ]
     );
     res.json({ id: req.params.id });

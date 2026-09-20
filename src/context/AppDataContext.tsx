@@ -13,7 +13,7 @@ import { DEFAULT_ORG_DIVISIONS, OrgDivisionData } from '../data/orgStructure';
 import {
   INITIAL_EMPLOYEES
 } from '../data/mockData';
-import { fetchEmployees, createEmployee, updateEmployeeRemote, deleteEmployeeRemote, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote, fetchProjects, createProject, updateProjectRemote, deleteProjectRemote, CreateProjectPayload, fetchMeetings, createMeeting, updateMeetingRemote, deleteMeetingRemote, fetchProjectTasks, createProjectTask, updateProjectTaskRemote, deleteProjectTaskRemote, fetchProjectCustomStatuses, createProjectCustomStatus, deleteProjectCustomStatusRemote, fetchNotifications, createNotification, markNotificationRead, markAllNotificationsRead, CreateNotificationPayload, fetchChangeRequests, createChangeRequest, decideChangeRequest, ChangeRequest, fetchDocuments, createDocument, updateDocumentRemote, deleteDocumentRemote } from '../lib/api';
+import { fetchEmployees, createEmployee, updateEmployeeRemote, deleteEmployeeRemote, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote, fetchProjects, createProject, updateProjectRemote, deleteProjectRemote, CreateProjectPayload, fetchMeetings, createMeeting, updateMeetingRemote, fetchProjectTasks, createProjectTask, updateProjectTaskRemote, deleteProjectTaskRemote, fetchProjectCustomStatuses, createProjectCustomStatus, deleteProjectCustomStatusRemote, fetchNotifications, createNotification, markNotificationRead, markAllNotificationsRead, CreateNotificationPayload, fetchChangeRequests, createChangeRequest, decideChangeRequest, ChangeRequest, fetchDocuments, createDocument, updateDocumentRemote, deleteDocumentRemote } from '../lib/api';
 import { nowTimestamp } from '../lib/datetime';
 import type { ProjectRow, ProjectTaskItem, CustomProjectStatus } from '../components/projectBoard/types';
 import { registerCustomStatusLabels } from '../components/projectBoard/statusMeta';
@@ -36,12 +36,6 @@ interface AppDataContextValue {
   notifications: Notification[];
   auditLogs: AuditLog[];
   unreadCount: number;
-
-  // Task Modal — add-only now (see AppLayout.tsx: the Dashboard's "เพิ่มงาน" opens the real
-  // AddTaskModal without a fixed project, not a dedicated old-Task editor).
-  isTaskModalOpen: boolean;
-  openAddTaskModal: () => void;
-  closeTaskModal: () => void;
 
   // Mutations
   handleAddEmployee: (employee: Employee & { password: string }) => Promise<void>;
@@ -92,7 +86,6 @@ interface AppDataContextValue {
   setTaskSelectedTab: (tab: string | null) => void;
   handleAddMeeting: (newMeeting: Omit<Meeting, 'id'>) => Promise<void>;
   handleUpdateMeeting: (id: string, updates: Partial<Meeting>, reason?: string) => Promise<void>;
-  handleDeleteMeeting: (id: string) => Promise<void>;
   handleAddCredential: (newItem: CredentialItem) => Promise<void>;
   handleUpdateCredential: (id: string, updates: Partial<CredentialItem>) => Promise<void>;
   handleDeleteCredential: (id: string) => Promise<void>;
@@ -151,9 +144,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [orgDivisions, setOrgDivisions] = useState<OrgDivisionData[]>(DEFAULT_ORG_DIVISIONS);
   const orgSections = useMemo(() => orgDivisions.flatMap((d) => d.sections), [orgDivisions]);
-
-  // Task Modal state
-  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
 
   // Employees now live in the real `employee` table (see server/routes/employees.ts) instead of
   // localStorage-only mock data. Show the cached/mock list immediately so the UI isn't blocked on
@@ -1195,11 +1185,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const handleDeleteMeeting = async (id: string) => {
-    await deleteMeetingRemote(id);
-    setMeetings((prev) => prev.filter((m) => m.id !== id));
-  };
-
   // 5. Credential Safe Operations — visibility itself (not just these mutations) is
   // server-enforced now, see the fetchCredentials effect above. creatorEmployeeId is stamped here
   // (not trusted from the form) so a personal-scope item is always attributable to a real id.
@@ -1240,14 +1225,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   const dismissNotificationToast = () => setNotificationToast(null);
 
-  const openAddTaskModal = () => {
-    setIsTaskModalOpen(true);
-  };
-
-  const closeTaskModal = () => {
-    setIsTaskModalOpen(false);
-  };
-
   // A project's own `progress` column is never actually written by any real flow (no create/edit
   // form sends it) — it only ever gets a real value from test fixtures poked in directly via the
   // API. Every consumer (ProjectCard's ring, ProjectTable's bar, MyWorkspace's "โครงการของฉัน"
@@ -1279,9 +1256,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     notifications,
     auditLogs,
     unreadCount,
-    isTaskModalOpen,
-    openAddTaskModal,
-    closeTaskModal,
     handleAddEmployee,
     handleUpdateEmployee,
     handleDeleteEmployee,
@@ -1312,7 +1286,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     setTaskSelectedTab,
     handleAddMeeting,
     handleUpdateMeeting,
-    handleDeleteMeeting,
     handleAddCredential,
     handleUpdateCredential,
     handleDeleteCredential,

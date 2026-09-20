@@ -11,6 +11,16 @@ export function formatThaiDateShort(iso: string): string {
   return `${String(d.getDate()).padStart(2, '0')} ${THAI_MONTHS_SHORT[d.getMonth()]} ${d.getFullYear() + 543}`;
 }
 
+// Same short Thai date, with the "HH:mm" already present in a "YYYY-MM-DD HH:mm[:ss]" timestamp
+// (e.g. audit log entries) appended — e.g. "20 ก.ย. 2569 21:35". Used anywhere a raw timestamp
+// like that would otherwise be shown as-is instead of in the app's usual Thai date format.
+export function formatThaiDateTimeShort(timestamp: string): string {
+  if (!timestamp) return '';
+  const [datePart, timePart] = timestamp.split(' ');
+  const date = formatThaiDateShort(datePart);
+  return timePart ? `${date} ${timePart.slice(0, 5)}` : date;
+}
+
 // toISOString() reports UTC, which drifted 7 hours behind local Thai time in every
 // recorded timestamp (audit log, task history, doc/credential timestamps). This formats
 // the same "YYYY-MM-DD HH:mm" shape using the browser's local time instead.

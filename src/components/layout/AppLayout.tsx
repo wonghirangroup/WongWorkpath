@@ -4,9 +4,7 @@ import { ArrowLeft, ChevronRight, Folder, Home } from 'lucide-react';
 import { useAppData } from '../../context/AppDataContext';
 import Header from './Header';
 import Sidebar, { NAV_ITEMS } from './Sidebar';
-import AddTaskModal from '../projectBoard/AddTaskModal';
 import NotificationToast from './NotificationToast';
-import { createDocFolder } from '../../lib/docFolder';
 import Tooltip from '../Tooltip';
 import { STATUS_LABEL, STATUS_PILL, STATUS_ICON } from '../projectBoard/statusMeta';
 import { canManageEmployees } from '../../lib/permissions';
@@ -37,14 +35,8 @@ export default function AppLayout() {
   const activeId = NAV_ITEMS.find((item) => pathname === `/${item.id}`)?.id;
 
   const {
-    isTaskModalOpen,
-    closeTaskModal,
-    handleAddProjectTask,
-    handleAddMeeting,
-    employees,
     projects,
     documents,
-    handleAddDocument,
     docCurrentFolderId,
     setDocCurrentFolderId,
     taskSelectedProjectId,
@@ -58,9 +50,6 @@ export default function AppLayout() {
   const pageMeta = activeId === 'employees' && currentUser && !canManageEmployees(currentUser)
     ? { title: 'พนักงาน', subtitle: 'ดูรายชื่อพนักงานและโครงสร้างองค์กร' }
     : activeId ? PAGE_META[activeId] : undefined;
-
-  const handleCreateFolder = (name: string, parentId: string | null, taskId: string | undefined, projectId: string) =>
-    createDocFolder(name, parentId, taskId, projectId, handleAddDocument, currentUser?.name || 'ผู้ใช้งานปัจจุบัน');
 
   // On the Tasks page, once a project's detail view is open, the Header swaps to the project's
   // own title (with status pill + code as its subtitle) plus a back arrow to return to the list —
@@ -233,20 +222,6 @@ export default function AppLayout() {
           <Outlet />
         </main>
       </div>
-
-      {/* Dashboard's "เพิ่มงาน" quick-add — same real AddTaskModal every project uses, just opened
-          without a fixed project context, so it shows its own required project picker first. */}
-      <AddTaskModal
-        isOpen={isTaskModalOpen}
-        onClose={closeTaskModal}
-        onSave={handleAddProjectTask}
-        onAddMeeting={handleAddMeeting}
-        onCreateFolder={handleCreateFolder}
-        projectId=""
-        projects={projects}
-        employees={employees}
-        currentUserId={currentUser?.id ?? ''}
-      />
 
       <NotificationToast />
     </div>

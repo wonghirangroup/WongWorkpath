@@ -127,7 +127,7 @@ const TABS: { value: DetailTab; label: string }[] = [
   { value: 'tasks', label: 'งาน' },
   { value: 'team', label: 'ทีม' },
   { value: 'meetings', label: 'การประชุม' },
-  { value: 'timeline', label: 'Timeline' },
+  { value: 'timeline', label: 'Gantt' },
 ];
 
 const TASK_FILTER_OPTIONS: { value: TaskFilter; label: string }[] = [

@@ -117,7 +117,6 @@ export interface CredentialItem {
   notes?: string;
   url?: string;
   logoUrl?: string;
-  lastViewedAt?: string;
   createdAt: string;
   createdBy: string; // display name — kept for legacy rows created before creatorEmployeeId existed
   creatorEmployeeId?: string; // real id — server-side visibility filtering keys off this, not createdBy

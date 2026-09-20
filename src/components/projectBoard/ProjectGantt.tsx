@@ -200,14 +200,14 @@ export default function ProjectGantt({ tasks, employees, projects }: ProjectGant
   return (
     <div className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] overflow-hidden">
       <div className="flex items-center justify-between px-5 py-3 border-b border-[#F4F4F4]">
-        <h4 className="font-bold text-[#272220] text-sm">Timeline</h4>
-        <div className="flex items-center gap-0.5 bg-[#F6F6F6] border border-slate-200 rounded-lg p-0.5">
+        <h4 className="font-bold text-[#272220] text-sm">Gantt</h4>
+        <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-xl p-1">
           {ZOOM_OPTIONS.map((z) => (
             <button
               key={z.value}
               type="button"
               onClick={() => setZoom(z.value)}
-              className={`px-2.5 h-7 rounded-md text-[11px] font-semibold cursor-pointer transition-colors ${
+              className={`px-3.5 h-8 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
                 zoom === z.value ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'
               }`}
             >

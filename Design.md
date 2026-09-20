@@ -2,7 +2,7 @@
 
 Design system reference for **Wong Workpath**, extracted from what's actually implemented in `src/`. This documents current usage — it isn't a spec to enforce, it's a reference to stay consistent with when adding new UI.
 
-Scope: every module that has gone through a real design pass — Login, the app shell (Sidebar/Header), Employee Management (list + org chart + audit log), Task & Project Management (the Project Board), Doc Vault, Credential Vault, and the Reports placeholder. **Not covered**: แดชบอร์ด (Dashboard), ปฏิทินและตารางเวลา (Calendar), and ตารางภาระงาน (`/gantt`, the old flat Gantt/workload view) — none of these have been redesigned yet, so documenting them here would just fossilize the old look.
+Scope: every module that has gone through a real design pass — Login, the app shell (Sidebar/Header), Employee Management (list + org chart + audit log), Task & Project Management (the Project Board), Doc Vault, Credential Vault, the Reports placeholder, แดชบอร์ด (Dashboard), ปฏิทินและตารางเวลา (Calendar), and งานของฉัน (`/gantt`, MyWorkspace — the page previously hosted a separate flat Gantt/workload view; it's since been replaced by MyWorkspace, which now shares this same design pass).
 
 ## Brand & Color Palette
 
@@ -263,3 +263,15 @@ Same toolbar/list shape as Doc Vault (search + type/scope filter + grid/list tog
 ## Reports ("การออกรายงาน", `/reports`)
 
 Not yet built — a single centered placeholder card (`FileOutput` icon + "ระบบออกรายงานอยู่ระหว่างการพัฒนา").
+
+## Dashboard ("แดชบอร์ด", `/dashboard`)
+
+Sticky toolbar (project picker +, for executive accounts only, a department filter) → a 4-up `StatCard` row (`components/dashboard/StatCard.tsx` — `bg-white p-5 rounded-2xl border border-slate-100` + the standard card shadow, label/value/detail stacked left, a plain solid-colored icon at `size={32}` right, no tinted background square) → a summary table + status donut sharing one row (table two-thirds, donut one-third) → "งานของฉันที่ใกล้ครบกำหนด" (my upcoming tasks) list. Switches from project-scoped to task-scoped the moment the toolbar filters down to one project (`ProjectSummaryTable`/`StatusDistributionChart` swap for `TaskSummaryTable`/`TaskStatusDistributionChart`). Non-executive roles default to `isResponsibleForProject` scoping; executives see the whole company by default. `StatCard` is the shared component MyWorkspace's own stat row also reuses — never fork a local variant of it.
+
+## ปฏิทินและตารางเวลา (Calendar, `/calendar`)
+
+Left rail (นัดประชุม button, เฉพาะของฉัน/ภาพรวมทั้งบริษัท segmented toggle, ตัวกรองปฏิทิน filter list, department dropdown, upcoming list) + a month-grid calendar card on the right. Both the scope toggle and the filter list use the standard segmented-tab treatment (`bg-white border border-slate-200 rounded-xl p-1` track, `h-8` buttons, active `bg-[#FF6537] text-white`) — same pattern as `ProjectFilterTabs`/`MyWorkspace`'s own `TABS` row, not a one-off. Day cells show up to 2 event chips (`rounded-lg`, `text-[9px]`, colored via each item's own hex token — `TASK_STATUS_COLOR` for tasks, purple for meetings [a real, consistently-used app convention though not a formally named token], `STATUS_DOT` for project deadlines) plus a combined "+N" overflow indicator; clicking a day with anything on it opens a `rounded-2xl` popover (title + `X size={18}` close, matching the standard Modal header row) listing every item in full, grouped งาน / การประชุม / ครบกำหนดโครงการ, each with a `rounded-lg` icon-square avatar. A status legend along the bottom uses `rounded-full` dots. Meeting cancel is reason-required (`CancelMeetingModal`); a past meeting has no cancel affordance.
+
+## งานของฉัน (MyWorkspace, `/gantt`)
+
+A 4-up `StatCard` row (reusing `components/dashboard/StatCard.tsx` — do not fork a local copy) → a 5-tab segmented row (งานของฉัน / งานที่ต้องตรวจ / รออนุมัติจากฉัน / โครงการของฉัน / Gantt ของฉัน, standard `bg-white border border-slate-200 rounded-xl p-1` track) → the active tab's table or panel. Tables (งานของฉัน, โครงการของฉัน) match `ProjectTable.tsx`'s exact styling byte-for-byte (`bg-[#F9F9F9]` header, `hover:bg-slate-50` rows, `h-2 rounded-full bg-[#F0F0F0]` progress bars). "Gantt ของฉัน" embeds `ProjectGantt.tsx` (the same Timeline component `ProjectDetail.tsx` uses for a single project, here fed every project the user is responsible for, with a project-name sub-label under each task's title when tasks span more than one project) — its วัน/เดือน/ปี zoom toggle is the same standard segmented-tab treatment as everywhere else in the app (`bg-white border border-slate-200 rounded-xl p-1`, `h-8` buttons), not a scaled-down variant.

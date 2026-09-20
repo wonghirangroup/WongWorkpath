@@ -559,12 +559,12 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
         getNextCodePreview={(abbreviation, type) => {
           if (!abbreviation || !type) return 'จะสร้างอัตโนมัติ';
           const yy = String((new Date().getFullYear() + 543) % 100).padStart(2, '0');
-          const prefix = `${abbreviation}-${yy}-${type}-`;
+          const yearCodePattern = new RegExp(`-${yy}-[A-Za-z]+-(\\d+)$`);
           const seqNumbers = projects
-            .map((p) => (p.code.startsWith(prefix) ? Number(p.code.slice(prefix.length)) : NaN))
+            .map((p) => Number(p.code.match(yearCodePattern)?.[1]))
             .filter((n) => !Number.isNaN(n));
           const next = (seqNumbers.length ? Math.max(...seqNumbers) : 0) + 1;
-          return `${prefix}${String(next).padStart(3, '0')}`;
+          return `${abbreviation}-${yy}-${type}-${String(next).padStart(3, '0')}`;
         }}
         onCreate={async (payload) => {
           await handleAddProject({ ...payload, createdBy: currentUserId });

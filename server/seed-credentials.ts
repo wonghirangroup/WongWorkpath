@@ -8,8 +8,8 @@ async function seedCredentials() {
   for (const c of INITIAL_CREDENTIALS) {
     await pool.query(
       `INSERT INTO credential
-         (id, label, type, scope, team, username, password, key_value, notes, url, logo_url, last_viewed_at, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         (id, label, type, scope, team, username, password, key_value, notes, url, logo_url, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
          label = VALUES(label),
          type = VALUES(type),
@@ -21,13 +21,12 @@ async function seedCredentials() {
          notes = VALUES(notes),
          url = VALUES(url),
          logo_url = VALUES(logo_url),
-         last_viewed_at = VALUES(last_viewed_at),
          created_by = VALUES(created_by),
          created_at = VALUES(created_at)`,
       [
         c.id, c.label, c.type, c.scope, c.team ?? null,
         c.username, c.password ?? null, c.keyValue ?? null, c.notes ?? null,
-        c.url ?? null, c.logoUrl ?? null, c.lastViewedAt ?? null, c.createdBy, c.createdAt,
+        c.url ?? null, c.logoUrl ?? null, c.createdBy, c.createdAt,
       ]
     );
   }

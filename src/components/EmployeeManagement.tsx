@@ -6,6 +6,7 @@ import { Employee, Division, AccountType, AuditLog } from '../types';
 import { ApiError } from '../lib/api';
 import { getAvatarColor } from '../lib/avatarColor';
 import { getDepartmentTagClass } from '../lib/departmentColors';
+import { formatThaiDateTimeShort } from '../lib/datetime';
 import { ACCOUNT_TYPE_LABELS, canEditOrDeleteTarget, canEditOrgStructure, isNavAllowedByRole } from '../lib/permissions';
 import { useAppData } from '../context/AppDataContext';
 import Dropdown from './Dropdown';
@@ -465,7 +466,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
           </div>
 
           <div className="flex items-center gap-2 flex-1 min-w-0">
-            <div className="w-44 h-9 shrink-0">
+            <div className="w-44 h-10 shrink-0">
               <Dropdown<string>
                 value={orgFilterDivision}
                 onChange={setOrgFilterDivision}
@@ -479,9 +480,9 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                   type="button"
                   onClick={() => orgChartRef.current?.focusOnEmployee(currentUserId!)}
                   aria-label="ตำแหน่งของฉัน"
-                  className="flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-semibold text-[#6F6F6F] bg-[#F4F4F5] hover:bg-slate-200 cursor-pointer transition-colors shrink-0"
+                  className="flex items-center gap-1.5 h-10 px-3.5 rounded-xl text-xs font-semibold text-[#272220] bg-white border border-slate-200 hover:bg-slate-50 cursor-pointer transition-colors shrink-0"
                 >
-                  <LocateFixed size={13} /> ตำแหน่งของฉัน
+                  <LocateFixed size={14} /> ตำแหน่งของฉัน
                 </button>
               </Tooltip>
             )}
@@ -749,7 +750,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                     onClick={() => setMarkedId(log.id)}
                     className={`border-b border-[#EDEEEF] last:border-b-0 cursor-pointer ${markedId === log.id ? 'bg-slate-200' : 'bg-white hover:bg-slate-50'}`}
                   >
-                    <td className="px-4 py-3 whitespace-nowrap text-[12px] font-normal text-[#6F6F6F]">{log.timestamp}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-[12px] font-normal text-[#6F6F6F]">{formatThaiDateTimeShort(log.timestamp)}</td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       {(() => {
                         // `log.user` is a name snapshot taken at log time (see handleLogAudit), not

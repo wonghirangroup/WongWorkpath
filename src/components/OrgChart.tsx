@@ -104,7 +104,7 @@ export function EmployeeLocateSearch({ employees, onSelect }: { employees: Emplo
   return (
     <div ref={rootRef} className="relative w-full">
       <div className="relative">
-        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#A0A0A0] pointer-events-none" />
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
         <input
           type="text"
           value={query}
@@ -112,8 +112,20 @@ export function EmployeeLocateSearch({ employees, onSelect }: { employees: Emplo
           onFocus={() => setIsOpen(true)}
           placeholder="ค้นหาพนักงานในผังองค์กร..."
           aria-label="ค้นหาพนักงานในผังองค์กร"
-          className="w-full h-9 pl-8 pr-3 text-[13px] border border-[#E5E5E5] rounded-lg focus:outline-none focus:border-[#FF6537]"
+          className="w-full h-10 pl-9 pr-9 bg-white border border-slate-200 rounded-xl text-[13px] font-normal focus:outline-none focus:border-[#FF6537]"
         />
+        {query && (
+          <Tooltip content="ล้างคำค้นหา">
+            <button
+              type="button"
+              onClick={() => { setQuery(''); setIsOpen(false); }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+              aria-label="ล้างคำค้นหา"
+            >
+              <X size={15} />
+            </button>
+          </Tooltip>
+        )}
       </div>
       {isOpen && q && (
         <div className="absolute z-30 top-full left-0 right-0 mt-1 bg-white border border-slate-100 rounded-xl shadow-lg max-h-64 overflow-y-auto">
@@ -263,33 +275,76 @@ function NamePromptModal({
   );
 }
 
-// Two-step inline confirm (click once to arm, click again to confirm) instead of a full modal —
+// Real confirm popup for deleting a division/section — replaces the old two-step inline "ลบ?"/✕
+// swap on the delete icon itself, same modal shell as NamePromptModal/LogoutConfirmModal.
+function DeleteConfirmModal({
+  title,
+  message,
+  warning,
+  onConfirm,
+  onClose,
+}: {
+  title: string;
+  message: string;
+  warning?: string;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  useEscapeToClose(true, onClose);
+  return createPortal(
+    <AnimatePresence>
+      <motion.div className="fixed inset-0 z-50 flex items-center justify-center">
+        <motion.div
+          className="absolute inset-0 bg-black/15 backdrop-blur-sm"
+          onClick={onClose}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15 }}
+        />
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          className="relative bg-white rounded-2xl shadow-xl w-full max-w-sm mx-4 p-5"
+        >
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="text-sm font-bold text-slate-800">{title}</h3>
+            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 cursor-pointer" type="button">
+              <X size={18} />
+            </button>
+          </div>
+          <p className="text-xs text-[#6F6F6F]">{message}</p>
+          {warning && (
+            <p className="text-xs text-rose-600 bg-rose-50 border border-rose-100 rounded-lg px-3 py-2 mt-3">{warning}</p>
+          )}
+          <div className="flex justify-end gap-2 mt-4">
+            <button type="button" onClick={onClose} className="px-4 h-9 text-xs font-semibold text-[#6F6F6F] hover:bg-slate-50 rounded-lg border border-[#E5E5E5] cursor-pointer">
+              ยกเลิก
+            </button>
+            <button
+              type="button"
+              onClick={() => { onConfirm(); onClose(); }}
+              className="px-4 h-9 text-white font-bold text-xs rounded-lg bg-rose-600 hover:bg-rose-700 cursor-pointer"
+            >
+              ลบ
+            </button>
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>,
+    document.body
+  );
+}
+
+// Opens the shared DeleteConfirmModal (a real popup) instead of arming an inline "ลบ?" swap —
 // used for both division and section deletes, which happen from small icon buttons inside boxes.
-function DeleteButton({ onConfirm, warning }: { onConfirm: () => void; warning?: string }) {
-  const [armed, setArmed] = useState(false);
-  if (armed) {
-    return (
-      <Tooltip content={warning}>
-        <div className="absolute -top-2 -right-2 z-10 flex items-center gap-1 bg-white border border-rose-200 rounded-full shadow-md px-1.5 py-1">
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onConfirm(); setArmed(false); }}
-            className="text-[9px] font-bold text-rose-600 hover:text-rose-800 cursor-pointer px-1"
-          >
-            ลบ?
-          </button>
-          <button type="button" onClick={(e) => { e.stopPropagation(); setArmed(false); }} className="text-slate-400 hover:text-slate-600 cursor-pointer">
-            <X size={11} />
-          </button>
-        </div>
-      </Tooltip>
-    );
-  }
+function DeleteButton({ onClick }: { onClick: () => void }) {
   return (
     <Tooltip content="ลบ">
       <button
         type="button"
-        onClick={(e) => { e.stopPropagation(); setArmed(true); }}
+        onClick={(e) => { e.stopPropagation(); onClick(); }}
         className="absolute -top-2 -right-2 z-10 w-5 h-5 flex items-center justify-center rounded-full bg-white border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-200 shadow-sm cursor-pointer"
         aria-label="ลบ"
       >
@@ -372,6 +427,12 @@ const OrgChart = forwardRef<OrgChartHandle, OrgChartProps>(function OrgChart({
     | { kind: 'section'; division: string; oldName: string }
     | { kind: 'add-division' }
     | { kind: 'add-section'; division: string }
+    | null
+  >(null);
+
+  const [deletePrompt, setDeletePrompt] = useState<
+    | { kind: 'division'; name: string; warning?: string }
+    | { kind: 'section'; division: string; name: string; warning?: string }
     | null
   >(null);
 
@@ -654,10 +715,7 @@ const OrgChart = forwardRef<OrgChartHandle, OrgChartProps>(function OrgChart({
                       {editMode && (
                         <>
                           <EditButton onClick={() => setRenamePrompt({ kind: 'division', oldName: col.division.name })} />
-                          <DeleteButton
-                            onConfirm={() => onDeleteDivision(col.division.name)}
-                            warning={memberCount > 0 ? `มีพนักงาน ${memberCount} คนในฝ่ายนี้` : undefined}
-                          />
+                          <DeleteButton onClick={() => setDeletePrompt({ kind: 'division', name: col.division.name, warning: memberCount > 0 ? `มีพนักงาน ${memberCount} คนในฝ่ายนี้` : undefined })} />
                         </>
                       )}
                       <div className="bg-white border-2 border-[#FF6537] rounded-2xl shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] px-6 py-4 flex flex-col items-center gap-1 min-w-40">
@@ -682,7 +740,7 @@ const OrgChart = forwardRef<OrgChartHandle, OrgChartProps>(function OrgChart({
                             {editMode && (
                               <>
                                 <EditButton onClick={() => setRenamePrompt({ kind: 'section', division: col.division.name, oldName: section })} />
-                                <DeleteButton onConfirm={() => onDeleteSection(col.division.name, section)} />
+                                <DeleteButton onClick={() => setDeletePrompt({ kind: 'section', division: col.division.name, name: section, warning: membersHere.length > 0 ? `มีพนักงาน ${membersHere.length} คนในแผนกนี้` : undefined })} />
                               </>
                             )}
                             <div className="w-60 bg-white border border-slate-100 rounded-2xl shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] p-4 flex flex-col items-center gap-1">
@@ -778,6 +836,25 @@ const OrgChart = forwardRef<OrgChartHandle, OrgChartProps>(function OrgChart({
           label="ชื่อแผนก"
           onClose={() => setRenamePrompt(null)}
           onSave={(value) => { onAddSection(renamePrompt.division, value); setRenamePrompt(null); }}
+        />
+      )}
+
+      {deletePrompt?.kind === 'division' && (
+        <DeleteConfirmModal
+          title="ลบฝ่าย"
+          message={`ยืนยันการลบฝ่าย "${deletePrompt.name}"? การกระทำนี้ไม่สามารถย้อนกลับได้`}
+          warning={deletePrompt.warning}
+          onClose={() => setDeletePrompt(null)}
+          onConfirm={() => onDeleteDivision(deletePrompt.name)}
+        />
+      )}
+      {deletePrompt?.kind === 'section' && (
+        <DeleteConfirmModal
+          title="ลบแผนก"
+          message={`ยืนยันการลบแผนก "${deletePrompt.name}"? การกระทำนี้ไม่สามารถย้อนกลับได้`}
+          warning={deletePrompt.warning}
+          onClose={() => setDeletePrompt(null)}
+          onConfirm={() => onDeleteSection(deletePrompt.division, deletePrompt.name)}
         />
       )}
     </div>

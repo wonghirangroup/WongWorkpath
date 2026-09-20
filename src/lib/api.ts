@@ -310,19 +310,6 @@ export async function updateMeetingRemote(id: string, updates: Partial<Meeting>)
   return data as Meeting;
 }
 
-export async function deleteMeetingRemote(id: string): Promise<void> {
-  let res: Response;
-  try {
-    res = await fetch(`${API_BASE_URL}/api/meetings/${encodeURIComponent(id)}`, { method: 'DELETE' });
-  } catch {
-    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
-  }
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new ApiError(data.message ?? 'ลบการประชุมไม่สำเร็จ', res.status);
-  }
-}
-
 export async function fetchProjectTasks(): Promise<ProjectTaskItem[]> {
   const res = await fetch(`${API_BASE_URL}/api/project-tasks`);
   if (!res.ok) throw new Error(`Failed to fetch project tasks: ${res.status}`);

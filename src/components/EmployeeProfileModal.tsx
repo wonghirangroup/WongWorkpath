@@ -7,6 +7,7 @@ import { ApiError } from '../lib/api';
 import { getAvatarColor } from '../lib/avatarColor';
 import { ACCOUNT_TYPE_LABELS, isNavAllowedByRole } from '../lib/permissions';
 import { useAppData } from '../context/AppDataContext';
+import { formatThaiDateTimeShort } from '../lib/datetime';
 import { OrgDivisionData } from '../data/orgStructure';
 import Dropdown from './Dropdown';
 import { useEscapeToClose } from '../lib/useEscapeToClose';
@@ -168,14 +169,12 @@ export default function EmployeeProfileModal({
     }
   };
 
-  // "เอกสารทั้งหมด" — documents this employee actually created (a doc's first history entry is
-  // its creator; `updatedBy` on the doc itself tracks only the *last* editor) — mirrors the
-  // `creatorName` logic DocVault.tsx already uses for its own "created by" display.
-  const ownedDocs = documents.filter((doc) => {
-    if (doc.kind === 'folder') return false;
-    const creatorName = doc.history[0]?.updatedBy ?? doc.updatedBy;
-    return creatorName === employee.name;
-  });
+  // "เอกสารทั้งหมด" — documents this employee actually created. Matches on creatorEmployeeId (a
+  // real id, always accurate), not the display-name-based updatedBy/history fields DocVault shows
+  // — those get set to whichever of nickname/full-name the creating page happened to pass in
+  // (DocsPage uses the full name, MyWorkspace/ProjectDetail use the nickname), so a name-string
+  // comparison against `employee.name` silently missed every doc created via the latter two.
+  const ownedDocs = documents.filter((doc) => doc.kind !== 'folder' && doc.creatorEmployeeId === employee.id);
 
   // "กิจกรรมล่าสุด" — matches handleLogAudit's own actor-name precedence (nickname first, see
   // AppDataContext.tsx) so this lines up exactly with what got logged for this person's actions.
@@ -390,7 +389,7 @@ export default function EmployeeProfileModal({
                       <div key={log.id} className="flex items-start gap-2 text-xs">
                         <span className="inline-block text-[10px] font-semibold text-[#FF6537] bg-[#FFF1EC] px-1.5 py-0.5 rounded-full shrink-0 mt-0.5 whitespace-nowrap">{log.action}</span>
                         <span className="flex-1 min-w-0 text-[#6F6F6F]">{log.details}</span>
-                        <span className="shrink-0 text-slate-400 whitespace-nowrap">{log.timestamp}</span>
+                        <span className="shrink-0 text-slate-400 whitespace-nowrap">{formatThaiDateTimeShort(log.timestamp)}</span>
                       </div>
                     ))}
                   </div>

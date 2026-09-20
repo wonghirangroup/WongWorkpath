@@ -168,9 +168,6 @@ export default function CalendarView({
   ];
 
   const daysOfWeek = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
-  const weekdaysThaiFull = ['วันอาทิตย์', 'วันจันทร์', 'วันอังคาร', 'วันพุธ', 'วันพฤหัสบดี', 'วันศุกร์', 'วันเสาร์'];
-  const today = new Date();
-  const todayLabel = `${weekdaysThaiFull[today.getDay()]}ที่ ${today.getDate()} ${monthsThai[today.getMonth()]} ${today.getFullYear() + 543}`;
 
   // Calculate days in the current month
   const calendarGrid = useMemo(() => {
@@ -239,12 +236,15 @@ export default function CalendarView({
     }
   };
 
-  const getTaskStatusColor = (status: string) => {
+  // Maps the older Task model's own status scale onto the same TASK_STATUS_COLOR hex palette the
+  // real project_task chips below already render from, so both kinds of task chip on this
+  // calendar read as one consistent color system instead of two disconnected ones.
+  const getTaskStatusColor = (status: string): string => {
     switch (status) {
-      case 'Completed': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-      case 'In Progress': return 'bg-blue-50 text-blue-700 border-blue-200';
-      case 'On Hold': return 'bg-rose-50 text-rose-700 border-rose-200';
-      default: return 'bg-slate-100 text-slate-700 border-slate-200';
+      case 'Completed': return TASK_STATUS_COLOR.done;
+      case 'In Progress': return TASK_STATUS_COLOR.in_progress;
+      case 'On Hold': return TASK_STATUS_COLOR.blocked;
+      default: return TASK_STATUS_COLOR.todo;
     }
   };
 
@@ -262,7 +262,8 @@ export default function CalendarView({
         title: task.title,
         dueDateISO: task.dueDate,
         startDateISO: task.startDate,
-        colorClasses: getTaskStatusColor(task.status),
+        colorClasses: 'border',
+        colorHex: getTaskStatusColor(task.status),
         projectLabel: task.project,
         assigneeNames: namesFor([task.primaryOwnerId, ...task.secondaryAssigneeIds]),
       }));
@@ -372,12 +373,12 @@ export default function CalendarView({
             <Users2 size={15} /> นัดประชุม
           </button>
 
-          <div className="flex items-center gap-0.5 bg-[#F4F4F5] rounded-xl p-1">
+          <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-xl p-1">
             <button
               type="button"
               onClick={() => setScope('mine')}
               className={`flex-1 text-xs font-semibold h-8 rounded-lg cursor-pointer transition-colors ${
-                scope === 'mine' ? 'bg-white text-[#272220] shadow-[0px_1px_3px_rgba(0,0,0,0.08)]' : 'text-[#6F6F6F] hover:text-[#272220]'
+                scope === 'mine' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'
               }`}
             >
               เฉพาะของฉัน
@@ -386,7 +387,7 @@ export default function CalendarView({
               type="button"
               onClick={() => setScope('all')}
               className={`flex-1 text-xs font-semibold h-8 rounded-lg cursor-pointer transition-colors ${
-                scope === 'all' ? 'bg-white text-[#272220] shadow-[0px_1px_3px_rgba(0,0,0,0.08)]' : 'text-[#6F6F6F] hover:text-[#272220]'
+                scope === 'all' ? 'bg-[#FF6537] text-white' : 'text-[#6F6F6F] hover:text-[#272220]'
               }`}
             >
               ภาพรวมทั้งบริษัท
@@ -397,19 +398,19 @@ export default function CalendarView({
             <CalIcon size={16} className="text-[#FF6537]" /> ตัวกรองปฏิทิน
           </h3>
 
-          <div className="flex flex-col gap-1 bg-[#F4F4F5] rounded-xl p-1">
+          <div className="flex flex-col gap-1 bg-white border border-slate-200 rounded-xl p-1">
             {FILTER_OPTIONS.map(({ value, label, icon: Icon }) => (
               <button
                 key={value}
                 type="button"
                 onClick={() => setFilterType(value)}
-                className={`flex items-center gap-2 w-full text-left text-xs px-3 h-9 rounded-lg font-semibold cursor-pointer transition-colors ${
+                className={`flex items-center gap-2 w-full text-left text-xs px-3 h-8 rounded-lg font-semibold cursor-pointer transition-colors ${
                   filterType === value
-                    ? 'bg-white text-[#272220] shadow-[0px_1px_3px_rgba(0,0,0,0.08)]'
+                    ? 'bg-[#FF6537] text-white'
                     : 'text-[#6F6F6F] hover:text-[#272220]'
                 }`}
               >
-                <Icon size={14} className={filterType === value ? 'text-[#FF6537]' : ''} />
+                <Icon size={14} />
                 {label}
               </button>
             ))}
@@ -547,7 +548,7 @@ export default function CalendarView({
               {filterType === 'Projects' ? <Briefcase size={20} /> : <CalIcon size={20} />}
             </div>
             <div>
-              <h2 className="text-lg font-bold text-[#272220]">
+              <h2 className="text-base font-bold text-[#272220]">
                 {filterType === 'Projects' ? 'ภาพรวมโครงการทั้งหมด' : `${monthsThai[currentMonth]} ${currentYear + 543}`}
               </h2>
               <p className="text-xs text-[#6F6F6F]">
@@ -557,9 +558,6 @@ export default function CalendarView({
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="hidden sm:inline text-xs text-[#6F6F6F]">
-              วันนี้<span className="font-semibold text-[#272220]"> {todayLabel}</span>
-            </span>
             {/* Month navigation doesn't apply to the Gantt view — it always shows every project
                 regardless of month. */}
             {filterType !== 'Projects' && (
@@ -658,7 +656,7 @@ export default function CalendarView({
                 } ${
                   cell.isCurrentMonth ? 'bg-white' : 'bg-slate-50/40 text-slate-300'
                 } ${isToday ? 'ring-2 ring-[#FF6537] ring-offset-1' : ''} ${
-                  isOpen ? 'border-[#FF6537]' : 'border-slate-100 hover:bg-slate-50/70'
+                  isOpen ? 'border-[#FF6537]' : 'border-slate-100 hover:bg-slate-50'
                 }`}
                 onClick={() => hasAnything && setOpenDayKey((prev) => (prev === cell.key ? null : cell.key))}
               >
@@ -693,7 +691,7 @@ export default function CalendarView({
                       return (
                         <Tooltip key={item.key} content={`[${task.projectLabel}] ${task.title}`}>
                           <div
-                            className={`text-[9px] px-1.5 py-0.5 rounded-md border truncate font-medium ${task.colorClasses}`}
+                            className={`text-[9px] px-1.5 py-0.5 rounded-lg border truncate font-medium ${task.colorClasses}`}
                             style={task.colorHex ? { backgroundColor: `${task.colorHex}1A`, color: task.colorHex, borderColor: `${task.colorHex}33` } : undefined}
                           >
                             {task.title}
@@ -711,7 +709,7 @@ export default function CalendarView({
                           content={isCancelled ? `ยกเลิกแล้ว: ${meeting.title}` : isPast ? `ผ่านไปแล้ว: ${meeting.title}` : `${meeting.startTime} ${meeting.title}`}
                         >
                           <div
-                            className={`text-[9px] px-1.5 py-0.5 rounded-md border truncate font-medium flex items-center gap-0.5 ${
+                            className={`text-[9px] px-1.5 py-0.5 rounded-lg border truncate font-medium flex items-center gap-0.5 ${
                               isCancelled || isPast ? 'bg-slate-50 text-slate-400 border-slate-200' : 'bg-purple-50 text-purple-700 border-purple-200'
                             }`}
                           >
@@ -725,7 +723,7 @@ export default function CalendarView({
                     return (
                       <Tooltip key={item.key} content={`ครบกำหนดโครงการ: ${project.title}`}>
                         <div
-                          className="text-[9px] px-1.5 py-0.5 rounded-md border truncate font-medium flex items-center gap-0.5"
+                          className="text-[9px] px-1.5 py-0.5 rounded-lg border truncate font-medium flex items-center gap-0.5"
                           style={{ backgroundColor: `${STATUS_DOT[project.status]}1A`, color: STATUS_DOT[project.status], borderColor: `${STATUS_DOT[project.status]}33` }}
                         >
                           <Briefcase size={9} className="shrink-0" />
@@ -735,9 +733,12 @@ export default function CalendarView({
                     );
                   })}
 
-                  {/* Excess items hidden indicator — one combined count, not per-kind */}
+                  {/* Excess items hidden indicator — one combined count, not per-kind. Pinned to
+                      the bottom of the cell (mt-auto) instead of stacking directly under the last
+                      visible chip, so a light day's leftover space reads as "more below" rather
+                      than an unexplained gap under a cramped little stack of chips. */}
                   {hiddenDayChipCount > 0 && (
-                    <div className="text-[8px] text-center text-[#A0A0A0] font-bold bg-slate-50 py-0.2 rounded">
+                    <div className="mt-auto text-[8px] text-center text-[#A0A0A0] font-bold bg-slate-50 py-0.5 rounded-lg">
                       +{hiddenDayChipCount}
                     </div>
                   )}
@@ -752,9 +753,9 @@ export default function CalendarView({
                 {isOpen && (
                   <div
                     onClick={(e) => e.stopPropagation()}
-                    className={`absolute z-30 ${popoverVertical} ${popoverHorizontal} w-80 max-h-96 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl text-left cursor-default`}
+                    className={`absolute z-30 ${popoverVertical} ${popoverHorizontal} w-80 max-h-96 overflow-y-auto bg-white border border-slate-200 rounded-2xl shadow-xl text-left cursor-default`}
                   >
-                    <div className="flex items-center justify-between px-3.5 py-3 border-b border-slate-100 sticky top-0 bg-white rounded-t-xl">
+                    <div className="flex items-center justify-between px-3.5 py-3 border-b border-slate-100 sticky top-0 bg-white rounded-t-2xl">
                       <p className="text-xs font-bold text-[#272220]">
                         {cell.date.getDate()} {monthsThai[cell.date.getMonth()]} {cell.date.getFullYear() + 543}
                       </p>
@@ -763,7 +764,7 @@ export default function CalendarView({
                         onClick={() => setOpenDayKey(null)}
                         className="text-slate-400 hover:text-slate-600 cursor-pointer"
                       >
-                        <X size={14} />
+                        <X size={18} />
                       </button>
                     </div>
 
@@ -773,7 +774,7 @@ export default function CalendarView({
                           <p className="text-[10px] font-bold text-[#A0A0A0] uppercase tracking-wide px-0.5">งาน</p>
                           {hasTasks.map((task) => (
                             <div key={task.id} className="flex items-start gap-2 p-2 rounded-lg bg-slate-50">
-                              <span className="w-6 h-6 rounded-md bg-[#FFF1EC] text-[#FF6537] flex items-center justify-center shrink-0">
+                              <span className="w-6 h-6 rounded-lg bg-[#FFF1EC] text-[#FF6537] flex items-center justify-center shrink-0">
                                 <ListChecks size={12} />
                               </span>
                               <div className="min-w-0 text-xs">
@@ -809,7 +810,7 @@ export default function CalendarView({
                                   onClick={() => openMeeting(meeting)}
                                   className="flex items-start gap-2 flex-1 min-w-0 text-left cursor-pointer group"
                                 >
-                                  <span className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${isCancelled ? 'bg-red-50 text-red-500' : isPast ? 'bg-slate-100 text-slate-400' : 'bg-purple-50 text-purple-600'}`}>
+                                  <span className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${isCancelled ? 'bg-red-50 text-red-500' : isPast ? 'bg-slate-100 text-slate-400' : 'bg-purple-50 text-purple-600'}`}>
                                     {isCancelled ? <Ban size={12} /> : <Users2 size={12} />}
                                   </span>
                                   <div className="min-w-0 flex-1 text-xs">
@@ -863,7 +864,7 @@ export default function CalendarView({
                                 className="w-full flex items-start gap-2 p-2 rounded-lg bg-slate-50 text-left hover:bg-[#FFF1EC] cursor-pointer group transition-colors"
                               >
                                 <span
-                                  className="w-6 h-6 rounded-md flex items-center justify-center shrink-0"
+                                  className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0"
                                   style={{ backgroundColor: `${dotColor}1A`, color: dotColor }}
                                 >
                                   <Briefcase size={12} />
@@ -896,27 +897,27 @@ export default function CalendarView({
             Tailwind colors that didn't match the actual task chips shown in the grid above. */}
         <div className="shrink-0 mt-4 pt-4 border-t border-slate-100 flex flex-wrap gap-4 text-xs text-[#6F6F6F]">
           <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded block" style={{ backgroundColor: `${TASK_STATUS_COLOR.todo}1A`, border: `1px solid ${TASK_STATUS_COLOR.todo}` }}></span>
+            <span className="w-2.5 h-2.5 rounded-full block" style={{ backgroundColor: `${TASK_STATUS_COLOR.todo}1A`, border: `1px solid ${TASK_STATUS_COLOR.todo}` }}></span>
             <span>{TASK_STATUS_LABEL.todo}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded block" style={{ backgroundColor: `${TASK_STATUS_COLOR.in_progress}1A`, border: `1px solid ${TASK_STATUS_COLOR.in_progress}` }}></span>
+            <span className="w-2.5 h-2.5 rounded-full block" style={{ backgroundColor: `${TASK_STATUS_COLOR.in_progress}1A`, border: `1px solid ${TASK_STATUS_COLOR.in_progress}` }}></span>
             <span>{TASK_STATUS_LABEL.in_progress}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded block" style={{ backgroundColor: `${TASK_STATUS_COLOR.review}1A`, border: `1px solid ${TASK_STATUS_COLOR.review}` }}></span>
+            <span className="w-2.5 h-2.5 rounded-full block" style={{ backgroundColor: `${TASK_STATUS_COLOR.review}1A`, border: `1px solid ${TASK_STATUS_COLOR.review}` }}></span>
             <span>{TASK_STATUS_LABEL.review}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded block" style={{ backgroundColor: `${TASK_STATUS_COLOR.done}1A`, border: `1px solid ${TASK_STATUS_COLOR.done}` }}></span>
+            <span className="w-2.5 h-2.5 rounded-full block" style={{ backgroundColor: `${TASK_STATUS_COLOR.done}1A`, border: `1px solid ${TASK_STATUS_COLOR.done}` }}></span>
             <span>{TASK_STATUS_LABEL.done}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded block" style={{ backgroundColor: `${TASK_STATUS_COLOR.blocked}1A`, border: `1px solid ${TASK_STATUS_COLOR.blocked}` }}></span>
+            <span className="w-2.5 h-2.5 rounded-full block" style={{ backgroundColor: `${TASK_STATUS_COLOR.blocked}1A`, border: `1px solid ${TASK_STATUS_COLOR.blocked}` }}></span>
             <span>{TASK_STATUS_LABEL.blocked}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded bg-purple-50 border border-purple-200 block"></span>
+            <span className="w-2.5 h-2.5 rounded-full bg-purple-50 border border-purple-200 block"></span>
             <span>การประชุม</span>
           </div>
           <div className="flex items-center gap-1.5">
