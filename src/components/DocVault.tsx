@@ -31,6 +31,8 @@ import {
   LayoutGrid,
   List,
   MoreHorizontal,
+  Trash2,
+  CheckSquare,
   X
 } from 'lucide-react';
 import Dropdown from './Dropdown';
@@ -365,6 +367,26 @@ export default function DocVault({
   const goToFolder = (folderId: string | null) => {
     setCurrentFolderId(folderId);
     setSearchTerm('');
+    setSelectionModeOn(false);
+    setSelectedIds(new Set());
+  };
+
+  // Multi-select — a dedicated "เลือกหลายรายการ" toggle turns on selection mode (checkboxes appear
+  // on every item, not just on hover), letting several items be deleted together instead of one at
+  // a time. Both turn off/clear whenever the folder changes (see goToFolder above) so a selection
+  // never silently carries over into a different folder's contents.
+  const [selectionModeOn, setSelectionModeOn] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const toggleSelected = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const exitSelectionMode = () => {
+    setSelectionModeOn(false);
+    setSelectedIds(new Set());
   };
 
   // Drag-and-drop: any item can be dragged onto a folder card/row to move it inside that folder.
@@ -593,6 +615,10 @@ export default function DocVault({
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; hasChildren: boolean } | null>(null);
   useEscapeToClose(Boolean(deleteTarget), () => setDeleteTarget(null));
 
+  // Bulk delete confirmation — same idea as deleteTarget above, just for every currently-selected id
+  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
+  useEscapeToClose(bulkDeleteConfirmOpen, () => setBulkDeleteConfirmOpen(false));
+
   // Preview modal — real in-browser rendering for PDFs (printable) and images, with an
   // open/download fallback for other file types. Also what a deep-linked doc opens into.
   const [previewDocId, setPreviewDocId] = useState<string | null>(initialSelectedDocId || null);
@@ -760,6 +786,19 @@ export default function DocVault({
   const askDelete = (doc: LinkedDoc) => {
     const hasChildren = doc.kind === 'folder' && documents.some(d => d.parentId === doc.id);
     setDeleteTarget({ id: doc.id, name: doc.name, hasChildren });
+  };
+
+  const confirmBulkDelete = () => {
+    const ids = Array.from(selectedIds);
+    ids.forEach((id) => {
+      onDeleteDocument(id);
+      if (editDocId === id) closeEdit();
+      if (previewDocId === id) setPreviewDocId(null);
+      if (currentFolderId === id) goToFolder(null);
+    });
+    exitSelectionMode();
+    setBulkDeleteConfirmOpen(false);
+    showActionToast(`ลบ ${ids.length} รายการสำเร็จแล้ว`);
   };
 
   // Double-click to open: folders navigate in, links jump straight to a new tab, everything
@@ -1113,7 +1152,38 @@ export default function DocVault({
       </div>
       </div>
 
-      {/* Result count + sort */}
+      {/* Result count + sort, replaced by a selection toolbar once "เลือกหลายรายการ" is switched on */}
+      {selectionModeOn ? (
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <p className="font-semibold text-[16px] text-[#FF6537] leading-none">เลือกแล้ว {selectedIds.size} รายการ</p>
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set(sortedDocs.map((d) => d.id)))}
+              className="text-sm text-[#6F6F6F] hover:text-[#272220] underline cursor-pointer"
+            >
+              เลือกทั้งหมด
+            </button>
+            {selectedIds.size > 0 && (
+              <button
+                type="button"
+                onClick={() => setBulkDeleteConfirmOpen(true)}
+                className="flex items-center gap-1.5 text-sm text-rose-600 hover:text-rose-700 font-semibold cursor-pointer ml-1"
+              >
+                <Trash2 size={14} /> ลบที่เลือก
+              </button>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={exitSelectionMode}
+            className="text-sm text-[#6F6F6F] hover:text-[#272220] underline cursor-pointer shrink-0"
+          >
+            ยกเลิกการเลือก
+          </button>
+        </div>
+      ) : (
+      <div className="flex items-center justify-between gap-2">
       <div className="flex items-center gap-2">
         <p className="font-normal text-[16px] text-[#6F6F6F] leading-none">ทั้งหมด {filteredDocs.length} รายการ</p>
         <div className="relative" ref={sortRef}>
@@ -1160,6 +1230,15 @@ export default function DocVault({
           </AnimatePresence>
         </div>
       </div>
+      <button
+        type="button"
+        onClick={() => setSelectionModeOn(true)}
+        className="flex items-center gap-1.5 h-9 px-3.5 rounded-xl text-xs font-semibold text-[#272220] bg-white border border-slate-200 hover:bg-slate-50 cursor-pointer transition-colors shrink-0"
+      >
+        <CheckSquare size={14} /> เลือกหลายรายการ
+      </button>
+      </div>
+      )}
 
       {/* Document list — grid of folder/file/link cards, or a compact table */}
       {viewMode === 'list' ? (
@@ -1172,6 +1251,19 @@ export default function DocVault({
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-[#F9F9F9] text-[12px] font-semibold text-[#000000] border-b border-[#EDEEEF]">
+                  {selectionModeOn && (
+                    <th className="w-10 px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={sortedDocs.length > 0 && sortedDocs.every((d) => selectedIds.has(d.id))}
+                        onChange={() => setSelectedIds(
+                          sortedDocs.every((d) => selectedIds.has(d.id)) ? new Set() : new Set(sortedDocs.map((d) => d.id))
+                        )}
+                        aria-label="เลือกทั้งหมด"
+                        className="w-3.5 h-3.5 accent-[#FF6537] cursor-pointer"
+                      />
+                    </th>
+                  )}
                   <th className="px-4 py-3 whitespace-nowrap">ชื่อ</th>
                   <th className="px-4 py-3 whitespace-nowrap">สร้างโดย</th>
                   <th className="px-4 py-3 whitespace-nowrap">สร้างเมื่อ</th>
@@ -1202,6 +1294,17 @@ export default function DocVault({
                         markedDocId === doc.id ? 'bg-slate-200' : 'bg-white hover:bg-slate-50'
                       } ${draggedDocId === doc.id ? 'opacity-40' : ''} ${dragOverFolderId === doc.id ? 'bg-orange-50 outline outline-2 outline-[#FF6537] -outline-offset-2' : ''}`}
                     >
+                      {selectionModeOn && (
+                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(doc.id)}
+                            onChange={() => toggleSelected(doc.id)}
+                            aria-label={`เลือก ${doc.name}`}
+                            className="w-3.5 h-3.5 accent-[#FF6537] cursor-pointer"
+                          />
+                        </td>
+                      )}
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2.5">
                           <Icon size={22} className={`${color} shrink-0`} fill={fill ? 'currentColor' : 'none'} strokeWidth={fill ? 1 : 1.75} />
@@ -1311,11 +1414,22 @@ export default function DocVault({
                   onDrop={doc.kind === 'folder' ? (e) => handleFolderDrop(e, doc) : undefined}
                   onClick={() => setMarkedDocId(doc.id)}
                   onDoubleClick={() => openDoc(doc)}
-                  className={`h-64 bg-white shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] p-4 rounded-2xl space-y-3 transition-all duration-200 hover:-translate-y-1 hover:shadow-lg cursor-pointer flex flex-col select-none ${
+                  className={`relative group h-64 bg-white shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] p-4 rounded-2xl space-y-3 transition-all duration-200 hover:-translate-y-1 hover:shadow-lg cursor-pointer flex flex-col select-none ${
                     markedDocId === doc.id ? 'shadow-lg' : ''
                   } ${draggedDocId === doc.id ? 'opacity-40' : ''} ${dragOverFolderId === doc.id ? 'bg-orange-50 outline outline-2 outline-[#FF6537] -outline-offset-2' : ''}`}
                   style={markedDocId === doc.id ? { transform: 'translateY(-4px)' } : undefined}
                 >
+                  {selectionModeOn && (
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(doc.id)}
+                      onChange={() => toggleSelected(doc.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      onDoubleClick={(e) => e.stopPropagation()}
+                      aria-label={`เลือก ${doc.name}`}
+                      className="absolute top-3 left-3 z-10 w-4 h-4 accent-[#FF6537] cursor-pointer"
+                    />
+                  )}
                   {doc.kind === 'folder' ? (
                     <>
                       <div className="flex justify-end -mr-1.5 -mt-1.5">
@@ -1979,6 +2093,51 @@ export default function DocVault({
                   </button>
                   <button
                     onClick={confirmDelete}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-bold cursor-pointer hover:bg-red-700"
+                  >
+                    ลบ
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
+
+      {/* Bulk delete confirmation modal — same shape as the single-item one above */}
+      {createPortal(
+        <AnimatePresence>
+          {bulkDeleteConfirmOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <motion.div
+                className="absolute inset-0 bg-black/15 backdrop-blur-sm"
+                onClick={() => setBulkDeleteConfirmOpen(false)}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+              />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                transition={{ duration: 0.2 }}
+                className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4"
+              >
+                <h3 className="text-base font-bold text-slate-900">ลบ {selectedIds.size} รายการที่เลือก?</h3>
+                <p className="text-sm text-slate-500">
+                  ต้องการลบทั้ง {selectedIds.size} รายการที่เลือกไว้ออกจากระบบใช่หรือไม่ รวมถึงไฟล์/ลิงก์/โฟลเดอร์ย่อยทั้งหมดที่อยู่ข้างใน (ถ้ามี) การลบไม่สามารถย้อนกลับได้
+                </p>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    onClick={() => setBulkDeleteConfirmOpen(false)}
+                    className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-sm font-semibold cursor-pointer hover:bg-slate-50"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    onClick={confirmBulkDelete}
                     className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-bold cursor-pointer hover:bg-red-700"
                   >
                     ลบ
