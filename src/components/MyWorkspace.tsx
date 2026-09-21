@@ -15,7 +15,7 @@ import { ProjectRow, ProjectTaskItem, ProjectTaskStatus } from './projectBoard/t
 import { TASK_STATUS_LABEL, TASK_STATUS_COLOR, STATUS_DOT, STATUS_LABEL, STATUS_PILL, STATUS_ICON } from './projectBoard/statusMeta';
 import { displayName } from './projectBoard/CreateProjectModal';
 import { getAvatarColor } from '../lib/avatarColor';
-import { isOwner, isResponsibleForProject } from '../lib/ownership';
+import { isOwner, isResponsibleForProject, resolveValidIds } from '../lib/ownership';
 import { ChangeRequest } from '../lib/api';
 import ProjectGantt from './projectBoard/ProjectGantt';
 import TaskDetailModal from './projectBoard/TaskDetailModal';
@@ -125,12 +125,16 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
       if (r.status !== 'pending') return false;
       if (r.entityType === 'project') {
         const project = projects.find((p) => p.id === r.entityId);
-        return project ? isOwner(project.ownerEmployeeIds, currentUserId) && project.ownerEmployeeIds.length > 0 : false;
+        if (!project) return false;
+        const validOwnerIds = resolveValidIds(project.ownerEmployeeIds, employees);
+        return isOwner(validOwnerIds, currentUserId) && validOwnerIds.length > 0;
       }
       const task = projectTasks.find((t) => t.id === r.entityId);
-      return task ? isOwner(task.assigneeEmployeeIds, currentUserId) && task.assigneeEmployeeIds.length > 0 : false;
+      if (!task) return false;
+      const validAssigneeIds = resolveValidIds(task.assigneeEmployeeIds, employees);
+      return isOwner(validAssigneeIds, currentUserId) && validAssigneeIds.length > 0;
     }),
-    [changeRequests, projects, projectTasks, currentUserId]
+    [changeRequests, projects, projectTasks, currentUserId, employees]
   );
 
   const currentUser = employeeById.get(currentUserId);

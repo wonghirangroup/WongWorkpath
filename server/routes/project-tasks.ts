@@ -2,7 +2,7 @@ import { Router } from 'express';
 import type { RowDataPacket } from 'mysql2';
 import { pool } from '../db.ts';
 import { nowBangkokDateTime, formatThaiDateShort } from '../lib/datetime.ts';
-import { isOwner, isExecutiveActor } from '../lib/ownership.ts';
+import { isOwner, isExecutiveActor, resolveValidOwnerIds } from '../lib/ownership.ts';
 
 export const projectTasksRouter = Router();
 
@@ -210,7 +210,8 @@ projectTasksRouter.put('/:id', async (req, res) => {
   if (!existing) return res.status(404).json({ message: 'ไม่พบงานนี้' });
   const currentAssigneeIds: string[] = existing.assignee_employee_ids ? JSON.parse(existing.assignee_employee_ids) : [];
   const currentReviewerIds: string[] = existing.reviewer_employee_ids ? JSON.parse(existing.reviewer_employee_ids) : [];
-  if (!existing.parent_task_id && !isOwner([...currentAssigneeIds, ...currentReviewerIds], t.actorEmployeeId) && !(await isExecutiveActor(t.actorEmployeeId))) {
+  const validOwnerIds = await resolveValidOwnerIds([...currentAssigneeIds, ...currentReviewerIds]);
+  if (!existing.parent_task_id && !isOwner(validOwnerIds, t.actorEmployeeId) && !(await isExecutiveActor(t.actorEmployeeId))) {
     return res.status(409).json({ message: 'ต้องขออนุมัติจากผู้รับผิดชอบก่อนจึงจะแก้ไขได้', requiresApproval: true });
   }
 
@@ -229,9 +230,10 @@ projectTasksRouter.delete('/:id', async (req, res) => {
     const [[existing]] = await pool.query<RowDataPacket[]>('SELECT assignee_employee_ids, parent_task_id FROM project_task WHERE id = ?', [req.params.id]);
     if (!existing) return res.status(404).json({ message: 'ไม่พบงานนี้' });
     const currentAssigneeIds: string[] = existing.assignee_employee_ids ? JSON.parse(existing.assignee_employee_ids) : [];
+    const validAssigneeIds = await resolveValidOwnerIds(currentAssigneeIds);
     // งานย่อยลบตรงได้เลย ไม่ต้องขออนุมัติ (เหมือนกฎฝั่งแก้ไขด้านบน)
     const deleteActorId = typeof req.query.actorEmployeeId === 'string' ? req.query.actorEmployeeId : undefined;
-    if (!existing.parent_task_id && !isOwner(currentAssigneeIds, deleteActorId) && !(await isExecutiveActor(deleteActorId))) {
+    if (!existing.parent_task_id && !isOwner(validAssigneeIds, deleteActorId) && !(await isExecutiveActor(deleteActorId))) {
       return res.status(409).json({ message: 'ต้องขออนุมัติจากผู้รับผิดชอบก่อนจึงจะลบได้', requiresApproval: true });
     }
 

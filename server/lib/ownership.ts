@@ -10,6 +10,20 @@ export function isOwner(ownerIds: string[], actorId: string | undefined | null):
   return ownerIds.includes(actorId);
 }
 
+// Drops any owner/assignee id that no longer matches a real, current employee row (e.g. that
+// person was deleted after being set as a project's owner or a task's assignee) — always pass an
+// ownerEmployeeIds/assigneeEmployeeIds array through this before handing it to isOwner. Without
+// it, a dangling id still counts as "owned by someone" and permanently forces the change-request
+// flow, even though the UI itself already shows no owner for a reference like that ("ยังไม่มี").
+export async function resolveValidOwnerIds(ownerIds: string[]): Promise<string[]> {
+  if (ownerIds.length === 0) return [];
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT id FROM employee WHERE id IN (${ownerIds.map(() => '?').join(',')})`,
+    ownerIds
+  );
+  return rows.map((r) => r.id as string);
+}
+
 // ผู้บริหาร bypasses the ownership gate everywhere server-side too (mirrors the client's
 // isExecutive checks in ProjectBoard/ProjectDetail/AddTaskModal/EditProjectModal) — looked up by
 // id rather than trusting a client-sent role, same trust level as the rest of this app's

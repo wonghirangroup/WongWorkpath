@@ -94,6 +94,9 @@ export default function ProjectTable({ rows, employees, onViewDetail, canDelete,
             const showDueWarning = row.daysUntilDue !== undefined && row.daysUntilDue <= 2;
             const accentColor = rowAccentColor(row);
             const owners = row.ownerEmployeeIds.map((id) => employees.find((e) => e.id === id)).filter((e): e is Employee => Boolean(e));
+            // `owners` already resolved each id against the real employee list, so reusing its ids
+            // here doubles as resolveValidIds — a deleted owner can't permanently lock the row.
+            const canEditPriority = isExecutive || isOwner(owners.map((o) => o.id), currentUserId);
             return (
               <tr key={row.id} className="border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50">
                 <td className="py-4">
@@ -116,13 +119,13 @@ export default function ProjectTable({ rows, employees, onViewDetail, canDelete,
                 <td className="px-4 py-4 text-[#272220]">{formatBudget(row.budget)}</td>
                 <td className="px-4 py-4 whitespace-nowrap">
                   <div className="w-28">
-                    <Tooltip content={isExecutive || isOwner(row.ownerEmployeeIds, currentUserId) ? undefined : 'ต้องขออนุมัติจากผู้รับผิดชอบก่อน — แก้ไขผ่านหน้ารายละเอียดโครงการ'}>
+                    <Tooltip content={canEditPriority ? undefined : 'ต้องขออนุมัติจากผู้รับผิดชอบก่อน — แก้ไขผ่านหน้ารายละเอียดโครงการ'}>
                       <Dropdown
                         value={row.priority !== undefined ? String(row.priority) : ''}
                         options={PRIORITY_DROPDOWN_OPTIONS}
                         onChange={(value) => onUpdatePriority(row, Number(value) as ProjectPriority)}
                         placeholder="ยังไม่มี"
-                        disabled={!isExecutive && !isOwner(row.ownerEmployeeIds, currentUserId)}
+                        disabled={!canEditPriority}
                       />
                     </Tooltip>
                   </div>

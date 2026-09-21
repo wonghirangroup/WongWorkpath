@@ -660,6 +660,23 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     const created = await createProject(payload);
     setProjects((prev) => [created, ...prev]);
     handleLogAudit('ADD_PROJECT', `สร้างโครงการใหม่: "${created.title}" (${created.code})`);
+
+    // Same "tell the assignee" principle task assignment already follows (see handleAddProjectTask)
+    // — being made ผู้รับผิดชอบหลัก of a project is exactly as notification-worthy as being assigned
+    // a task in it, but had no notification at all until now.
+    created.ownerEmployeeIds
+      .filter((employeeId) => employeeId !== currentUser?.id)
+      .forEach((employeeId) => {
+        pushNotification({
+          targetEmployeeId: employeeId,
+          title: 'คุณถูกตั้งเป็นผู้รับผิดชอบหลัก',
+          message: `คุณถูกตั้งเป็นผู้รับผิดชอบหลักโครงการ "${created.title}"`,
+          type: 'info',
+          linkType: 'project',
+          linkId: created.id,
+        });
+      });
+
     return created;
   };
 
@@ -667,9 +684,28 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   // version rather than merging raw `updates` straight into state, since an edit may submit raw
   // ISO dates while ProjectRow.startDate/endDate must stay Thai-formatted display text.
   const handleUpdateProject = async (id: string, updates: Partial<ProjectRow>) => {
+    const before = projects.find((p) => p.id === id);
     const updated = await updateProjectRemote(id, updates, currentUser?.id ?? '');
     setProjects((prev) => prev.map((p) => (p.id === id ? updated : p)));
     handleLogAudit('UPDATE_PROJECT', `แก้ไขโครงการ: "${updated.title}" (${updated.code})`);
+
+    // Only notify owners that are newly added by this update — re-saving an already-owned project
+    // (or any other field edit) must not re-notify people who were owners before.
+    if (updates.ownerEmployeeIds) {
+      const previousOwnerIds = new Set(before?.ownerEmployeeIds ?? []);
+      updated.ownerEmployeeIds
+        .filter((employeeId) => !previousOwnerIds.has(employeeId) && employeeId !== currentUser?.id)
+        .forEach((employeeId) => {
+          pushNotification({
+            targetEmployeeId: employeeId,
+            title: 'คุณถูกตั้งเป็นผู้รับผิดชอบหลัก',
+            message: `คุณถูกตั้งเป็นผู้รับผิดชอบหลักโครงการ "${updated.title}"`,
+            type: 'info',
+            linkType: 'project',
+            linkId: updated.id,
+          });
+        });
+    }
   };
 
   const handleDeleteProject = async (id: string) => {
@@ -860,8 +896,31 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       setProjects(freshProjects);
       setProjectTasks(freshTasks);
 
-      const others = new Set([...(project?.ownerEmployeeIds ?? []), ...(project?.memberEmployeeIds ?? []), ...(task?.assigneeEmployeeIds ?? []), ...(task?.reviewerEmployeeIds ?? [])]);
+      // Re-look-up post-edit (not the stale pre-approval `project`/`task` above) so anyone newly
+      // added by this very change — e.g. a change-request that added a ผู้รับผิดชอบหลัก — is
+      // actually included below, instead of only whoever was already involved before the edit.
+      const freshProject = before.entityType === 'project' ? freshProjects.find((p) => p.id === before.entityId) : undefined;
+      const freshTask = before.entityType === 'project_task' ? freshTasks.find((t) => t.id === before.entityId) : undefined;
+
+      // A newly added ผู้รับผิดชอบหลัก gets the same dedicated notification the direct-save path
+      // (handleUpdateProject) sends — the generic "มีการแก้ไข" below has no context for a first-time
+      // owner to make sense of.
+      const previousOwnerIds = new Set(project?.ownerEmployeeIds ?? []);
+      const newlyAddedOwnerIds = (freshProject?.ownerEmployeeIds ?? []).filter(
+        (empId) => !previousOwnerIds.has(empId) && empId !== currentUser?.id
+      );
+      newlyAddedOwnerIds.forEach((empId) => pushNotification({
+        targetEmployeeId: empId,
+        title: 'คุณถูกตั้งเป็นผู้รับผิดชอบหลัก',
+        message: `คุณถูกตั้งเป็นผู้รับผิดชอบหลักโครงการ "${entityTitle}"`,
+        type: 'info',
+        linkType: 'project',
+        linkId: linkProjectId,
+      }));
+
+      const others = new Set([...(freshProject?.ownerEmployeeIds ?? []), ...(freshProject?.memberEmployeeIds ?? []), ...(freshTask?.assigneeEmployeeIds ?? []), ...(freshTask?.reviewerEmployeeIds ?? [])]);
       others.delete(currentUser?.id ?? '');
+      newlyAddedOwnerIds.forEach((empId) => others.delete(empId));
       if (before.requestedBy) {
         pushNotification({
           targetEmployeeId: before.requestedBy,

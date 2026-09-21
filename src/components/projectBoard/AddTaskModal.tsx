@@ -7,7 +7,7 @@ import { ProjectRow, ProjectTaskItem, ProjectTaskStatus } from './types';
 import { EmployeeMultiSelect, displayName, formatThaiDateShort, PRIORITY_OPTIONS, Priority } from './CreateProjectModal';
 import { TASK_STATUS_LABEL, TASK_STATUS_COLOR } from './statusMeta';
 import { ApiError, ChangeRequest } from '../../lib/api';
-import { isOwner } from '../../lib/ownership';
+import { isOwner, resolveValidIds } from '../../lib/ownership';
 import Dropdown from '../Dropdown';
 import EmployeeAvatar from '../EmployeeAvatar';
 import ThaiDatePicker from '../ThaiDatePicker';
@@ -117,7 +117,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
   // of) still saves directly; anyone else's edit files a change_request instead (see
   // ProjectDetail's "คำขอที่รอดำเนินการ" panel for the owner-facing approve/reject side). งานย่อย
   // is exempt from this gate entirely — only the main task needs approval, per the product decision.
-  const canEditDirectly = Boolean(isExecutive) || !editingTask || Boolean(editingTask.parentTaskId) || isOwner(editingTask.assigneeEmployeeIds, currentUserId);
+  const canEditDirectly = Boolean(isExecutive) || !editingTask || Boolean(editingTask.parentTaskId) || isOwner(resolveValidIds(editingTask.assigneeEmployeeIds, employees), currentUserId);
   const pendingRequest = editingTask && !editingTask.parentTaskId
     ? changeRequests?.find((r) => r.entityType === 'project_task' && r.entityId === editingTask.id && r.status === 'pending')
     : undefined;

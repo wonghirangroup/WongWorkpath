@@ -6,6 +6,7 @@ import { Employee, Division, AccountType, AuditLog } from '../types';
 import { ApiError } from '../lib/api';
 import { getAvatarColor } from '../lib/avatarColor';
 import { ACCOUNT_TYPE_LABELS, isNavAllowedByRole } from '../lib/permissions';
+import { isResponsibleForProject } from '../lib/ownership';
 import { useAppData } from '../context/AppDataContext';
 import { formatThaiDateTimeShort } from '../lib/datetime';
 import { OrgDivisionData } from '../data/orgStructure';
@@ -74,7 +75,7 @@ export default function EmployeeProfileModal({
   onSave,
   onSaved,
 }: EmployeeProfileModalProps) {
-  const { documents } = useAppData();
+  const { documents, projects, projectTasks } = useAppData();
   // Always mounted-means-open here — the parent (EmployeeManagement) conditionally renders this
   // whole component rather than passing an isOpen flag, so presence in the tree is the signal.
   useEscapeToClose(true, onClose);
@@ -175,6 +176,12 @@ export default function EmployeeProfileModal({
   // (DocsPage uses the full name, MyWorkspace/ProjectDetail use the nickname), so a name-string
   // comparison against `employee.name` silently missed every doc created via the latter two.
   const ownedDocs = documents.filter((doc) => doc.kind !== 'folder' && doc.creatorEmployeeId === employee.id);
+
+  // "โครงการทั้งหมด" / "งานทั้งหมด" — real counts now that projects/tasks are DB-backed (used to be
+  // muted "เร็วๆ นี้" placeholders back when this module was still local mock data). Same
+  // "รับผิดชอบ = owner or member" definition Dashboard/MyWorkspace already use for "ของฉัน".
+  const ownedProjectsCount = projects.filter((p) => isResponsibleForProject(p, employee.id)).length;
+  const assignedTasksCount = projectTasks.filter((t) => t.assigneeEmployeeIds.includes(employee.id)).length;
 
   // "กิจกรรมล่าสุด" — matches handleLogAudit's own actor-name precedence (nickname first, see
   // AppDataContext.tsx) so this lines up exactly with what got logged for this person's actions.
@@ -290,13 +297,34 @@ export default function EmployeeProfileModal({
                       )}
                     </InfoRow>
                     <InfoRow label="เบอร์โทร" value={phone} editing={mode === 'edit'}>
-                      <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="เช่น 081-234-5678" className={fieldInputClass} />
+                      <input
+                        type="tel"
+                        inputMode="numeric"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                        placeholder="เช่น 0812345678"
+                        className={fieldInputClass}
+                      />
                     </InfoRow>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <InfoRow label="ตำแหน่ง" value={role} editing={mode === 'edit'}>
-                      <RoleField value={role} onChange={setRole} roleOptions={roleOptions} />
+                      <RoleField
+                        value={role}
+                        onChange={(v) => {
+                          setRole(v);
+                          // "ผู้บริหาร" as a role and "ผู้บริหาร" (executive) as an account type are the
+                          // same real-world thing — keep them in sync so nobody has to set both by
+                          // hand. Only when the person editing is actually allowed to hand out that
+                          // account type at all (assignableAccountTypes already gates a plain admin
+                          // out of it), so this never grants a level the actor couldn't pick directly.
+                          if (v.trim() === 'ผู้บริหาร' && assignableAccountTypes(actingUser).includes('executive')) {
+                            setAccountType('executive');
+                          }
+                        }}
+                        roleOptions={roleOptions}
+                      />
                     </InfoRow>
                     <InfoRow label="ฝ่าย" value={division} editing={mode === 'edit'}>
                       <Dropdown<Division>
@@ -321,21 +349,16 @@ export default function EmployeeProfileModal({
                 <div className="space-y-3">
                   <h3 className="text-sm font-bold text-[#272220]">สถิติการใช้งาน</h3>
 
-                  {/* โครงการทั้งหมด/งานทั้งหมด: shown as muted placeholders, not omitted outright —
-                      the "จัดการงานและโครงการ" module is still local mock data with nothing
-                      durable to count from yet, so these stay un-clickable until that's wired up. */}
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="p-3 rounded-xl border border-slate-100 bg-slate-50 opacity-70">
-                      <div className="w-9 h-9 rounded-lg bg-slate-200 text-slate-400 flex items-center justify-center mb-2"><FolderKanban size={16} /></div>
-                      <p className="text-lg font-bold text-slate-300 leading-none">—</p>
+                    <div className="p-3 rounded-xl border border-slate-100 bg-slate-50">
+                      <div className="w-9 h-9 rounded-lg bg-[#FFF1EC] text-[#FF6537] flex items-center justify-center mb-2"><FolderKanban size={16} /></div>
+                      <p className="text-lg font-bold text-[#272220] leading-none">{ownedProjectsCount}</p>
                       <p className="text-[11px] text-[#6F6F6F] mt-0.5">โครงการทั้งหมด</p>
-                      <p className="text-[9px] text-slate-400 mt-1">เร็วๆ นี้</p>
                     </div>
-                    <div className="p-3 rounded-xl border border-slate-100 bg-slate-50 opacity-70">
-                      <div className="w-9 h-9 rounded-lg bg-slate-200 text-slate-400 flex items-center justify-center mb-2"><ListChecks size={16} /></div>
-                      <p className="text-lg font-bold text-slate-300 leading-none">—</p>
+                    <div className="p-3 rounded-xl border border-slate-100 bg-slate-50">
+                      <div className="w-9 h-9 rounded-lg bg-[#FFF1EC] text-[#FF6537] flex items-center justify-center mb-2"><ListChecks size={16} /></div>
+                      <p className="text-lg font-bold text-[#272220] leading-none">{assignedTasksCount}</p>
                       <p className="text-[11px] text-[#6F6F6F] mt-0.5">งานทั้งหมด</p>
-                      <p className="text-[9px] text-slate-400 mt-1">เร็วๆ นี้</p>
                     </div>
                   </div>
 

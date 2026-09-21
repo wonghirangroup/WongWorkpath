@@ -4,15 +4,16 @@ import { Clock, ListChecks, Users2, Plus, Eye, CalendarClock, Pencil, Trash2, X,
 import { Employee, Meeting, LinkedDoc } from '../../types';
 import { ProjectRow, ProjectTaskItem, ProjectTaskStatus, CustomProjectStatus } from './types';
 import { STATUS_DOT, TASK_STATUS_LABEL, TASK_STATUS_COLOR, PROJECT_PRIORITY_META } from './statusMeta';
-import { displayName, PRIORITY_OPTIONS } from './CreateProjectModal';
+import { displayName, PRIORITY_OPTIONS, EmployeeMultiSelect } from './CreateProjectModal';
 import { ChangeRequest } from '../../lib/api';
-import { isOwner } from '../../lib/ownership';
+import { isOwner, resolveValidIds } from '../../lib/ownership';
 import { isUrl } from '../../lib/url';
 import EmployeeAvatar from '../EmployeeAvatar';
 import Dropdown from '../Dropdown';
 import Tooltip from '../Tooltip';
 import AddTaskModal from './AddTaskModal';
 import EditProjectModal from './EditProjectModal';
+import AddOwnerModal from './AddOwnerModal';
 import ScheduleMeetingModal from './ScheduleMeetingModal';
 import CancelMeetingModal from './CancelMeetingModal';
 import SubmitTaskModal from './SubmitTaskModal';
@@ -197,6 +198,11 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
     return next;
   });
   const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
+  // Quick "+ เพิ่มผู้รับผิดชอบหลัก" shortcut for the common case of a project that has none yet — a
+  // dedicated one-field picker instead of sending someone through the full "แก้ไขโครงการ" form just
+  // to set this. Only shown while owners is actually empty; once a project has an owner, changing
+  // that goes through the normal edit form like every other field.
+  const [isAddOwnerOpen, setIsAddOwnerOpen] = useState(false);
   const [taskFilter, setTaskFilter] = useState<TaskFilter>('all');
   const [selectedTask, setSelectedTask] = useState<ProjectTaskItem | null>(null);
   const [editingMeeting, setEditingMeeting] = useState<Meeting | null>(null);
@@ -223,7 +229,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
     setIsAnimatingExpandToggle(true);
     setIsWorkspaceExpanded((prev) => !prev);
   };
-  const isAnyModalOpen = isAddTaskOpen || isEditProjectOpen || Boolean(selectedTask || editingMeeting || cancellingMeeting || submittingTask || reviewingTask || deleteReasonTarget);
+  const isAnyModalOpen = isAddTaskOpen || isEditProjectOpen || isAddOwnerOpen || Boolean(selectedTask || editingMeeting || cancellingMeeting || submittingTask || reviewingTask || deleteReasonTarget);
   useEffect(() => {
     if (!isWorkspaceExpanded || isAnyModalOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -433,7 +439,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
             <InlineDeleteConfirm
               label="ลบ"
               disabled={!t.parentTaskId && changeRequests.some((r) => r.entityType === 'project_task' && r.entityId === t.id && r.status === 'pending')}
-              requiresReason={!isExecutive && !t.parentTaskId && !isOwner(t.assigneeEmployeeIds, currentUserId)}
+              requiresReason={!isExecutive && !t.parentTaskId && !isOwner(resolveValidIds(t.assigneeEmployeeIds, employees), currentUserId)}
               onConfirm={() => onDeleteTask(t.id)}
               onRequestReason={() => setDeleteReasonTarget({
                 label: 'ลบงาน',
@@ -493,6 +499,14 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h2 className="text-2xl font-bold text-[#272220] truncate">รายละเอียดโครงการ</h2>
         <div className="flex gap-2.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => setIsAddOwnerOpen(true)}
+            className="inline-flex items-center gap-1.5 bg-white hover:bg-slate-50 text-[#272220] text-sm font-bold px-4 h-10 rounded-xl border border-[#E5E5E5] cursor-pointer transition-colors shrink-0"
+          >
+            <Users2 size={15} />
+            เพิ่มผู้รับผิดชอบหลัก
+          </button>
           <button
             type="button"
             onClick={() => setIsEditProjectOpen(true)}
@@ -574,7 +588,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
           {pendingRequests.map((request) => {
             const task = request.entityType === 'project_task' ? tasks.find((t) => t.id === request.entityId) : undefined;
             const entityTitle = request.entityType === 'project' ? row.title : task?.title ?? 'งาน';
-            const ownerIds = request.entityType === 'project' ? row.ownerEmployeeIds : task?.assigneeEmployeeIds ?? [];
+            const ownerIds = resolveValidIds(request.entityType === 'project' ? row.ownerEmployeeIds : task?.assigneeEmployeeIds ?? [], employees);
             const requester = request.requestedBy ? employeeById.get(request.requestedBy) : undefined;
             return (
               <PendingRequestCard
@@ -789,7 +803,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                             <InlineDeleteConfirm
                               label="ลบ"
                               disabled={!t.parentTaskId && changeRequests.some((r) => r.entityType === 'project_task' && r.entityId === t.id && r.status === 'pending')}
-                              requiresReason={!isExecutive && !t.parentTaskId && !isOwner(t.assigneeEmployeeIds, currentUserId)}
+                              requiresReason={!isExecutive && !t.parentTaskId && !isOwner(resolveValidIds(t.assigneeEmployeeIds, employees), currentUserId)}
                               onConfirm={() => onDeleteTask(t.id)}
                               onRequestReason={() => setDeleteReasonTarget({
                                 label: 'ลบงาน',
@@ -1100,6 +1114,20 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
         currentUserId={currentUserId}
         isExecutive={isExecutive}
         changeRequests={changeRequests}
+        onRequestChange={onRequestChange}
+      />
+
+      <AddOwnerModal
+        isOpen={isAddOwnerOpen}
+        onClose={() => setIsAddOwnerOpen(false)}
+        projectId={row.id}
+        projectTitle={row.title}
+        currentOwnerIds={row.ownerEmployeeIds}
+        employees={employees}
+        currentUserId={currentUserId}
+        isExecutive={isExecutive}
+        changeRequests={changeRequests}
+        onSave={(ownerEmployeeIds) => onUpdateProject({ ownerEmployeeIds })}
         onRequestChange={onRequestChange}
       />
 

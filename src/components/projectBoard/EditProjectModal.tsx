@@ -17,7 +17,7 @@ import {
 } from './CreateProjectModal';
 import { ApiError, ChangeRequest } from '../../lib/api';
 import { formatThousands } from '../../lib/numberFormat';
-import { isOwner } from '../../lib/ownership';
+import { isOwner, resolveValidIds } from '../../lib/ownership';
 import Dropdown from '../Dropdown';
 import Tooltip from '../Tooltip';
 
@@ -51,9 +51,11 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
   useEscapeToClose(isOpen, onClose);
   // Once row.ownerEmployeeIds has ≥1 person, only they may save directly — anyone else's submit
   // files a change_request instead (see ProjectDetail's "คำขอที่รอดำเนินการ" panel for the
-  // owner-facing approve/reject side). An unowned project stays open to everyone, as today.
+  // owner-facing approve/reject side). An unowned project stays open to everyone, as today —
+  // resolveValidIds also treats an owner who's since been deleted as "no owner", same as the UI's
+  // own "ยังไม่มี" display already does, so a dangling reference can't permanently lock a project.
   // ผู้บริหาร always saves directly.
-  const canEditDirectly = isExecutive || isOwner(row.ownerEmployeeIds, currentUserId);
+  const canEditDirectly = isExecutive || isOwner(resolveValidIds(row.ownerEmployeeIds, employees), currentUserId);
   const pendingRequest = changeRequests.find(
     (r) => r.entityType === 'project' && r.entityId === row.id && r.status === 'pending'
   );

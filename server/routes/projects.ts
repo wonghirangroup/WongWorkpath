@@ -3,7 +3,7 @@ import type { RowDataPacket } from 'mysql2';
 import { pool } from '../db.ts';
 import { nowBangkokDateTime, formatThaiDateShort } from '../lib/datetime.ts';
 import { customStatusIds } from './project-custom-statuses.ts';
-import { isOwner, isExecutiveActor } from '../lib/ownership.ts';
+import { isOwner, isExecutiveActor, resolveValidOwnerIds } from '../lib/ownership.ts';
 
 export const projectsRouter = Router();
 
@@ -266,7 +266,8 @@ projectsRouter.put('/:id', async (req, res) => {
   const [[existing]] = await pool.query<RowDataPacket[]>('SELECT owner_employee_ids FROM project WHERE id = ?', [req.params.id]);
   if (!existing) return res.status(404).json({ message: 'ไม่พบโครงการนี้' });
   const currentOwnerIds: string[] = existing.owner_employee_ids ? JSON.parse(existing.owner_employee_ids) : [];
-  if (!isOwner(currentOwnerIds, p.actorEmployeeId) && !(await isExecutiveActor(p.actorEmployeeId))) {
+  const validOwnerIds = await resolveValidOwnerIds(currentOwnerIds);
+  if (!isOwner(validOwnerIds, p.actorEmployeeId) && !(await isExecutiveActor(p.actorEmployeeId))) {
     return res.status(409).json({ message: 'ต้องขออนุมัติจากผู้รับผิดชอบหลักก่อนจึงจะแก้ไขได้', requiresApproval: true });
   }
 
@@ -288,8 +289,9 @@ projectsRouter.delete('/:id', async (req, res) => {
     const [[existing]] = await pool.query<RowDataPacket[]>('SELECT owner_employee_ids FROM project WHERE id = ?', [req.params.id]);
     if (!existing) return res.status(404).json({ message: 'ไม่พบโครงการนี้' });
     const currentOwnerIds: string[] = existing.owner_employee_ids ? JSON.parse(existing.owner_employee_ids) : [];
+    const validOwnerIds = await resolveValidOwnerIds(currentOwnerIds);
     const deleteActorId = typeof req.query.actorEmployeeId === 'string' ? req.query.actorEmployeeId : undefined;
-    if (!isOwner(currentOwnerIds, deleteActorId) && !(await isExecutiveActor(deleteActorId))) {
+    if (!isOwner(validOwnerIds, deleteActorId) && !(await isExecutiveActor(deleteActorId))) {
       return res.status(409).json({ message: 'ต้องขออนุมัติจากผู้รับผิดชอบหลักก่อนจึงจะลบได้', requiresApproval: true });
     }
 

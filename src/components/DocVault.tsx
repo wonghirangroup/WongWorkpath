@@ -1331,7 +1331,7 @@ export default function DocVault({
                         </div>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-[12px] font-normal text-[#6F6F6F]">
-                        {creatorName === currentUserName ? 'คุณ' : creatorName}
+                        {doc.creatorEmployeeId === currentUserId ? 'คุณ' : creatorName}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-[12px] font-normal text-[#6F6F6F]">
                         {formatThaiDateShort(createdDate)}
@@ -1397,7 +1397,7 @@ export default function DocVault({
               );
               const footer = (
                 <div className="flex justify-between items-center text-[11px] font-normal text-[#6F6F6F] pt-2 border-t border-[#EDEEEF]">
-                  <span>สร้างโดย: {creatorName === currentUserName ? 'คุณ' : creatorName}</span>
+                  <span>สร้างโดย: {doc.creatorEmployeeId === currentUserId ? 'คุณ' : creatorName}</span>
                   <span>สร้างเมื่อ: {formatThaiDateShort(createdDate)}</span>
                 </div>
               );

@@ -862,9 +862,10 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                     <label className="block text-[#272220] font-bold text-[11px] mb-1">เบอร์โทร <span className="font-normal text-slate-400">(ไม่บังคับ)</span></label>
                     <input
                       type="tel"
-                      placeholder="เช่น 081-234-5678"
+                      inputMode="numeric"
+                      placeholder="เช่น 0812345678"
                       value={newPhone}
-                      onChange={(e) => setNewPhone(e.target.value)}
+                      onChange={(e) => setNewPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
                       className="w-full p-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#FF6537]"
                     />
                   </div>
@@ -895,7 +896,20 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
 
                   <div>
                     <label className="block text-[#272220] font-bold text-[11px] mb-1">ตำแหน่ง *</label>
-                    <RoleField value={newRole} onChange={setNewRole} roleOptions={roleOptions} />
+                    <RoleField
+                      value={newRole}
+                      onChange={(v) => {
+                        setNewRole(v);
+                        // Keep "ประเภทผู้ใช้งาน" in sync with "ตำแหน่ง" when it's set to ผู้บริหาร —
+                        // same reasoning as EmployeeProfileModal's edit form. Gated the same way: a
+                        // plain admin can't assign 'executive' anyway (assignableAccountTypes),
+                        // so this never grants a level the actor couldn't pick directly.
+                        if (v.trim() === 'ผู้บริหาร' && assignableAccountTypes(actingUser).includes('executive')) {
+                          setNewAccountType('executive');
+                        }
+                      }}
+                      roleOptions={roleOptions}
+                    />
                   </div>
 
                   <div>

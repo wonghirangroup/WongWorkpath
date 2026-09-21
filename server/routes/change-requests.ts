@@ -4,6 +4,7 @@ import { pool } from '../db.ts';
 import { nowBangkokDateTime } from '../lib/datetime.ts';
 import { applyProjectFields } from './projects.ts';
 import { applyTaskFields } from './project-tasks.ts';
+import { isOwner, isExecutiveActor, resolveValidOwnerIds } from '../lib/ownership.ts';
 
 export const changeRequestsRouter = Router();
 
@@ -120,12 +121,34 @@ changeRequestsRouter.put('/:id/decide', async (req, res) => {
   if (b.decision !== 'approve' && b.decision !== 'reject') {
     return res.status(400).json({ message: 'ต้องระบุผลการพิจารณา' });
   }
+  if (typeof b.decidedBy !== 'string' || !b.decidedBy) {
+    return res.status(400).json({ message: 'ต้องระบุผู้พิจารณา' });
+  }
 
   try {
     const [[existing]] = await pool.query<ChangeRequestRowDb[]>(`SELECT ${SELECT_FIELDS} FROM change_request WHERE id = ?`, [req.params.id]);
     if (!existing) return res.status(404).json({ message: 'ไม่พบคำขอนี้' });
     if (existing.status !== 'pending') {
       return res.status(409).json({ message: 'คำขอนี้ถูกดำเนินการไปแล้ว' });
+    }
+
+    // Only an owner (project) / assignee (task) of the entity being changed, or an executive, may
+    // decide its request — mirrors the client's canDecide check (ProjectDetail.tsx/MyWorkspace.tsx),
+    // which used to be UI-only: hitting this route directly let anyone approve/reject on someone
+    // else's behalf. An entity with no valid owner/assignee stays open to everyone, same "unowned =
+    // open" rule as isOwner everywhere else.
+    let entityOwnerIds: string[] = [];
+    if (existing.entity_type === 'project') {
+      const [[project]] = await pool.query<RowDataPacket[]>('SELECT owner_employee_ids FROM project WHERE id = ?', [existing.entity_id]);
+      entityOwnerIds = project?.owner_employee_ids ? JSON.parse(project.owner_employee_ids) : [];
+    } else {
+      const [[task]] = await pool.query<RowDataPacket[]>('SELECT assignee_employee_ids FROM project_task WHERE id = ?', [existing.entity_id]);
+      entityOwnerIds = task?.assignee_employee_ids ? JSON.parse(task.assignee_employee_ids) : [];
+    }
+    const validOwnerIds = await resolveValidOwnerIds(entityOwnerIds);
+    const canDecide = (isOwner(validOwnerIds, b.decidedBy) && validOwnerIds.length > 0) || (await isExecutiveActor(b.decidedBy));
+    if (!canDecide) {
+      return res.status(403).json({ message: 'คุณไม่มีสิทธิ์พิจารณาคำขอนี้' });
     }
 
     const now = nowBangkokDateTime();

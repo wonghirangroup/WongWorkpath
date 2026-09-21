@@ -7,7 +7,7 @@ import { useAppData } from '../../context/AppDataContext';
 import { Employee } from '../../types';
 import { canDeleteProject, canSeeAllProjects } from '../../lib/permissions';
 import { ApiError } from '../../lib/api';
-import { isOwner, isResponsibleForProject } from '../../lib/ownership';
+import { isOwner, isResponsibleForProject, resolveValidIds } from '../../lib/ownership';
 import { buildCsv, downloadCsv } from '../../lib/csv';
 import { useEscapeToClose } from '../../lib/useEscapeToClose';
 import { ProjectRow, ProjectStatus } from './types';
@@ -217,7 +217,7 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
   // that click deletes right away or has to go through the same request/approve flow as everyone
   // else editing an owned project — the two checks are independent (see the plan's design decision 3).
   const deleteTargetProject = deleteTarget ? projects.find((p) => p.id === deleteTarget.id) : undefined;
-  const deleteCanDirectly = !deleteTargetProject || isExecutive || isOwner(deleteTargetProject.ownerEmployeeIds, currentUserId);
+  const deleteCanDirectly = !deleteTargetProject || isExecutive || isOwner(resolveValidIds(deleteTargetProject.ownerEmployeeIds, employees), currentUserId);
   const deletePendingRequest = deleteTarget
     ? changeRequests.find((r) => r.entityType === 'project' && r.entityId === deleteTarget.id && r.status === 'pending')
     : undefined;
