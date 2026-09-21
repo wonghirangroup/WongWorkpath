@@ -1,9 +1,8 @@
-import { Bell, CheckCheck, ChevronDown, Menu, X, Pencil, Eye, EyeOff, Crown } from 'lucide-react';
+import { Bell, CheckCheck, ChevronDown, Menu, X, Settings, Crown } from 'lucide-react';
 import { ReactNode, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { useAppData } from '../../context/AppDataContext';
-import { ApiError } from '../../lib/api';
 import { getAvatarColor } from '../../lib/avatarColor';
 import { getDepartmentTagClass } from '../../lib/departmentColors';
 import { ACCOUNT_TYPE_LABELS } from '../../lib/permissions';
@@ -13,7 +12,6 @@ import logoutIcon from '../../../images/new side bar/logout icon active.png';
 import { formatRelativeTimeTh } from '../../lib/datetime';
 import { getNotificationVisual } from './notificationVisual';
 import { useOpenNotification } from './useOpenNotification';
-import Tooltip from '../Tooltip';
 
 // Intl's 'short' weekday for th-TH falls back to the full name (e.g. "พุธ"), not the
 // period-abbreviated form ("พ.") used elsewhere in the app, so it's mapped by hand here.
@@ -28,23 +26,6 @@ function getThaiDateString() {
 
 const ROLE_MAX_CHARS = 13;
 
-const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
-
-function formatFileSize(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function readFileAsDataUrl(file: globalThis.File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-}
-
 interface HeaderProps {
   title: ReactNode;
   subtitle?: ReactNode;
@@ -53,7 +34,8 @@ interface HeaderProps {
 }
 
 export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobileMenu }: HeaderProps) {
-  const { currentUser, notifications, unreadCount, handleLogout, handleMarkAllNotificationsRead, handleUpdateEmployee } = useAppData();
+  const { currentUser, notifications, unreadCount, handleLogout, handleMarkAllNotificationsRead } = useAppData();
+  const navigate = useNavigate();
   const [showNotificationPane, setShowNotificationPane] = useState(false);
   const [notificationFilter, setNotificationFilter] = useState<'all' | 'unread'>('all');
   const bellButtonRef = useRef<HTMLButtonElement>(null);
@@ -82,68 +64,7 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
-  const [showEditProfile, setShowEditProfile] = useState(false);
-  const [editNickname, setEditNickname] = useState('');
-  const [editAvatar, setEditAvatar] = useState('');
-  const [avatarFileError, setAvatarFileError] = useState('');
-  const [showPasswordReset, setShowPasswordReset] = useState(false);
-  const [editNewPassword, setEditNewPassword] = useState('');
-  const [editConfirmPassword, setEditConfirmPassword] = useState('');
-  const [showNewPasswordText, setShowNewPasswordText] = useState(false);
-  const [showConfirmPasswordText, setShowConfirmPasswordText] = useState(false);
-  const [profileFormError, setProfileFormError] = useState('');
-  const [isSavingProfile, setIsSavingProfile] = useState(false);
-
   if (!currentUser) return null;
-
-  const openEditProfile = () => {
-    setEditNickname(currentUser.nickname || currentUser.name);
-    setEditAvatar(currentUser.avatar || '');
-    setAvatarFileError('');
-    setShowPasswordReset(false);
-    setEditNewPassword('');
-    setEditConfirmPassword('');
-    setShowNewPasswordText(false);
-    setShowConfirmPasswordText(false);
-    setProfileFormError('');
-    setShowEditProfile(true);
-    setShowUserMenu(false);
-  };
-
-  const handleAvatarFilePicked = async (file: globalThis.File | null) => {
-    setAvatarFileError('');
-    if (!file) return;
-    if (file.size > MAX_AVATAR_BYTES) {
-      setAvatarFileError(`ไฟล์ใหญ่เกินไป (${formatFileSize(file.size)}) — อัปโหลดได้ไม่เกิน ${formatFileSize(MAX_AVATAR_BYTES)}`);
-      return;
-    }
-    setEditAvatar(await readFileAsDataUrl(file));
-  };
-
-  // Deliberately narrow: a regular account can only change its own nickname, photo, and password —
-  // name, role, and username are admin-only, edited from Employee Management instead.
-  const handleSaveProfile = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editNickname.trim() || isSavingProfile) return;
-    if (editNewPassword.trim() && editNewPassword.trim() !== editConfirmPassword.trim()) {
-      setProfileFormError('รหัสผ่านใหม่และการยืนยันไม่ตรงกัน');
-      return;
-    }
-    setProfileFormError('');
-    setIsSavingProfile(true);
-    try {
-      await handleUpdateEmployee(currentUser.id, {
-        nickname: editNickname.trim(),
-        avatar: editAvatar.trim(),
-        ...(editNewPassword.trim() ? { password: editNewPassword.trim() } : {})
-      });
-      setShowEditProfile(false);
-    } catch (err) {
-      setProfileFormError(err instanceof ApiError ? err.message : 'บันทึกโปรไฟล์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
-    } finally {
-      setIsSavingProfile(false);
-    }
-  };
 
   const displayName = `คุณ${currentUser.nickname || currentUser.name}`;
   const displayRoleFull = currentUser.role;
@@ -268,12 +189,12 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
               </div>
             </div>
             <button
-              onClick={openEditProfile}
+              onClick={() => { setShowUserMenu(false); navigate('/settings'); }}
               className="w-full flex items-center gap-2 px-4 py-2.5 text-slate-700 font-semibold hover:bg-slate-50 cursor-pointer"
-              id="btn-edit-profile"
+              id="btn-settings"
             >
-              <Pencil size={16} />
-              <span>แก้ไขโปรไฟล์</span>
+              <Settings size={16} />
+              <span>การตั้งค่า</span>
             </button>
             <button
               onClick={() => { setShowUserMenu(false); setShowLogoutConfirm(true); }}
@@ -388,163 +309,6 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
         </AnimatePresence>
 
       </div>
-
-      {/* Edit Profile modal */}
-      {createPortal(
-        <AnimatePresence>
-          {showEditProfile && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-              <motion.div
-                className="absolute inset-0 bg-black/15 backdrop-blur-sm"
-                onClick={() => setShowEditProfile(false)}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.2 }}
-              />
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                transition={{ duration: 0.2 }}
-                className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-5 space-y-4"
-              >
-                <div className="flex justify-between items-center pb-2 border-b border-slate-100">
-                  <h3 className="text-sm font-bold text-slate-800">แก้ไขโปรไฟล์</h3>
-                  <button type="button" onClick={() => setShowEditProfile(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X size={18} /></button>
-                </div>
-
-                <form onSubmit={handleSaveProfile} className="space-y-3 text-xs">
-                  {profileFormError && (
-                    <div className="bg-rose-50 border border-rose-100 text-rose-700 text-xs px-3 py-2 rounded-lg">
-                      {profileFormError}
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="block text-[#272220] font-bold text-[11px] mb-1">ชื่อเล่น *</label>
-                    <input
-                      type="text"
-                      required
-                      autoFocus
-                      value={editNickname}
-                      onChange={(e) => setEditNickname(e.target.value)}
-                      className="w-full p-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#FF6537]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[#272220] font-bold text-[11px] mb-1">
-                      รูปโปรไฟล์ <span className="font-normal text-slate-400">(ไม่บังคับ, ไม่เกิน {formatFileSize(MAX_AVATAR_BYTES)})</span>
-                    </label>
-                    <div className="flex items-center gap-2.5">
-                      {editAvatar.trim() && <img src={editAvatar.trim()} alt="" className="w-9 h-9 rounded-full object-cover shrink-0 bg-slate-50 border border-slate-100" />}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => handleAvatarFilePicked(e.target.files?.[0] || null)}
-                        className="flex-1 min-w-0 text-xs file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#FFF1EC] file:text-[#FF6537] file:font-bold file:cursor-pointer cursor-pointer"
-                      />
-                      {editAvatar.trim() && (
-                        <Tooltip content="ลบรูปโปรไฟล์">
-                          <button
-                            type="button"
-                            onClick={() => setEditAvatar('')}
-                            className="text-slate-400 hover:text-slate-600 cursor-pointer shrink-0"
-                            aria-label="ลบรูปโปรไฟล์"
-                          >
-                            <X size={16} />
-                          </button>
-                        </Tooltip>
-                      )}
-                    </div>
-                    {avatarFileError && <p className="text-red-500 mt-1">{avatarFileError}</p>}
-                  </div>
-
-                  {showPasswordReset ? (
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[#272220] font-bold text-[11px] mb-1">รหัสผ่านใหม่</label>
-                        <div className="relative">
-                          <input
-                            type={showNewPasswordText ? 'text' : 'password'}
-                            autoFocus
-                            autoComplete="new-password"
-                            placeholder="••••••••"
-                            value={editNewPassword}
-                            onChange={(e) => setEditNewPassword(e.target.value)}
-                            className="w-full p-2.5 pr-9 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#FF6537]"
-                          />
-                          <button
-                            type="button"
-                            tabIndex={-1}
-                            onClick={() => setShowNewPasswordText((v) => !v)}
-                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                            aria-label={showNewPasswordText ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'}
-                          >
-                            {showNewPasswordText ? <EyeOff size={15} /> : <Eye size={15} />}
-                          </button>
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-[#272220] font-bold text-[11px] mb-1">ยืนยันรหัสผ่านใหม่</label>
-                        <div className="relative">
-                          <input
-                            type={showConfirmPasswordText ? 'text' : 'password'}
-                            autoComplete="new-password"
-                            placeholder="••••••••"
-                            value={editConfirmPassword}
-                            onChange={(e) => setEditConfirmPassword(e.target.value)}
-                            className="w-full p-2.5 pr-9 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#FF6537]"
-                          />
-                          <button
-                            type="button"
-                            tabIndex={-1}
-                            onClick={() => setShowConfirmPasswordText((v) => !v)}
-                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                            aria-label={showConfirmPasswordText ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'}
-                          >
-                            {showConfirmPasswordText ? <EyeOff size={15} /> : <Eye size={15} />}
-                          </button>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => { setShowPasswordReset(false); setEditNewPassword(''); setEditConfirmPassword(''); }}
-                        className="col-span-2 text-left text-[11px] text-slate-400 hover:text-slate-600 cursor-pointer w-fit"
-                      >
-                        ยกเลิกการเปลี่ยนรหัสผ่าน
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setShowPasswordReset(true)}
-                      className="text-[11px] font-bold text-[#FF6537] hover:underline cursor-pointer"
-                    >
-                      รีเซ็ตรหัสผ่าน
-                    </button>
-                  )}
-
-                  <div className="flex justify-end gap-2 pt-1">
-                    <button type="button" onClick={() => setShowEditProfile(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs font-semibold cursor-pointer hover:bg-slate-50">ยกเลิก</button>
-                    <button
-                      type="submit"
-                      disabled={!editNickname.trim() || isSavingProfile}
-                      className={`px-5 py-2 rounded-lg text-xs font-bold transition-colors ${
-                        editNickname.trim() && !isSavingProfile ? 'bg-[#FF6537] text-white hover:bg-[#e6572c] cursor-pointer' : 'bg-[#F68C6C] text-white cursor-not-allowed'
-                      }`}
-                    >
-                      {isSavingProfile ? 'กำลังบันทึก...' : 'บันทึก'}
-                    </button>
-                  </div>
-                </form>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>,
-        document.body
-      )}
 
       <LogoutConfirmModal
         open={showLogoutConfirm}

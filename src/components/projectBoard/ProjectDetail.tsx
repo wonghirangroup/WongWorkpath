@@ -13,7 +13,8 @@ import Dropdown from '../Dropdown';
 import Tooltip from '../Tooltip';
 import AddTaskModal from './AddTaskModal';
 import EditProjectModal from './EditProjectModal';
-import AddOwnerModal from './AddOwnerModal';
+import AddResponsibleModal from './AddResponsibleModal';
+import { useConfirm } from '../../context/ConfirmContext';
 import ScheduleMeetingModal from './ScheduleMeetingModal';
 import CancelMeetingModal from './CancelMeetingModal';
 import SubmitTaskModal from './SubmitTaskModal';
@@ -57,14 +58,13 @@ function ExpandableText({ text, className }: { text: string; className?: string 
   );
 }
 
-// Two-step inline confirm (click once to arm, click again to confirm) — same idea as OrgChart's
-// own DeleteButton, just laid out inline for a table cell instead of pinned to a card corner.
-// `requiresReason` routes straight to a DeleteRequestModal (via `onRequestReason`) instead of the
+// Trash button for a table cell — clicking it opens the shared confirmation popup (useConfirm)
+// before anything is deleted. `requiresReason` routes straight to a DeleteRequestModal (via `onRequestReason`) instead of the
 // two-step arm/confirm — a modal already IS the confirmation step, and gives the reason field real
 // room instead of a cramped inline input. `disabled` covers "a request is already pending for this
 // row" so a second one can't be filed on top of it.
-function InlineDeleteConfirm({ onConfirm, label, requiresReason, disabled, onRequestReason }: { onConfirm: (reason?: string) => void; label: string; requiresReason?: boolean; disabled?: boolean; onRequestReason?: () => void }) {
-  const [armed, setArmed] = useState(false);
+function InlineDeleteConfirm({ onConfirm, label, itemLabel, requiresReason, disabled, onRequestReason }: { onConfirm: (reason?: string) => void; label: string; itemLabel: string; requiresReason?: boolean; disabled?: boolean; onRequestReason?: () => void }) {
+  const confirm = useConfirm();
 
   if (disabled) {
     return (
@@ -90,27 +90,19 @@ function InlineDeleteConfirm({ onConfirm, label, requiresReason, disabled, onReq
       </Tooltip>
     );
   }
-  if (armed) {
-    return (
-      <span className="inline-flex items-center gap-1" role="status">
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); onConfirm(); setArmed(false); }}
-          className="text-[10px] font-bold text-red-600 hover:text-red-800 cursor-pointer"
-        >
-          {label}?
-        </button>
-        <button type="button" onClick={(e) => { e.stopPropagation(); setArmed(false); }} aria-label="ยกเลิก" className="text-slate-400 hover:text-slate-600 cursor-pointer">
-          <X size={12} />
-        </button>
-      </span>
-    );
-  }
   return (
-    <Tooltip content={requiresReason ? 'ขอลบ (ต้องขออนุมัติ)' : label}>
+    <Tooltip content={label}>
       <button
         type="button"
-        onClick={(e) => { e.stopPropagation(); setArmed(true); }}
+        onClick={async (e) => {
+          e.stopPropagation();
+          const confirmed = await confirm({
+            title: 'ยืนยันการลบงาน?',
+            message: `ลบ "${itemLabel}" ออกจากโครงการถาวร งานย่อย (ถ้ามี) จะถูกลบไปด้วย`,
+            tone: 'danger',
+          });
+          if (confirmed) onConfirm();
+        }}
         aria-label={label}
         className="text-[#A0A0A0] hover:text-red-600 cursor-pointer transition-colors"
       >
@@ -198,10 +190,9 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
     return next;
   });
   const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
-  // Quick "+ เพิ่มผู้รับผิดชอบหลัก" shortcut for the common case of a project that has none yet — a
-  // dedicated one-field picker instead of sending someone through the full "แก้ไขโครงการ" form just
-  // to set this. Only shown while owners is actually empty; once a project has an owner, changing
-  // that goes through the normal edit form like every other field.
+  // Quick "เพิ่มผู้รับผิดชอบ" shortcut — a small picker for both ผู้รับผิดชอบหลัก and ผู้รับผิดชอบร่วม
+  // instead of sending someone through the full "แก้ไขโครงการ" form just to add people. Always shown;
+  // the modal itself decides between saving directly and filing a change request.
   const [isAddOwnerOpen, setIsAddOwnerOpen] = useState(false);
   const [taskFilter, setTaskFilter] = useState<TaskFilter>('all');
   const [selectedTask, setSelectedTask] = useState<ProjectTaskItem | null>(null);
@@ -438,6 +429,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
             </Tooltip>
             <InlineDeleteConfirm
               label="ลบ"
+              itemLabel={t.title}
               disabled={!t.parentTaskId && changeRequests.some((r) => r.entityType === 'project_task' && r.entityId === t.id && r.status === 'pending')}
               requiresReason={!isExecutive && !t.parentTaskId && !isOwner(resolveValidIds(t.assigneeEmployeeIds, employees), currentUserId)}
               onConfirm={() => onDeleteTask(t.id)}
@@ -505,7 +497,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
             className="inline-flex items-center gap-1.5 bg-white hover:bg-slate-50 text-[#272220] text-sm font-bold px-4 h-10 rounded-xl border border-[#E5E5E5] cursor-pointer transition-colors shrink-0"
           >
             <Users2 size={15} />
-            เพิ่มผู้รับผิดชอบหลัก
+            เพิ่มผู้รับผิดชอบ
           </button>
           <button
             type="button"
@@ -802,6 +794,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                             </Tooltip>
                             <InlineDeleteConfirm
                               label="ลบ"
+                              itemLabel={t.title}
                               disabled={!t.parentTaskId && changeRequests.some((r) => r.entityType === 'project_task' && r.entityId === t.id && r.status === 'pending')}
                               requiresReason={!isExecutive && !t.parentTaskId && !isOwner(resolveValidIds(t.assigneeEmployeeIds, employees), currentUserId)}
                               onConfirm={() => onDeleteTask(t.id)}
@@ -1117,17 +1110,19 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
         onRequestChange={onRequestChange}
       />
 
-      <AddOwnerModal
+      <AddResponsibleModal
         isOpen={isAddOwnerOpen}
         onClose={() => setIsAddOwnerOpen(false)}
         projectId={row.id}
         projectTitle={row.title}
         currentOwnerIds={row.ownerEmployeeIds}
+        currentMemberIds={row.memberEmployeeIds ?? []}
+        currentMemberDuties={row.memberDuties ?? {}}
         employees={employees}
         currentUserId={currentUserId}
         isExecutive={isExecutive}
         changeRequests={changeRequests}
-        onSave={(ownerEmployeeIds) => onUpdateProject({ ownerEmployeeIds })}
+        onSave={(updates) => onUpdateProject(updates)}
         onRequestChange={onRequestChange}
       />
 

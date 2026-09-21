@@ -19,7 +19,7 @@ export function assignableAccountTypes(actingUser: Employee | undefined): Accoun
 
 // Menu ids an admin can restrict per-employee — dashboard is deliberately excluded since it's the
 // app's fallback redirect target and must always stay reachable (see App.tsx's NavGuardRoute).
-export const RESTRICTABLE_NAV_ITEMS = NAV_ITEMS.filter((item) => item.id !== 'dashboard');
+export const RESTRICTABLE_NAV_ITEMS = NAV_ITEMS.filter((item) => item.id !== 'dashboard' && item.id !== 'settings');
 
 // Narrowed further to whatever the currently-selected account type could reach in the first
 // place — e.g. "จัดการพนักงาน" never shows up for an "employee"-type account, since that role

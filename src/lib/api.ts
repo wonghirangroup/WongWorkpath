@@ -1,4 +1,4 @@
-import { Employee, CredentialItem, Meeting, Notification, LinkedDoc } from '../types';
+import { Employee, CredentialItem, Meeting, Notification, NotificationCategory, LinkedDoc } from '../types';
 import type { ProjectRow, ProjectTaskItem, CustomProjectStatus } from '../components/projectBoard/types';
 
 // Vite only exposes env vars prefixed VITE_ to client code — set in .env,
@@ -100,7 +100,7 @@ export async function createEmployee(employee: Employee & { password: string }):
 // every other actorEmployeeId check in this app (no real session/auth layer to verify it against).
 export async function updateEmployeeRemote(
   id: string,
-  updates: Partial<Pick<Employee, 'name' | 'nickname' | 'role' | 'avatar' | 'department' | 'division' | 'username' | 'accountType' | 'restrictedMenuIds' | 'phone' | 'address'>> & { password?: string },
+  updates: Partial<Pick<Employee, 'name' | 'nickname' | 'email' | 'role' | 'avatar' | 'department' | 'division' | 'username' | 'accountType' | 'restrictedMenuIds' | 'phone' | 'address' | 'mutedNotificationCategories'>> & { password?: string },
   actorEmployeeId?: string
 ): Promise<void> {
   let res: Response;
@@ -117,6 +117,25 @@ export async function updateEmployeeRemote(
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new ApiError(data.message ?? 'บันทึกข้อมูลไม่สำเร็จ', res.status);
+  }
+}
+
+// Settings → เปลี่ยนรหัสผ่าน — limited to once per day server-side; a 429 surfaces its message as
+// an ApiError so the page can show it inline.
+export async function changeSelfPassword(id: string, password: string): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/employees/${encodeURIComponent(id)}/password`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ actorEmployeeId: id, password }),
+    });
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(data.message ?? 'เปลี่ยนรหัสผ่านไม่สำเร็จ', res.status);
   }
 }
 
@@ -442,6 +461,8 @@ export interface CreateNotificationPayload {
   title: string;
   message: string;
   type?: Notification['type'];
+  // Which Settings → การแจ้งเตือน switch controls this one. Omitted = never filtered (legacy handover).
+  category?: NotificationCategory;
   linkType?: Notification['linkType'];
   linkId?: string;
 }
@@ -473,7 +494,7 @@ export async function markAllNotificationsRead(employeeId: string): Promise<void
 // enough (equal authority, first-decision-wins), same as the existing task-reviewer pattern.
 export interface ChangeRequest {
   id: string;
-  entityType: 'project' | 'project_task';
+  entityType: 'project' | 'project_task' | 'employee';
   entityId: string;
   requestType: 'edit' | 'delete';
   proposedChanges?: Record<string, unknown>;
@@ -486,7 +507,7 @@ export interface ChangeRequest {
   decisionNote?: string;
 }
 
-export async function fetchChangeRequests(filter?: { entityType: 'project' | 'project_task'; entityId: string }): Promise<ChangeRequest[]> {
+export async function fetchChangeRequests(filter?: { entityType: 'project' | 'project_task' | 'employee'; entityId: string }): Promise<ChangeRequest[]> {
   const query = filter ? `?entityType=${encodeURIComponent(filter.entityType)}&entityId=${encodeURIComponent(filter.entityId)}` : '';
   const res = await fetch(`${API_BASE_URL}/api/change-requests${query}`);
   if (!res.ok) throw new Error(`Failed to fetch change requests: ${res.status}`);
@@ -494,7 +515,7 @@ export async function fetchChangeRequests(filter?: { entityType: 'project' | 'pr
 }
 
 export async function createChangeRequest(payload: {
-  entityType: 'project' | 'project_task';
+  entityType: 'project' | 'project_task' | 'employee';
   entityId: string;
   requestType: 'edit' | 'delete';
   proposedChanges?: Record<string, unknown>;

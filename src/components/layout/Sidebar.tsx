@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Link, useLocation } from 'react-router-dom';
-import { X, Users } from 'lucide-react';
+import { X, Users, Settings } from 'lucide-react';
 import { useAppData } from '../../context/AppDataContext';
 import { canAccessNavItem, canManageEmployees } from '../../lib/permissions';
 import LogoutConfirmModal from './LogoutConfirmModal';
@@ -39,6 +39,9 @@ export const NAV_ITEMS = [
   // No dedicated PNG icon set exists for this page yet — falls back to a lucide icon (colored via
   // the parent Link's text color, same as every other item) until a matching asset is added.
   { id: 'employees', label: 'จัดการพนักงาน', iconActive: undefined as string | undefined, iconInactive: undefined as string | undefined, iconHover: undefined as string | undefined, iconComponent: Users as typeof Users | undefined },
+  // Open to every account type and, like dashboard, never restrictable per-account (see
+  // RESTRICTABLE_NAV_ITEMS in EmployeeFormShared.tsx) — it's where everyone manages their own account.
+  { id: 'settings', label: 'การตั้งค่า', iconActive: undefined as string | undefined, iconInactive: undefined as string | undefined, iconHover: undefined as string | undefined, iconComponent: Settings as typeof Users | undefined },
 ] as const;
 
 interface SidebarProps {

@@ -24,6 +24,7 @@ import {
 } from './EmployeeFormShared';
 import Tooltip from './Tooltip';
 import ThaiDatePicker from './ThaiDatePicker';
+import PendingRequestCard from './projectBoard/PendingRequestCard';
 import { useEscapeToClose } from '../lib/useEscapeToClose';
 
 const DEFAULT_PASSWORD = 'Wongwork2026!';
@@ -100,8 +101,13 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
     handleDeleteDivision,
     handleAddSection,
     handleRenameSection,
-    handleDeleteSection
+    handleDeleteSection,
+    changeRequests,
+    handleDecideChangeRequest
   } = useAppData();
+  // Name/nickname change requests filed from Settings by plain employees — decided right here,
+  // since this whole page is already limited to accounts allowed to approve them.
+  const pendingEmployeeRequests = changeRequests.filter((r) => r.entityType === 'employee' && r.status === 'pending');
   const getSectionsForDivision = (divisionName: string) =>
     orgDivisions.find((d) => d.name === divisionName)?.sections ?? [];
 
@@ -544,6 +550,30 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
       </div>
       </div>
 
+      {activeTab === 'employees' && pendingEmployeeRequests.length > 0 && (
+        <div className="bg-white rounded-2xl border border-amber-200 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] p-5 space-y-3">
+          <h3 className="font-bold text-[#272220]">คำขอเปลี่ยนชื่อรออนุมัติ ({pendingEmployeeRequests.length})</h3>
+          {pendingEmployeeRequests.map((request) => {
+            const requester = employees.find((e) => e.id === request.entityId);
+            const proposed = (request.proposedChanges ?? {}) as { name?: string; nickname?: string };
+            const changes = [
+              proposed.name && `ชื่อ-นามสกุล ${requester?.name ?? '-'} → ${proposed.name}`,
+              proposed.nickname && `ชื่อเล่น ${requester?.nickname || requester?.name || '-'} → ${proposed.nickname}`,
+            ].filter(Boolean).join(' · ');
+            return (
+              <PendingRequestCard
+                key={request.id}
+                request={request}
+                entityTitle={changes || 'ชื่อ/ชื่อเล่น'}
+                requesterLabel={requester ? requester.nickname || requester.name : 'ไม่ทราบผู้ใช้งาน'}
+                canDecide
+                onDecide={(decision, note) => handleDecideChangeRequest(request.id, decision, note)}
+              />
+            );
+          })}
+        </div>
+      )}
+
       {activeTab === 'employees' ? (
       <>
       <p className="font-normal text-[16px] text-[#6F6F6F] leading-none">ทั้งหมด {filteredEmployees.length} คน</p>
@@ -807,21 +837,23 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
                 transition={{ duration: 0.2 }}
-                className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[85vh] overflow-y-auto p-5 space-y-4"
+                className="relative bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6 space-y-4"
               >
                 <div className="flex justify-between items-center pb-2 border-b border-slate-100">
                   <h3 className="text-sm font-bold text-slate-800">เพิ่มพนักงานใหม่</h3>
                   <button type="button" onClick={resetForm} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X size={18} /></button>
                 </div>
 
-                <form onSubmit={handleCreate} className="space-y-3 text-xs">
+                <form onSubmit={handleCreate} className="space-y-4 text-xs">
                   {formError && (
                     <div className="bg-rose-50 border border-rose-100 text-rose-700 text-xs px-3 py-2 rounded-lg">
                       {formError}
                     </div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-3">
+                  {/* Two columns from sm up (same as the employee detail/edit modal) so the whole form
+                      fits on screen instead of one long scrolling column. */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
                     <div>
                       <label className="block text-[#272220] font-bold text-[11px] mb-1">ชื่อ-นามสกุล *</label>
                       <input
@@ -844,33 +876,30 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                         className="w-full p-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#FF6537]"
                       />
                     </div>
-                  </div>
 
-                  <div>
-                    <label className="block text-[#272220] font-bold text-[11px] mb-1">อีเมล *</label>
-                    <input
-                      type="email"
-                      required
-                      placeholder="name@company.com"
-                      value={newEmail}
-                      onChange={(e) => setNewEmail(e.target.value)}
-                      className="w-full p-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#FF6537]"
-                    />
-                  </div>
+                    <div>
+                      <label className="block text-[#272220] font-bold text-[11px] mb-1">อีเมล *</label>
+                      <input
+                        type="email"
+                        required
+                        placeholder="name@company.com"
+                        value={newEmail}
+                        onChange={(e) => setNewEmail(e.target.value)}
+                        className="w-full p-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#FF6537]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[#272220] font-bold text-[11px] mb-1">เบอร์โทร <span className="font-normal text-slate-400">(ไม่บังคับ)</span></label>
+                      <input
+                        type="tel"
+                        inputMode="numeric"
+                        placeholder="เช่น 0812345678"
+                        value={newPhone}
+                        onChange={(e) => setNewPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                        className="w-full p-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#FF6537]"
+                      />
+                    </div>
 
-                  <div>
-                    <label className="block text-[#272220] font-bold text-[11px] mb-1">เบอร์โทร <span className="font-normal text-slate-400">(ไม่บังคับ)</span></label>
-                    <input
-                      type="tel"
-                      inputMode="numeric"
-                      placeholder="เช่น 0812345678"
-                      value={newPhone}
-                      onChange={(e) => setNewPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                      className="w-full p-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#FF6537]"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[#272220] font-bold text-[11px] mb-1">Username *</label>
                       <input
@@ -892,107 +921,105 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                         className="w-full p-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#FF6537]"
                       />
                     </div>
-                  </div>
 
-                  <div>
-                    <label className="block text-[#272220] font-bold text-[11px] mb-1">ตำแหน่ง *</label>
-                    <RoleField
-                      value={newRole}
-                      onChange={(v) => {
-                        setNewRole(v);
-                        // Keep "ประเภทผู้ใช้งาน" in sync with "ตำแหน่ง" when it's set to ผู้บริหาร —
-                        // same reasoning as EmployeeProfileModal's edit form. Gated the same way: a
-                        // plain admin can't assign 'executive' anyway (assignableAccountTypes),
-                        // so this never grants a level the actor couldn't pick directly.
-                        if (v.trim() === 'ผู้บริหาร' && assignableAccountTypes(actingUser).includes('executive')) {
-                          setNewAccountType('executive');
-                        }
-                      }}
-                      roleOptions={roleOptions}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[#272220] font-bold text-[11px] mb-1">ฝ่าย *</label>
-                    <Dropdown<Division>
-                      value={newDivision}
-                      onChange={(v) => { setNewDivision(v); setNewDepartment(getSectionsForDivision(v)[0] ?? ''); }}
-                      size="compact"
-                      options={orgDivisions.map((d) => ({ value: d.name, label: d.name }))}
-                    />
-                  </div>
-
-                  {!hidesDepartmentField && (
-                  <div>
-                    <label className="block text-[#272220] font-bold text-[11px] mb-1">แผนก *</label>
-                    <Dropdown<string>
-                      value={newDepartment}
-                      onChange={setNewDepartment}
-                      size="compact"
-                      options={getSectionsForDivision(newDivision).map((d) => ({ value: d, label: d }))}
-                    />
-                  </div>
-                  )}
-
-                  <div>
-                    <label className="block text-[#272220] font-bold text-[11px] mb-1">ประเภทผู้ใช้งาน *</label>
-                    <Dropdown<AccountType>
-                      value={newAccountType}
-                      onChange={(v) => {
-                        setNewAccountType(v);
-                        // Drop any restriction that no longer applies to the newly-selected type
-                        // (e.g. "จัดการพนักงาน" stops being a meaningful restriction once the type
-                        // itself can no longer reach that menu at all).
-                        setNewRestrictedMenuIds((prev) => prev.filter((id) => isNavAllowedByRole({ accountType: v }, id)));
-                      }}
-                      size="compact"
-                      options={assignableAccountTypes(actingUser).map((t) => ({ value: t, label: ACCOUNT_TYPE_LABELS[t] }))}
-                    />
-                    {(newAccountType === 'admin' || newAccountType === 'superadmin') && (
-                      <p className="mt-1 text-[10px] text-slate-400">เปลี่ยน Username ของบัญชีนี้ในภายหลังไม่ได้</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-[#272220] font-bold text-[11px] mb-1">จำกัดสิทธิเมนู <span className="font-normal text-slate-400">(ไม่บังคับ)</span></label>
-                    <MenuRestrictionChecklist items={restrictableNavItemsFor(newAccountType)} selectedIds={newRestrictedMenuIds} onChange={setNewRestrictedMenuIds} />
-                  </div>
-
-                  <div>
-                    <label className="block text-[#272220] font-bold text-[11px] mb-1">
-                      รูปโปรไฟล์ <span className="font-normal text-slate-400">(ไม่บังคับ, ไม่เกิน {formatFileSize(MAX_AVATAR_BYTES)})</span>
-                    </label>
-                    <div className="flex items-center gap-2.5">
-                      {newAvatar.trim() ? (
-                        <img src={newAvatar.trim()} alt="" className="w-9 h-9 rounded-full object-cover shrink-0 bg-slate-50 border border-slate-100" />
-                      ) : (
-                        <div
-                          className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0"
-                          style={{ backgroundColor: getAvatarColor(newName || '?') }}
-                        >
-                          {(newName.trim().charAt(0) || '?').toUpperCase()}
-                        </div>
-                      )}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => handleNewAvatarFilePicked(e.target.files?.[0] || null)}
-                        className="flex-1 min-w-0 text-xs file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#FFF1EC] file:text-[#FF6537] file:font-bold file:cursor-pointer cursor-pointer"
+                    <div>
+                      <label className="block text-[#272220] font-bold text-[11px] mb-1">ตำแหน่ง *</label>
+                      <RoleField
+                        value={newRole}
+                        onChange={(v) => {
+                          setNewRole(v);
+                          // Keep "ประเภทผู้ใช้งาน" in sync with "ตำแหน่ง" when it's set to ผู้บริหาร —
+                          // same reasoning as EmployeeProfileModal's edit form. Gated the same way: a
+                          // plain admin can't assign 'executive' anyway (assignableAccountTypes),
+                          // so this never grants a level the actor couldn't pick directly.
+                          if (v.trim() === 'ผู้บริหาร' && assignableAccountTypes(actingUser).includes('executive')) {
+                            setNewAccountType('executive');
+                          }
+                        }}
+                        roleOptions={roleOptions}
                       />
-                      {newAvatar.trim() && (
-                        <Tooltip content="ลบรูปโปรไฟล์">
-                          <button
-                            type="button"
-                            onClick={() => setNewAvatar('')}
-                            className="text-slate-400 hover:text-slate-600 cursor-pointer shrink-0"
-                            aria-label="ลบรูปโปรไฟล์"
-                          >
-                            <X size={16} />
-                          </button>
-                        </Tooltip>
+                    </div>
+                    <div>
+                      <label className="block text-[#272220] font-bold text-[11px] mb-1">ฝ่าย *</label>
+                      <Dropdown<Division>
+                        value={newDivision}
+                        onChange={(v) => { setNewDivision(v); setNewDepartment(getSectionsForDivision(v)[0] ?? ''); }}
+                        size="compact"
+                        options={orgDivisions.map((d) => ({ value: d.name, label: d.name }))}
+                      />
+                    </div>
+
+                    {!hidesDepartmentField && (
+                    <div>
+                      <label className="block text-[#272220] font-bold text-[11px] mb-1">แผนก *</label>
+                      <Dropdown<string>
+                        value={newDepartment}
+                        onChange={setNewDepartment}
+                        size="compact"
+                        options={getSectionsForDivision(newDivision).map((d) => ({ value: d, label: d }))}
+                      />
+                    </div>
+                    )}
+                    <div>
+                      <label className="block text-[#272220] font-bold text-[11px] mb-1">ประเภทผู้ใช้งาน *</label>
+                      <Dropdown<AccountType>
+                        value={newAccountType}
+                        onChange={(v) => {
+                          setNewAccountType(v);
+                          // Drop any restriction that no longer applies to the newly-selected type
+                          // (e.g. "จัดการพนักงาน" stops being a meaningful restriction once the type
+                          // itself can no longer reach that menu at all).
+                          setNewRestrictedMenuIds((prev) => prev.filter((id) => isNavAllowedByRole({ accountType: v }, id)));
+                        }}
+                        size="compact"
+                        options={assignableAccountTypes(actingUser).map((t) => ({ value: t, label: ACCOUNT_TYPE_LABELS[t] }))}
+                      />
+                      {(newAccountType === 'admin' || newAccountType === 'superadmin') && (
+                        <p className="mt-1 text-[10px] text-slate-400">เปลี่ยน Username ของบัญชีนี้ในภายหลังไม่ได้</p>
                       )}
                     </div>
-                    {newAvatarFileError && <p className="text-red-500 mt-1">{newAvatarFileError}</p>}
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-[#272220] font-bold text-[11px] mb-1">จำกัดสิทธิเมนู <span className="font-normal text-slate-400">(ไม่บังคับ)</span></label>
+                      <MenuRestrictionChecklist items={restrictableNavItemsFor(newAccountType)} selectedIds={newRestrictedMenuIds} onChange={setNewRestrictedMenuIds} />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-[#272220] font-bold text-[11px] mb-1">
+                        รูปโปรไฟล์ <span className="font-normal text-slate-400">(ไม่บังคับ, ไม่เกิน {formatFileSize(MAX_AVATAR_BYTES)})</span>
+                      </label>
+                      <div className="flex items-center gap-2.5">
+                        {newAvatar.trim() ? (
+                          <img src={newAvatar.trim()} alt="" className="w-9 h-9 rounded-full object-cover shrink-0 bg-slate-50 border border-slate-100" />
+                        ) : (
+                          <div
+                            className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0"
+                            style={{ backgroundColor: getAvatarColor(newName || '?') }}
+                          >
+                            {(newName.trim().charAt(0) || '?').toUpperCase()}
+                          </div>
+                        )}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handleNewAvatarFilePicked(e.target.files?.[0] || null)}
+                          className="flex-1 min-w-0 text-xs file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#FFF1EC] file:text-[#FF6537] file:font-bold file:cursor-pointer cursor-pointer"
+                        />
+                        {newAvatar.trim() && (
+                          <Tooltip content="ลบรูปโปรไฟล์">
+                            <button
+                              type="button"
+                              onClick={() => setNewAvatar('')}
+                              className="text-slate-400 hover:text-slate-600 cursor-pointer shrink-0"
+                              aria-label="ลบรูปโปรไฟล์"
+                            >
+                              <X size={16} />
+                            </button>
+                          </Tooltip>
+                        )}
+                      </div>
+                      {newAvatarFileError && <p className="text-red-500 mt-1">{newAvatarFileError}</p>}
+                    </div>
                   </div>
 
                   <div className="flex justify-end gap-2 pt-1">

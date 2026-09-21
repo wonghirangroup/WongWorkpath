@@ -33,3 +33,11 @@ export async function isExecutiveActor(actorId: string | undefined | null): Prom
   const [[row]] = await pool.query<RowDataPacket[]>('SELECT account_type FROM employee WHERE id = ?', [actorId]);
   return row?.account_type === 'executive';
 }
+
+// Anyone who can reach Employee Management's full view (admin/superadmin/executive) — mirrors the
+// client's canManageEmployees. Decides employee-entity change requests (name/nickname changes).
+export async function isEmployeeManagerActor(actorId: string | undefined | null): Promise<boolean> {
+  if (!actorId) return false;
+  const [[row]] = await pool.query<RowDataPacket[]>('SELECT account_type FROM employee WHERE id = ?', [actorId]);
+  return row?.account_type === 'admin' || row?.account_type === 'superadmin' || row?.account_type === 'executive';
+}

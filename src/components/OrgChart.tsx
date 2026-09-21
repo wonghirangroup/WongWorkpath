@@ -7,6 +7,7 @@ import { COMPANY_NAME, OrgDivisionData, resolveOrgPlacement } from '../data/orgS
 import { getAvatarColor } from '../lib/avatarColor';
 import Tooltip from './Tooltip';
 import { useEscapeToClose } from '../lib/useEscapeToClose';
+import { useConfirm } from '../context/ConfirmContext';
 
 function displayName(emp: Employee) {
   return emp.nickname || emp.name;
@@ -422,6 +423,7 @@ const OrgChart = forwardRef<OrgChartHandle, OrgChartProps>(function OrgChart({
   onRenameSection,
   onDeleteSection,
 }, ref) {
+  const confirm = useConfirm();
   const [renamePrompt, setRenamePrompt] = useState<
     | { kind: 'division'; oldName: string }
     | { kind: 'section'; division: string; oldName: string }
@@ -810,7 +812,17 @@ const OrgChart = forwardRef<OrgChartHandle, OrgChartProps>(function OrgChart({
           label="ชื่อฝ่าย"
           initialValue={renamePrompt.oldName}
           onClose={() => setRenamePrompt(null)}
-          onSave={(value) => { onRenameDivision(renamePrompt.oldName, value); setRenamePrompt(null); }}
+          onSave={async (value) => {
+            // A rename cascades to every employee placed in this ฝ่าย, so it asks before applying.
+            const confirmed = await confirm({
+              title: 'ยืนยันการเปลี่ยนชื่อฝ่าย?',
+              message: `เปลี่ยนชื่อฝ่าย "${renamePrompt.oldName}" เป็น "${value}" — พนักงานในฝ่ายนี้จะถูกเปลี่ยนตามด้วย`,
+              confirmLabel: 'เปลี่ยนชื่อ',
+            });
+            if (!confirmed) return;
+            onRenameDivision(renamePrompt.oldName, value);
+            setRenamePrompt(null);
+          }}
         />
       )}
       {renamePrompt?.kind === 'add-division' && (
@@ -827,7 +839,16 @@ const OrgChart = forwardRef<OrgChartHandle, OrgChartProps>(function OrgChart({
           label="ชื่อแผนก"
           initialValue={renamePrompt.oldName}
           onClose={() => setRenamePrompt(null)}
-          onSave={(value) => { onRenameSection(renamePrompt.division, renamePrompt.oldName, value); setRenamePrompt(null); }}
+          onSave={async (value) => {
+            const confirmed = await confirm({
+              title: 'ยืนยันการเปลี่ยนชื่อแผนก?',
+              message: `เปลี่ยนชื่อแผนก "${renamePrompt.oldName}" เป็น "${value}" — พนักงานในแผนกนี้จะถูกเปลี่ยนตามด้วย`,
+              confirmLabel: 'เปลี่ยนชื่อ',
+            });
+            if (!confirmed) return;
+            onRenameSection(renamePrompt.division, renamePrompt.oldName, value);
+            setRenamePrompt(null);
+          }}
         />
       )}
       {renamePrompt?.kind === 'add-section' && (

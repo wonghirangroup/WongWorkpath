@@ -4,6 +4,7 @@ import { Employee } from '../../types';
 import { ProjectRow, ProjectPriority } from './types';
 import { STATUS_DOT, STATUS_LABEL, STATUS_PILL, STATUS_ICON, PROJECT_PRIORITY_META } from './statusMeta';
 import { isOwner } from '../../lib/ownership';
+import { useConfirm } from '../../context/ConfirmContext';
 import Dropdown from '../Dropdown';
 import Tooltip from '../Tooltip';
 import PeopleCell from './PeopleCell';
@@ -45,6 +46,7 @@ interface ProjectTableProps {
 }
 
 export default function ProjectTable({ rows, employees, onViewDetail, canDelete, onDelete, onUpdatePriority, currentUserId, isExecutive }: ProjectTableProps) {
+  const confirm = useConfirm();
   // Same live-measurement technique as EmployeeManagement's table wrapper — a hardcoded
   // calc(100vh - Npx) guess drifts whenever the toolbar/status-cards above it change height, so
   // this keeps the table's bottom edge matching the sidebar's real bottom edge instead of
@@ -123,7 +125,15 @@ export default function ProjectTable({ rows, employees, onViewDetail, canDelete,
                       <Dropdown
                         value={row.priority !== undefined ? String(row.priority) : ''}
                         options={PRIORITY_DROPDOWN_OPTIONS}
-                        onChange={(value) => onUpdatePriority(row, Number(value) as ProjectPriority)}
+                        onChange={async (value) => {
+                          const newLabel = PRIORITY_DROPDOWN_OPTIONS.find((o) => o.value === value)?.label ?? value;
+                          const confirmed = await confirm({
+                            title: 'ยืนยันการเปลี่ยนความสำคัญ?',
+                            message: `เปลี่ยนความสำคัญของโครงการ "${row.title}" เป็น "${newLabel}"`,
+                            confirmLabel: 'เปลี่ยน',
+                          });
+                          if (confirmed) onUpdatePriority(row, Number(value) as ProjectPriority);
+                        }}
                         placeholder="ยังไม่มี"
                         disabled={!canEditPriority}
                       />

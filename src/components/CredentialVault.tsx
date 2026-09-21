@@ -6,6 +6,7 @@ import { nowTimestamp } from '../lib/datetime';
 import { getAvatarColor } from '../lib/avatarColor';
 import { getDepartmentTagClass } from '../lib/departmentColors';
 import Dropdown from './Dropdown';
+import { useConfirm } from '../context/ConfirmContext';
 import {
   Eye,
   EyeOff,
@@ -217,6 +218,7 @@ export default function CredentialVault({
   onDeleteCredential,
   onLogAudit
 }: CredentialVaultProps) {
+  const confirm = useConfirm();
 
   const projectById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
 
@@ -456,11 +458,17 @@ export default function CredentialVault({
     setShowAddForm(false);
   };
 
-  const handleCreateCredential = (e: React.FormEvent) => {
+  const handleCreateCredential = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newLabel.trim() || !newUsername.trim() || !newKeyValue.trim()) return;
 
     if (editingId) {
+      const confirmed = await confirm({
+        title: 'ยืนยันการบันทึกการแก้ไข?',
+        message: `บันทึกการแก้ไขข้อมูล "${newLabel}"`,
+        confirmLabel: 'บันทึก',
+      });
+      if (!confirmed) return;
       onUpdateCredential(editingId, {
         label: newLabel,
         type: newType,

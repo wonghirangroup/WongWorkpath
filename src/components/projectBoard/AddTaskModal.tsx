@@ -12,6 +12,7 @@ import Dropdown from '../Dropdown';
 import EmployeeAvatar from '../EmployeeAvatar';
 import ThaiDatePicker from '../ThaiDatePicker';
 import { useEscapeToClose } from '../../lib/useEscapeToClose';
+import { useConfirm } from '../../context/ConfirmContext';
 
 type ModalMode = 'task' | 'meeting';
 
@@ -227,10 +228,21 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
   };
 
   useEscapeToClose(isOpen, resetAndClose);
+  const confirm = useConfirm();
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!isFormValid || isSubmitting) return;
+
+    // Only an edit of an existing task asks first — creating a new task/meeting isn't an edit or delete.
+    if (mode !== 'meeting' && editingTask && onUpdateTask) {
+      const confirmed = await confirm({
+        title: canEditDirectly ? 'ยืนยันการบันทึกการแก้ไขงาน?' : 'ยืนยันการส่งคำขอแก้ไขงาน?',
+        message: canEditDirectly ? `บันทึกการแก้ไขงาน "${title.trim()}"` : `ส่งคำขอแก้ไขงาน "${title.trim()}" ให้ผู้รับผิดชอบพิจารณา`,
+        confirmLabel: canEditDirectly ? 'บันทึก' : 'ส่งคำขอ',
+      });
+      if (!confirmed) return;
+    }
 
     setFormError('');
     setIsSubmitting(true);

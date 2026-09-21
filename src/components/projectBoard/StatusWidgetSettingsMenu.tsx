@@ -5,6 +5,7 @@ import { CustomProjectStatus } from './types';
 import { PROJECT_STATUS_OPTIONS, STATUS_LABEL } from './statusMeta';
 import { MAX_STATUS_CARDS } from './statusWidgetPrefs';
 import Tooltip from '../Tooltip';
+import { useConfirm } from '../../context/ConfirmContext';
 
 interface StatusWidgetSettingsMenuProps {
   selectedIds: string[];
@@ -25,6 +26,7 @@ export default function StatusWidgetSettingsMenu({
   onAddCustomStatus,
   onDeleteCustomStatus,
 }: StatusWidgetSettingsMenuProps) {
+  const confirm = useConfirm();
   const [isOpen, setIsOpen] = useState(false);
   const [newLabel, setNewLabel] = useState('');
   const [isCreating, setIsCreating] = useState(false);
@@ -108,7 +110,14 @@ export default function StatusWidgetSettingsMenu({
                       <Tooltip content="ลบสถานะนี้">
                         <button
                           type="button"
-                          onClick={() => onDeleteCustomStatus(id)}
+                          onClick={async () => {
+                            const confirmed = await confirm({
+                              title: 'ยืนยันการลบสถานะ?',
+                              message: `ลบสถานะ "${STATUS_LABEL[id]}" ออกจากระบบ`,
+                              tone: 'danger',
+                            });
+                            if (confirmed) onDeleteCustomStatus(id);
+                          }}
                           aria-label="ลบสถานะนี้"
                           className="text-slate-300 hover:text-red-600 cursor-pointer shrink-0"
                         >

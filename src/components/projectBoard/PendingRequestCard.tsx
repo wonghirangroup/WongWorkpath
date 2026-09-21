@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ChangeRequest } from '../../lib/api';
+import { useConfirm } from '../../context/ConfirmContext';
 
 // One row in a "คำขอที่รอดำเนินการ" list — shared by ProjectDetail's per-project panel and
 // MyWorkspace's cross-project "รออนุมัติจากฉัน" tab, since both need the exact same
@@ -19,12 +20,22 @@ export default function PendingRequestCard({
   canDecide: boolean;
   onDecide: (decision: 'approve' | 'reject', note?: string) => Promise<void>;
 }) {
+  const confirm = useConfirm();
   const [showRejectField, setShowRejectField] = useState(false);
   const [note, setNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleApprove = async () => {
     if (isSubmitting) return;
+    // Approving is what actually applies the edit or delete, so it always asks first.
+    const isDelete = request.requestType === 'delete';
+    const confirmed = await confirm({
+      title: isDelete ? 'ยืนยันการอนุมัติให้ลบ?' : 'ยืนยันการอนุมัติให้แก้ไข?',
+      message: `${requesterLabel} ขอ${isDelete ? 'ลบ' : 'แก้ไข'} "${entityTitle}" — เมื่ออนุมัติ ระบบจะ${isDelete ? 'ลบรายการนี้ออกทันที' : 'แก้ไขตามที่ขอทันที'}`,
+      confirmLabel: 'อนุมัติ',
+      tone: isDelete ? 'danger' : 'default',
+    });
+    if (!confirmed) return;
     setIsSubmitting(true);
     try { await onDecide('approve'); } finally { setIsSubmitting(false); }
   };

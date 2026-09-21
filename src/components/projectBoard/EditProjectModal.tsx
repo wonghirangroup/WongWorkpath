@@ -18,6 +18,7 @@ import {
 import { ApiError, ChangeRequest } from '../../lib/api';
 import { formatThousands } from '../../lib/numberFormat';
 import { isOwner, resolveValidIds } from '../../lib/ownership';
+import { useConfirm } from '../../context/ConfirmContext';
 import Dropdown from '../Dropdown';
 import Tooltip from '../Tooltip';
 
@@ -49,6 +50,7 @@ interface EditProjectModalProps {
 // "department" has no field yet) — this stays a straight edit of what's already there.
 export default function EditProjectModal({ isOpen, onClose, row, employees, onSave, existingTitles, customStatuses, currentUserId, isExecutive, changeRequests, onRequestChange }: EditProjectModalProps) {
   useEscapeToClose(isOpen, onClose);
+  const confirm = useConfirm();
   // Once row.ownerEmployeeIds has ≥1 person, only they may save directly — anyone else's submit
   // files a change_request instead (see ProjectDetail's "คำขอที่รอดำเนินการ" panel for the
   // owner-facing approve/reject side). An unowned project stays open to everyone, as today —
@@ -85,6 +87,12 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!titleValid || !dateOrderValid || !reasonValid || isSubmitting || pendingRequest) return;
+    const confirmed = await confirm({
+      title: canEditDirectly ? 'ยืนยันการบันทึกการแก้ไขโครงการ?' : 'ยืนยันการส่งคำขอแก้ไขโครงการ?',
+      message: canEditDirectly ? `บันทึกการแก้ไขของโครงการ "${row.title}"` : `ส่งคำขอแก้ไขโครงการ "${row.title}" ให้ผู้รับผิดชอบหลักพิจารณา`,
+      confirmLabel: canEditDirectly ? 'บันทึก' : 'ส่งคำขอ',
+    });
+    if (!confirmed) return;
     setFormError('');
     setIsSubmitting(true);
     // Safety net alongside the title field's own onBlur (see CreateProjectModal's identical note).

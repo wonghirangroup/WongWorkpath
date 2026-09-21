@@ -13,10 +13,15 @@ export type Division = string;
 export const ACCOUNT_TYPES = ['employee', 'admin', 'superadmin', 'executive'] as const;
 export type AccountType = typeof ACCOUNT_TYPES[number];
 
+// Must stay in sync with NOTIFICATION_CATEGORIES in server/lib/notificationCategories.ts. Labels
+// and descriptions for the Settings page live in src/lib/notificationCategories.ts.
+export const NOTIFICATION_CATEGORY_IDS = ['assignment', 'review', 'blocked', 'deadline', 'meeting', 'approval'] as const;
+export type NotificationCategory = typeof NOTIFICATION_CATEGORY_IDS[number];
+
 export interface Employee {
   id: string;
-  name: string; // Legal name — editable only by an admin, never by the account itself
-  nickname?: string; // Self-editable by the account itself; defaults to `name` until changed
+  name: string; // Legal name — a plain employee changes it only via an admin-approved change request (Settings)
+  nickname?: string; // Same approval rule as `name`; defaults to `name` until changed
   email: string; // Contact info only — login now uses `username`, not this
   username?: string; // Login credential, joined in from the `login` table
   phone?: string;
@@ -30,6 +35,9 @@ export interface Employee {
   // top of `accountType`'s own default access — lets an admin deny one specific person a menu
   // their role would otherwise allow.
   restrictedMenuIds?: string[];
+  // Notification categories this account switched off in Settings → การแจ้งเตือน. Absent/empty =
+  // everything on. Muted rows are still created, the server just never returns them.
+  mutedNotificationCategories?: NotificationCategory[];
   createdAt?: string; // When the account row was created (server-assigned) — shown as "เข้าร่วมเมื่อ"
 }
 

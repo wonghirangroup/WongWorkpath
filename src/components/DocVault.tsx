@@ -37,6 +37,7 @@ import {
 } from 'lucide-react';
 import Dropdown from './Dropdown';
 import { useEscapeToClose } from '../lib/useEscapeToClose';
+import { useConfirm } from '../context/ConfirmContext';
 import firstCreateDocIcon from '../../images/frist create doc icon.png';
 import searchIcon from '../../images/icon/Search pass.png';
 import editIcon from '../../images/icon menu/edit.png';
@@ -325,6 +326,7 @@ export default function DocVault({
   initialSelectedDocId
 }: DocVaultProps) {
   const { projects, projectTasks, setTaskSelectedProjectId } = useAppData();
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const goToProject = (projectId: string) => {
     setTaskSelectedProjectId(projectId);
@@ -421,7 +423,7 @@ export default function DocVault({
     setDragOverFolderId((prev) => (prev === folder.id ? null : prev));
   };
 
-  const handleFolderDrop = (e: React.DragEvent, folder: LinkedDoc) => {
+  const handleFolderDrop = async (e: React.DragEvent, folder: LinkedDoc) => {
     e.preventDefault();
     e.stopPropagation();
     setDragOverFolderId(null);
@@ -430,8 +432,18 @@ export default function DocVault({
       return;
     }
     if (draggedDocId && isValidDropTarget(folder)) {
-      const movedDoc = documents.find((d) => d.id === draggedDocId);
-      onMoveDocument(draggedDocId, folder.id);
+      const movingId = draggedDocId;
+      const movedDoc = documents.find((d) => d.id === movingId);
+      // Moving a document changes where it lives, so a drop asks first (the drag state is cleared
+      // up front so the row stops looking "held" while the popup is open).
+      setDraggedDocId(null);
+      const confirmed = await confirm({
+        title: 'ยืนยันการย้าย?',
+        message: movedDoc ? `ย้าย "${movedDoc.name}" ไปที่ "${folder.name}"` : `ย้ายรายการไปที่ "${folder.name}"`,
+        confirmLabel: 'ย้าย',
+      });
+      if (!confirmed) return;
+      onMoveDocument(movingId, folder.id);
       // Every other mutation in this file confirms itself with a toast — a drag-drop move stayed
       // silent, which read as "did that actually work?" since nothing else visibly changes at the
       // drop target (the item just vanishes from view into the folder).
@@ -759,10 +771,16 @@ export default function DocVault({
     setEditProjectId(doc.projectId || '');
   };
 
-  const handleSaveEdit = (e: React.FormEvent) => {
+  const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editDocId || !editName.trim()) return;
     const finalName = getUniqueDocName(editName, editSiblingNames);
+    const confirmed = await confirm({
+      title: 'ยืนยันการบันทึกการแก้ไข?',
+      message: `บันทึกการแก้ไข "${finalName}"`,
+      confirmLabel: 'บันทึก',
+    });
+    if (!confirmed) return;
     onEditDocument(editDocId, {
       name: finalName,
       ...(editDoc?.kind === 'link' ? { url: editUrl.trim() } : {}),

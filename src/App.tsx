@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AppDataProvider, useAppData } from './context/AppDataContext';
+import { ConfirmProvider } from './context/ConfirmContext';
 import { canAccessNavItem } from './lib/permissions';
 import AppLayout from './components/layout/AppLayout';
 import LoginPage from './pages/LoginPage';
@@ -10,6 +11,7 @@ import CalendarPage from './pages/CalendarPage';
 import DocsPage from './pages/DocsPage';
 import VaultPage from './pages/VaultPage';
 import EmployeesPage from './pages/EmployeesPage';
+import SettingsPage from './pages/SettingsPage';
 
 function ProtectedLayoutRoute() {
   const { currentUser } = useAppData();
@@ -48,6 +50,9 @@ function AppRoutes() {
         <Route path="/docs" element={<NavGuardRoute navId="docs"><DocsPage /></NavGuardRoute>} />
         <Route path="/vault" element={<NavGuardRoute navId="vault"><VaultPage /></NavGuardRoute>} />
         <Route path="/employees" element={<NavGuardRoute navId="employees"><EmployeesPage /></NavGuardRoute>} />
+        {/* settings, like dashboard, is open to everyone and never restrictable per-account — it's
+            where each person manages their own account, so blocking it would just strand them. */}
+        <Route path="/settings" element={<SettingsPage />} />
       </Route>
 
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -59,7 +64,9 @@ function AppRoutes() {
 export default function App() {
   return (
     <AppDataProvider>
-      <AppRoutes />
+      <ConfirmProvider>
+        <AppRoutes />
+      </ConfirmProvider>
     </AppDataProvider>
   );
 }

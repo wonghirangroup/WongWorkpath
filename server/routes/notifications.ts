@@ -2,6 +2,7 @@ import { Router } from 'express';
 import type { RowDataPacket } from 'mysql2';
 import { pool } from '../db.ts';
 import { nowBangkokDateTime } from '../lib/datetime.ts';
+import { isNotificationCategory, parseMutedCategories } from '../lib/notificationCategories.ts';
 
 export const notificationsRouter = Router();
 
@@ -41,9 +42,16 @@ notificationsRouter.get('/', async (req, res) => {
     return res.status(400).json({ message: 'กรุณาระบุ employeeId' });
   }
   try {
+    // Categories this person muted in Settings → การแจ้งเตือน are hidden here rather than never
+    // created, so the rows stay in the table and reappear if they switch a category back on. A row
+    // with no category (legacy handover ones) is never filtered. The LIMIT applies after the
+    // filter, so muted rows never crowd out the 50 that are actually shown.
+    const [[employee]] = await pool.query<RowDataPacket[]>('SELECT muted_notification_categories FROM employee WHERE id = ?', [employeeId]);
+    const muted = parseMutedCategories(employee?.muted_notification_categories);
+    const mutedClause = muted.length > 0 ? `AND (category IS NULL OR category NOT IN (${muted.map(() => '?').join(',')}))` : '';
     const [rows] = await pool.query<NotificationRowDb[]>(
-      `SELECT ${SELECT_FIELDS} FROM notification WHERE target_employee_id = ? ORDER BY created_at DESC LIMIT 50`,
-      [employeeId]
+      `SELECT ${SELECT_FIELDS} FROM notification WHERE target_employee_id = ? ${mutedClause} ORDER BY created_at DESC LIMIT 50`,
+      [employeeId, ...muted]
     );
     res.json(rows.map(toNotification));
   } catch (err) {
@@ -65,14 +73,15 @@ notificationsRouter.post('/', async (req, res) => {
     return res.status(400).json({ message: 'กรุณาระบุหัวข้อและข้อความ' });
   }
   const type = TYPES.includes(n.type) ? n.type : 'info';
+  const category = isNotificationCategory(n.category) ? n.category : null;
   const id = typeof n.id === 'string' && n.id ? n.id : `notif_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
   try {
     const now = nowBangkokDateTime();
     await pool.query(
-      `INSERT INTO notification (id, target_employee_id, title, message, type, link_type, link_id, is_read, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, FALSE, ?)`,
-      [id, n.targetEmployeeId, n.title.trim(), n.message.trim(), type, n.linkType || null, n.linkId || null, now]
+      `INSERT INTO notification (id, target_employee_id, title, message, type, category, link_type, link_id, is_read, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, FALSE, ?)`,
+      [id, n.targetEmployeeId, n.title.trim(), n.message.trim(), type, category, n.linkType || null, n.linkId || null, now]
     );
     const [[row]] = await pool.query<NotificationRowDb[]>(`SELECT ${SELECT_FIELDS} FROM notification WHERE id = ?`, [id]);
     res.status(201).json(toNotification(row));

@@ -12,6 +12,7 @@ import { formatThaiDateTimeShort } from '../lib/datetime';
 import { OrgDivisionData } from '../data/orgStructure';
 import Dropdown from './Dropdown';
 import { useEscapeToClose } from '../lib/useEscapeToClose';
+import { useConfirm } from '../context/ConfirmContext';
 import {
   RoleField,
   MenuRestrictionChecklist,
@@ -79,6 +80,7 @@ export default function EmployeeProfileModal({
   // Always mounted-means-open here — the parent (EmployeeManagement) conditionally renders this
   // whole component rather than passing an isOpen flag, so presence in the tree is the signal.
   useEscapeToClose(true, onClose);
+  const confirm = useConfirm();
 
   const [mode, setMode] = useState<'view' | 'edit'>(initialMode);
   const [name, setName] = useState(employee.name);
@@ -144,6 +146,12 @@ export default function EmployeeProfileModal({
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isFormValid || isSaving) return;
+    const confirmed = await confirm({
+      title: 'ยืนยันการบันทึกข้อมูลพนักงาน?',
+      message: `บันทึกการแก้ไขข้อมูลของ "${employee.nickname || employee.name}"${password.trim() ? ' รวมถึงรหัสผ่านใหม่' : ''}`,
+      confirmLabel: 'บันทึก',
+    });
+    if (!confirmed) return;
     setFormError('');
     setIsSaving(true);
     try {

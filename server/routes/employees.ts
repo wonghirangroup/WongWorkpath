@@ -2,9 +2,44 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import type { RowDataPacket } from 'mysql2';
 import { pool } from '../db.ts';
-import { nowBangkokDateTime } from '../lib/datetime.ts';
+import { nowBangkokDateTime, bangkokDateTimeFrom } from '../lib/datetime.ts';
+import { isNotificationCategory, parseMutedCategories } from '../lib/notificationCategories.ts';
 
 export const employeesRouter = Router();
+
+const PASSWORD_COOLDOWN_MESSAGE = 'เปลี่ยนรหัสผ่านได้วันละ 1 ครั้งเท่านั้น';
+
+// Self-service password changes (Settings module) are limited to one per rolling 24h — tracked in
+// login.password_changed_at, which only self-changes ever write (an admin resetting someone
+// else's password neither sets nor is blocked by it).
+async function isPasswordChangeLocked(employeeId: string): Promise<boolean> {
+  const cutoff = bangkokDateTimeFrom(new Date(Date.now() - 24 * 60 * 60 * 1000));
+  const [rows] = await pool.query<RowDataPacket[]>(
+    'SELECT 1 FROM login WHERE employee_id = ? AND password_changed_at IS NOT NULL AND password_changed_at > ? LIMIT 1',
+    [employeeId, cutoff]
+  );
+  return rows.length > 0;
+}
+
+// Used by change-requests.ts once an admin approves a name/nickname change request. Whitelists
+// only those two fields — a request's proposedChanges is client-supplied JSON and must never be
+// able to touch role/accountType/etc. through this path.
+export async function applyEmployeeFields(id: string, changes: Record<string, unknown>): Promise<void> {
+  const fields: string[] = [];
+  const values: unknown[] = [];
+  if (typeof changes.name === 'string' && changes.name.trim()) {
+    fields.push('name = ?');
+    values.push(changes.name.trim());
+  }
+  if (typeof changes.nickname === 'string' && changes.nickname.trim()) {
+    fields.push('nickname = ?');
+    values.push(changes.nickname.trim());
+  }
+  if (fields.length === 0) return;
+  fields.push('updated_at = ?');
+  values.push(nowBangkokDateTime());
+  await pool.query(`UPDATE employee SET ${fields.join(', ')} WHERE id = ?`, [...values, id]);
+}
 
 // `division`/`department` hold real org-chart names now, and that structure is admin-editable at
 // runtime (see AppDataContext's orgDivisions, client-side/localStorage only) — there's no fixed
@@ -25,6 +60,7 @@ interface EmployeeRow extends RowDataPacket {
   avatar: string | null;
   account_type: string;
   restricted_menu_ids: string | null;
+  muted_notification_categories: string | null;
   created_at: string;
 }
 
@@ -48,7 +84,7 @@ function canEditOrDeleteTarget(actorId: string | undefined, actorType: string | 
 employeesRouter.get('/', async (_req, res) => {
   try {
     const [rows] = await pool.query<EmployeeRow[]>(
-      `SELECT e.id, e.name, e.nickname, e.email, l.username, e.phone, e.address, e.role, e.department, e.division, e.avatar, e.account_type, e.restricted_menu_ids, e.created_at
+      `SELECT e.id, e.name, e.nickname, e.email, l.username, e.phone, e.address, e.role, e.department, e.division, e.avatar, e.account_type, e.restricted_menu_ids, e.muted_notification_categories, e.created_at
        FROM employee e
        LEFT JOIN login l ON l.employee_id = e.id
        ORDER BY e.id`
@@ -70,6 +106,7 @@ employeesRouter.get('/', async (_req, res) => {
         avatar: r.avatar,
         accountType: r.account_type,
         restrictedMenuIds: r.restricted_menu_ids ? JSON.parse(r.restricted_menu_ids) : undefined,
+        mutedNotificationCategories: parseMutedCategories(r.muted_notification_categories),
         createdAt: r.created_at,
       }))
     );
@@ -156,6 +193,7 @@ employeesRouter.post('/', async (req, res) => {
       restrictedMenuIds: restrictedMenuIds.length ? restrictedMenuIds : undefined,
       phone: phone || undefined,
       address: address || undefined,
+      mutedNotificationCategories: [],
       createdAt: now,
     });
   } catch (err) {
@@ -165,15 +203,15 @@ employeesRouter.post('/', async (req, res) => {
 });
 
 // Partial update — only touches the columns actually present in the body, so the same endpoint
-// serves both the self-service "แก้ไขโปรไฟล์" form (nickname/avatar only — a regular account can
-// never change its own name, role, username, or password here) and the admin-only Employee
-// Management edit form (name/nickname/avatar/department/accountType/restrictedMenuIds, plus
-// optionally username/password to reset a user's login).
+// serves both the self-service Settings page (avatar/phone/email/mutedNotificationCategories directly;
+// name/nickname only for admin-like accounts — everyone else must go through a change request)
+// and the admin-only Employee Management edit form (name/nickname/avatar/department/accountType/
+// restrictedMenuIds, plus optionally username/password to reset a user's login).
 employeesRouter.put('/:id', async (req, res) => {
   const e = req.body ?? {};
 
   const [[target], [actor]] = await Promise.all([
-    pool.query<RowDataPacket[]>('SELECT account_type FROM employee WHERE id = ?', [req.params.id]).then(([rows]) => rows),
+    pool.query<RowDataPacket[]>('SELECT account_type, name, nickname FROM employee WHERE id = ?', [req.params.id]).then(([rows]) => rows),
     typeof e.actorEmployeeId === 'string' && e.actorEmployeeId
       ? pool.query<RowDataPacket[]>('SELECT account_type FROM employee WHERE id = ?', [e.actorEmployeeId]).then(([rows]) => rows)
       : Promise.resolve([undefined]),
@@ -181,6 +219,21 @@ employeesRouter.put('/:id', async (req, res) => {
   if (!target) return res.status(404).json({ message: 'ไม่พบพนักงานนี้' });
   if (!canEditOrDeleteTarget(e.actorEmployeeId, actor?.account_type, req.params.id, target.account_type)) {
     return res.status(403).json({ message: 'ไม่มีสิทธิ์แก้ไขข้อมูลพนักงานคนนี้' });
+  }
+
+  const isSelfEdit = e.actorEmployeeId === req.params.id;
+
+  // A plain employee editing their own account can't change name/nickname directly — that goes
+  // through a change request an admin approves (see change-requests.ts). Admin-like accounts, and
+  // anyone editing someone else's record, are unaffected. Only an actual change counts, so a form
+  // that re-sends the unchanged current values isn't blocked.
+  if (isSelfEdit && actor && !isAdminLike(actor.account_type)) {
+    const currentNickname = target.nickname || target.name;
+    const nameChanged = typeof e.name === 'string' && e.name.trim() && e.name.trim() !== target.name;
+    const nicknameChanged = typeof e.nickname === 'string' && e.nickname.trim() && e.nickname.trim() !== currentNickname;
+    if (nameChanged || nicknameChanged) {
+      return res.status(409).json({ message: 'ต้องขออนุมัติจากแอดมินก่อนจึงจะเปลี่ยนชื่อ/ชื่อเล่นได้', requiresApproval: true });
+    }
   }
 
   const employeeFields: string[] = [];
@@ -230,6 +283,22 @@ employeesRouter.put('/:id', async (req, res) => {
     employeeFields.push('address = ?');
     employeeValues.push(typeof e.address === 'string' && e.address.trim() ? e.address.trim() : null);
   }
+  if (Array.isArray(e.mutedNotificationCategories)) {
+    // Per-category mute list (Settings → การแจ้งเตือน) — de-duplicated, unknown ids dropped.
+    const muted = [...new Set(e.mutedNotificationCategories.filter(isNotificationCategory))];
+    employeeFields.push('muted_notification_categories = ?');
+    employeeValues.push(muted.length ? JSON.stringify(muted) : null);
+  }
+  // Contact email — also mirrored into login.email below (the forgot-password OTP flow looks the
+  // account up by that column), so the two never drift apart.
+  const newEmail = typeof e.email === 'string' && e.email.trim() ? e.email.trim().toLowerCase() : null;
+  if (newEmail) {
+    if (!EMAIL_PATTERN.test(newEmail)) {
+      return res.status(400).json({ message: 'รูปแบบอีเมลไม่ถูกต้อง' });
+    }
+    employeeFields.push('email = ?');
+    employeeValues.push(newEmail);
+  }
   const newUsername = typeof e.username === 'string' && e.username.trim() ? e.username.trim() : null;
   const newPassword = typeof e.password === 'string' && e.password ? e.password : null;
 
@@ -238,6 +307,23 @@ employeesRouter.put('/:id', async (req, res) => {
   }
 
   try {
+    if (newEmail) {
+      const [existingEmail] = await pool.query<RowDataPacket[]>(
+        'SELECT id FROM employee WHERE email = ? AND id != ? LIMIT 1',
+        [newEmail, req.params.id]
+      );
+      if (existingEmail.length > 0) {
+        return res.status(409).json({ message: 'มีพนักงานที่ใช้อีเมลนี้อยู่แล้ว' });
+      }
+    }
+
+    // Same once-a-day limit as the dedicated Settings endpoint below — without this a self-edit
+    // through this generic route (e.g. Employee Profile modal on your own account) would be a
+    // way around it. Someone else (an admin) resetting this password is never limited.
+    if (newPassword && isSelfEdit && (await isPasswordChangeLocked(req.params.id))) {
+      return res.status(429).json({ message: PASSWORD_COOLDOWN_MESSAGE });
+    }
+
     if (newUsername) {
       const [[target]] = await pool.query<RowDataPacket[]>(
         'SELECT account_type FROM employee WHERE id = ? LIMIT 1',
@@ -271,16 +357,24 @@ employeesRouter.put('/:id', async (req, res) => {
       await pool.query(`UPDATE employee SET ${employeeFields.join(', ')} WHERE id = ?`, [...employeeValues, req.params.id]);
     }
 
-    if (newUsername || newPassword) {
+    if (newUsername || newPassword || newEmail) {
       const loginFields: string[] = ['updated_at = ?'];
       const loginValues: unknown[] = [nowBangkokDateTime()];
       if (newUsername) {
         loginFields.push('username = ?');
         loginValues.push(newUsername);
       }
+      if (newEmail) {
+        loginFields.push('email = ?');
+        loginValues.push(newEmail);
+      }
       if (newPassword) {
         loginFields.push('password_hash = ?');
         loginValues.push(await bcrypt.hash(newPassword, 10));
+        if (isSelfEdit) {
+          loginFields.push('password_changed_at = ?');
+          loginValues.push(nowBangkokDateTime());
+        }
       }
       await pool.query(`UPDATE login SET ${loginFields.join(', ')} WHERE employee_id = ?`, [...loginValues, req.params.id]);
     }
@@ -288,6 +382,38 @@ employeesRouter.put('/:id', async (req, res) => {
     res.json({ id: req.params.id });
   } catch (err) {
     console.error('PUT /api/employees/:id failed:', err);
+    res.status(500).json({ message: 'เกิดข้อผิดพลาดในระบบ กรุณาลองใหม่อีกครั้ง' });
+  }
+});
+
+// Self-service password change from the Settings page — the only route that's allowed to change
+// your own password with an explicit "one per day" rule. Deliberately separate from the generic
+// PUT above so its limit and error messages stay specific to this action.
+employeesRouter.put('/:id/password', async (req, res) => {
+  const b = req.body ?? {};
+  if (typeof b.actorEmployeeId !== 'string' || b.actorEmployeeId !== req.params.id) {
+    return res.status(403).json({ message: 'เปลี่ยนรหัสผ่านได้เฉพาะบัญชีของตัวเองเท่านั้น' });
+  }
+  if (typeof b.password !== 'string' || b.password.length < 6) {
+    return res.status(400).json({ message: 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร' });
+  }
+
+  try {
+    const [loginRows] = await pool.query<RowDataPacket[]>('SELECT 1 FROM login WHERE employee_id = ? LIMIT 1', [req.params.id]);
+    if (loginRows.length === 0) return res.status(404).json({ message: 'ไม่พบบัญชีผู้ใช้งานนี้' });
+
+    if (await isPasswordChangeLocked(req.params.id)) {
+      return res.status(429).json({ message: PASSWORD_COOLDOWN_MESSAGE });
+    }
+
+    const now = nowBangkokDateTime();
+    await pool.query(
+      'UPDATE login SET password_hash = ?, password_changed_at = ?, updated_at = ? WHERE employee_id = ?',
+      [await bcrypt.hash(b.password, 10), now, now, req.params.id]
+    );
+    res.status(204).end();
+  } catch (err) {
+    console.error('PUT /api/employees/:id/password failed:', err);
     res.status(500).json({ message: 'เกิดข้อผิดพลาดในระบบ กรุณาลองใหม่อีกครั้ง' });
   }
 });

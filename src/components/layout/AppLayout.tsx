@@ -19,6 +19,7 @@ const PAGE_META: Record<string, { title: string; subtitle?: string }> = {
   docs: { title: 'เอกสาร Drive', subtitle: 'จัดการและจัดเก็บเอกสารสำหรับใช้งานในองค์กรอย่างปลอดภัย' },
   vault: { title: 'คลังรหัสผ่าน', subtitle: 'จัดการและจัดเก็บรหัสผ่านสำหรับใช้งานในองค์กร' },
   employees: { title: 'จัดการพนักงาน', subtitle: 'สร้างและจัดการบัญชีพนักงานในองค์กร' },
+  settings: { title: 'การตั้งค่า', subtitle: 'จัดการบัญชีของคุณและการแจ้งเตือน' },
 };
 
 export default function AppLayout() {

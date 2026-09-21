@@ -9,6 +9,7 @@ import { ApiError } from '../../lib/api';
 import Dropdown from '../Dropdown';
 import ThaiDatePicker from '../ThaiDatePicker';
 import { useEscapeToClose } from '../../lib/useEscapeToClose';
+import { useConfirm } from '../../context/ConfirmContext';
 
 interface ScheduleMeetingModalProps {
   isOpen: boolean;
@@ -130,10 +131,20 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
   };
 
   useEscapeToClose(isOpen, resetAndClose);
+  const confirm = useConfirm();
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!isFormValid || isSubmitting) return;
+    // Only editing an existing meeting asks first — scheduling a new one isn't an edit or delete.
+    if (isEditMode && meetingToEdit && onUpdateMeeting) {
+      const confirmed = await confirm({
+        title: 'ยืนยันการบันทึกการแก้ไขนัดประชุม?',
+        message: `บันทึกการแก้ไขนัดประชุม "${title.trim()}"`,
+        confirmLabel: 'บันทึก',
+      });
+      if (!confirmed) return;
+    }
     setFormError('');
     setIsSubmitting(true);
     try {

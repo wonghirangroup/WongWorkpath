@@ -13,7 +13,7 @@ import { DEFAULT_ORG_DIVISIONS, OrgDivisionData } from '../data/orgStructure';
 import {
   INITIAL_EMPLOYEES
 } from '../data/mockData';
-import { fetchEmployees, createEmployee, updateEmployeeRemote, deleteEmployeeRemote, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote, fetchProjects, createProject, updateProjectRemote, deleteProjectRemote, CreateProjectPayload, fetchMeetings, createMeeting, updateMeetingRemote, fetchProjectTasks, createProjectTask, updateProjectTaskRemote, deleteProjectTaskRemote, fetchProjectCustomStatuses, createProjectCustomStatus, deleteProjectCustomStatusRemote, fetchNotifications, createNotification, markNotificationRead, markAllNotificationsRead, CreateNotificationPayload, fetchChangeRequests, createChangeRequest, decideChangeRequest, ChangeRequest, fetchDocuments, createDocument, updateDocumentRemote, deleteDocumentRemote } from '../lib/api';
+import { fetchEmployees, createEmployee, updateEmployeeRemote, changeSelfPassword, deleteEmployeeRemote, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote, fetchProjects, createProject, updateProjectRemote, deleteProjectRemote, CreateProjectPayload, fetchMeetings, createMeeting, updateMeetingRemote, fetchProjectTasks, createProjectTask, updateProjectTaskRemote, deleteProjectTaskRemote, fetchProjectCustomStatuses, createProjectCustomStatus, deleteProjectCustomStatusRemote, fetchNotifications, createNotification, markNotificationRead, markAllNotificationsRead, CreateNotificationPayload, fetchChangeRequests, createChangeRequest, decideChangeRequest, ChangeRequest, fetchDocuments, createDocument, updateDocumentRemote, deleteDocumentRemote } from '../lib/api';
 import { nowTimestamp } from '../lib/datetime';
 import type { ProjectRow, ProjectTaskItem, CustomProjectStatus } from '../components/projectBoard/types';
 import { registerCustomStatusLabels } from '../components/projectBoard/statusMeta';
@@ -41,9 +41,11 @@ interface AppDataContextValue {
   handleAddEmployee: (employee: Employee & { password: string }) => Promise<void>;
   handleUpdateEmployee: (
     id: string,
-    updates: Partial<Pick<Employee, 'name' | 'nickname' | 'role' | 'avatar' | 'department' | 'division' | 'username' | 'accountType' | 'restrictedMenuIds' | 'phone' | 'address'>> & { password?: string }
+    updates: Partial<Pick<Employee, 'name' | 'nickname' | 'role' | 'avatar' | 'department' | 'division' | 'username' | 'accountType' | 'restrictedMenuIds' | 'phone' | 'address' | 'email' | 'mutedNotificationCategories'>> & { password?: string }
   ) => Promise<void>;
   handleDeleteEmployee: (id: string, reason: string) => Promise<void>;
+  handleChangeSelfPassword: (password: string) => Promise<void>;
+  handleRefreshAccountData: () => Promise<void>;
   handleAddProject: (payload: CreateProjectPayload) => Promise<ProjectRow>;
   handleUpdateProject: (id: string, updates: Partial<ProjectRow>) => Promise<void>;
   handleDeleteProject: (id: string) => Promise<void>;
@@ -55,7 +57,7 @@ interface AppDataContextValue {
   handleDeleteProjectTask: (id: string) => Promise<void>;
   changeRequests: ChangeRequest[];
   handleRequestChange: (
-    entityType: 'project' | 'project_task',
+    entityType: 'project' | 'project_task' | 'employee',
     entityId: string,
     requestType: 'edit' | 'delete',
     proposedChanges: Record<string, unknown> | undefined,
@@ -462,6 +464,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         if (t.daysUntilDue! < 0) {
           attempt(`notif_overdue_${t.id}`, {
             title: 'งานเลยกำหนดส่งแล้ว',
+            category: 'deadline',
             message: `งาน "${t.title}" ในโครงการ ${projectTitle} เลยกำหนดส่งแล้ว`,
             type: 'warning',
             linkType: 'project',
@@ -470,6 +473,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         } else if (t.daysUntilDue! <= 2) {
           attempt(`notif_duesoon_${t.id}`, {
             title: 'งานใกล้ครบกำหนด',
+            category: 'deadline',
             message: `งาน "${t.title}" ในโครงการ ${projectTitle} ครบกำหนดในอีก ${t.daysUntilDue} วัน`,
             type: 'warning',
             linkType: 'project',
@@ -487,6 +491,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       .forEach((m) => {
         attempt(`notif_meetingsoon_${m.id}`, {
           title: 'ใกล้ถึงเวลานัดประชุม',
+          category: 'meeting',
           message: `"${m.title}" วันที่ ${m.date} เวลา ${m.startTime}`,
           type: 'info',
           linkType: m.projectId ? 'project' : undefined,
@@ -632,7 +637,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   // by both the self-service "แก้ไขโปรไฟล์" form and the admin-only Employee Management edit form.
   const handleUpdateEmployee = async (
     id: string,
-    updates: Partial<Pick<Employee, 'name' | 'nickname' | 'role' | 'avatar' | 'department' | 'division' | 'username' | 'accountType' | 'restrictedMenuIds' | 'phone' | 'address'>> & { password?: string }
+    updates: Partial<Pick<Employee, 'name' | 'nickname' | 'role' | 'avatar' | 'department' | 'division' | 'username' | 'accountType' | 'restrictedMenuIds' | 'phone' | 'address' | 'email' | 'mutedNotificationCategories'>> & { password?: string }
   ) => {
     await updateEmployeeRemote(id, updates, currentUser?.id);
     // password is a login-only field, never part of the Employee shape kept in state/localStorage
@@ -653,6 +658,24 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     if (target) handleLogAudit('DELETE_EMPLOYEE', `ลบบัญชีพนักงาน: "${target.name}" ออกจากระบบถาวร — เหตุผล: ${reason}`);
   };
 
+  // Settings → เปลี่ยนรหัสผ่าน — a dedicated call (not handleUpdateEmployee) since it carries its own
+  // once-a-day limit; the password itself never enters client state, only an audit line.
+  const handleChangeSelfPassword = async (password: string) => {
+    if (!currentUser) return;
+    await changeSelfPassword(currentUser.id, password);
+    handleLogAudit('CHANGE_PASSWORD', `เปลี่ยนรหัสผ่านของตัวเอง: "${currentUser.name}"`);
+  };
+
+  // A name/nickname change request is decided on an admin's own client, so the requester's copy of
+  // `employees`/`changeRequests` is stale until reloaded — the Settings page calls this on open so
+  // it never shows an already-approved request as still pending (or an old name).
+  const handleRefreshAccountData = async () => {
+    const [freshEmployees, freshRequests] = await Promise.all([fetchEmployees(), fetchChangeRequests()]);
+    setEmployees(freshEmployees);
+    localStorage.setItem('unityspace_employees', JSON.stringify(freshEmployees));
+    setChangeRequests(freshRequests);
+  };
+
   // 0a. Project Operations (จัดการงานและโครงการ) — real `project` table, no localStorage layer.
   // Create awaits the API since the server generates both `id` and the human-facing "PRJ-NNN"
   // code, unlike credentials' fire-and-forget pattern where the client already owns the id.
@@ -670,6 +693,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         pushNotification({
           targetEmployeeId: employeeId,
           title: 'คุณถูกตั้งเป็นผู้รับผิดชอบหลัก',
+          category: 'assignment',
           message: `คุณถูกตั้งเป็นผู้รับผิดชอบหลักโครงการ "${created.title}"`,
           type: 'info',
           linkType: 'project',
@@ -699,6 +723,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           pushNotification({
             targetEmployeeId: employeeId,
             title: 'คุณถูกตั้งเป็นผู้รับผิดชอบหลัก',
+            category: 'assignment',
             message: `คุณถูกตั้งเป็นผู้รับผิดชอบหลักโครงการ "${updated.title}"`,
             type: 'info',
             linkType: 'project',
@@ -756,6 +781,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         pushNotification({
           targetEmployeeId: assigneeId,
           title: 'ได้รับมอบหมายงานใหม่',
+          category: 'assignment',
           message: `คุณได้รับมอบหมายงาน "${created.title}" ในโครงการ ${projectTitle}`,
           type: 'info',
           linkType: 'project',
@@ -784,6 +810,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     if (updates.status === 'review' && before?.status !== 'review') {
       notifyEach(updated.reviewerEmployeeIds, {
         title: 'มีงานรอตรวจ',
+        category: 'review',
         message: `งาน "${updated.title}" ในโครงการ ${projectTitle} ถูกส่งมาให้ตรวจแล้ว`,
         type: 'warning',
         linkType: 'project',
@@ -797,6 +824,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       const passed = updates.status === 'done';
       notifyEach(updated.assigneeEmployeeIds, {
         title: passed ? 'งานของคุณผ่านการตรวจแล้ว' : 'งานของคุณถูกตีกลับ',
+        category: 'review',
         message: passed
           ? `งาน "${updated.title}" ในโครงการ ${projectTitle} ผ่านการตรวจเรียบร้อย`
           : `งาน "${updated.title}" ถูกตีกลับ: ${updates.reviewNote || 'ไม่ได้ระบุเหตุผล'}`,
@@ -819,6 +847,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       ]);
       notifyEach(Array.from(involvedIds), {
         title: 'งานติดปัญหา',
+        category: 'blocked',
         message: `งาน "${updated.title}" ในโครงการ ${projectTitle} ถูกทำเครื่องหมายว่าติดปัญหา: ${updated.blockedReason || 'ไม่ได้ระบุเหตุผล'}`,
         type: 'warning',
         linkType: 'project',
@@ -840,7 +869,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   // left untouched here; only handleDecideChangeRequest's approve path actually changes it. Every
   // current owner gets notified, since any one of them can decide (equal authority).
   const handleRequestChange = async (
-    entityType: 'project' | 'project_task',
+    entityType: 'project' | 'project_task' | 'employee',
     entityId: string,
     requestType: 'edit' | 'delete',
     proposedChanges: Record<string, unknown> | undefined,
@@ -851,6 +880,23 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       requestedBy: currentUser?.id ?? '',
     });
     setChangeRequests((prev) => [request, ...prev]);
+
+    // A name/nickname change request (Settings) has no owner to tell — every admin-like account
+    // can decide it, so all of them are notified instead.
+    if (entityType === 'employee') {
+      const who = currentUser?.nickname || currentUser?.name || 'พนักงาน';
+      employees
+        .filter((emp) => emp.id !== currentUser?.id && (emp.accountType === 'admin' || emp.accountType === 'superadmin' || emp.accountType === 'executive'))
+        .forEach((emp) => pushNotification({
+          targetEmployeeId: emp.id,
+          title: 'มีคำขอเปลี่ยนชื่อรออนุมัติ',
+          category: 'approval',
+          message: `${who} ขอเปลี่ยนชื่อ/ชื่อเล่น — เหตุผล: ${reason}`,
+          type: 'warning',
+        }));
+      handleLogAudit('REQUEST_EDIT', `ขอเปลี่ยนชื่อ/ชื่อเล่นของตัวเอง — เหตุผล: ${reason}`);
+      return;
+    }
 
     const project = entityType === 'project' ? projects.find((p) => p.id === entityId) : undefined;
     const task = entityType === 'project_task' ? projectTasks.find((t) => t.id === entityId) : undefined;
@@ -864,6 +910,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       .forEach((empId) => pushNotification({
         targetEmployeeId: empId,
         title: requestType === 'edit' ? 'มีคำขอแก้ไขรออนุมัติ' : 'มีคำขอลบรออนุมัติ',
+        category: 'approval',
         message: `${requesterName} ขอ${requestType === 'edit' ? 'แก้ไข' : 'ลบ'} "${entityTitle}" — เหตุผล: ${reason}`,
         type: 'warning',
         linkType: 'project',
@@ -885,6 +932,32 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     const updated = await decideChangeRequest(requestId, decision, currentUser?.id ?? '', note);
     setChangeRequests((prev) => prev.map((r) => (r.id === requestId ? updated : r)));
     if (!before) return;
+
+    // Employee-entity request (name/nickname change): approval already updated the employee row
+    // server-side, so just reload the employee list; the only person to tell is the requester.
+    if (before.entityType === 'employee') {
+      if (decision === 'approve') {
+        const freshEmployees = await fetchEmployees();
+        setEmployees(freshEmployees);
+        localStorage.setItem('unityspace_employees', JSON.stringify(freshEmployees));
+      }
+      if (before.requestedBy) {
+        pushNotification({
+          targetEmployeeId: before.requestedBy,
+          title: decision === 'approve' ? 'คำขอของคุณได้รับการอนุมัติแล้ว' : 'คำขอของคุณไม่ได้รับการอนุมัติ',
+          category: 'approval',
+          message: decision === 'approve'
+            ? 'คำขอเปลี่ยนชื่อ/ชื่อเล่นของคุณได้รับการอนุมัติแล้ว'
+            : `คำขอเปลี่ยนชื่อ/ชื่อเล่นของคุณถูกปฏิเสธ${note ? `: ${note}` : ''}`,
+          type: decision === 'approve' ? 'success' : 'warning',
+        });
+      }
+      handleLogAudit(
+        decision === 'approve' ? 'APPROVE_CHANGE_REQUEST' : 'REJECT_CHANGE_REQUEST',
+        `${decision === 'approve' ? 'อนุมัติ' : 'ปฏิเสธ'}คำขอเปลี่ยนชื่อ/ชื่อเล่น${note ? ` — เหตุผล: ${note}` : ''}`
+      );
+      return;
+    }
 
     const project = before.entityType === 'project' ? projects.find((p) => p.id === before.entityId) : undefined;
     const task = before.entityType === 'project_task' ? projectTasks.find((t) => t.id === before.entityId) : undefined;
@@ -912,6 +985,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       newlyAddedOwnerIds.forEach((empId) => pushNotification({
         targetEmployeeId: empId,
         title: 'คุณถูกตั้งเป็นผู้รับผิดชอบหลัก',
+        category: 'assignment',
         message: `คุณถูกตั้งเป็นผู้รับผิดชอบหลักโครงการ "${entityTitle}"`,
         type: 'info',
         linkType: 'project',
@@ -925,6 +999,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         pushNotification({
           targetEmployeeId: before.requestedBy,
           title: 'คำขอของคุณได้รับการอนุมัติแล้ว',
+          category: 'approval',
           message: `คำขอ${before.requestType === 'edit' ? 'แก้ไข' : 'ลบ'} "${entityTitle}" ได้รับการอนุมัติแล้ว`,
           type: 'success',
           linkType: 'project',
@@ -935,6 +1010,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       others.forEach((empId) => pushNotification({
         targetEmployeeId: empId,
         title: before.requestType === 'edit' ? 'มีการแก้ไข' : 'มีการลบ',
+        category: 'approval',
         message: `"${entityTitle}" ถูก${before.requestType === 'edit' ? 'แก้ไข' : 'ลบ'}แล้ว`,
         type: 'info',
         linkType: 'project',
@@ -944,6 +1020,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       pushNotification({
         targetEmployeeId: before.requestedBy,
         title: 'คำขอของคุณไม่ได้รับการอนุมัติ',
+        category: 'approval',
         message: `คำขอ${before.requestType === 'edit' ? 'แก้ไข' : 'ลบ'} "${entityTitle}" ถูกปฏิเสธ${note ? `: ${note}` : ''}`,
         type: 'warning',
         linkType: 'project',
@@ -1208,6 +1285,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         pushNotification({
           targetEmployeeId: attendeeId,
           title: 'มีนัดประชุมใหม่',
+          category: 'meeting',
           message: `"${created.title}" วันที่ ${created.date} เวลา ${created.startTime}`,
           type: 'info',
           linkType: created.projectId ? 'project' : undefined,
@@ -1235,6 +1313,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           pushNotification({
             targetEmployeeId: attendeeId,
             title: 'การประชุมถูกยกเลิก',
+            category: 'meeting',
             message: `"${updated.title}" วันที่ ${updated.date} ถูกยกเลิก: ${updated.cancellationReason || 'ไม่ได้ระบุเหตุผล'}`,
             type: 'warning',
             linkType: updated.projectId ? 'project' : undefined,
@@ -1317,6 +1396,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     unreadCount,
     handleAddEmployee,
     handleUpdateEmployee,
+    handleChangeSelfPassword,
+    handleRefreshAccountData,
     handleDeleteEmployee,
     handleAddProject,
     handleUpdateProject,

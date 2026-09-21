@@ -4,11 +4,12 @@ import { pool } from '../db.ts';
 import { nowBangkokDateTime } from '../lib/datetime.ts';
 import { applyProjectFields } from './projects.ts';
 import { applyTaskFields } from './project-tasks.ts';
-import { isOwner, isExecutiveActor, resolveValidOwnerIds } from '../lib/ownership.ts';
+import { applyEmployeeFields } from './employees.ts';
+import { isOwner, isExecutiveActor, isEmployeeManagerActor, resolveValidOwnerIds } from '../lib/ownership.ts';
 
 export const changeRequestsRouter = Router();
 
-const ENTITY_TYPES = ['project', 'project_task'];
+const ENTITY_TYPES = ['project', 'project_task', 'employee'];
 const REQUEST_TYPES = ['edit', 'delete'];
 
 interface ChangeRequestRowDb extends RowDataPacket {
@@ -79,6 +80,11 @@ changeRequestsRouter.post('/', async (req, res) => {
   if (typeof b.reason !== 'string' || !b.reason.trim()) {
     return res.status(400).json({ message: 'กรุณาระบุเหตุผล' });
   }
+  // Employee-entity requests are only ever "I want my own name/nickname changed" — never a delete,
+  // and never about someone else's record.
+  if (b.entityType === 'employee' && (b.requestType !== 'edit' || b.requestedBy !== b.entityId)) {
+    return res.status(400).json({ message: 'ประเภทคำขอไม่ถูกต้อง' });
+  }
 
   try {
     // At most one pending request per entity at a time — a second person can't file a competing
@@ -137,16 +143,23 @@ changeRequestsRouter.put('/:id/decide', async (req, res) => {
     // which used to be UI-only: hitting this route directly let anyone approve/reject on someone
     // else's behalf. An entity with no valid owner/assignee stays open to everyone, same "unowned =
     // open" rule as isOwner everywhere else.
-    let entityOwnerIds: string[] = [];
-    if (existing.entity_type === 'project') {
-      const [[project]] = await pool.query<RowDataPacket[]>('SELECT owner_employee_ids FROM project WHERE id = ?', [existing.entity_id]);
-      entityOwnerIds = project?.owner_employee_ids ? JSON.parse(project.owner_employee_ids) : [];
+    // An employee-entity request (name/nickname change) has no "owner" — any admin-like account
+    // (admin/superadmin/executive) may decide it instead.
+    let canDecide: boolean;
+    if (existing.entity_type === 'employee') {
+      canDecide = await isEmployeeManagerActor(b.decidedBy);
     } else {
-      const [[task]] = await pool.query<RowDataPacket[]>('SELECT assignee_employee_ids FROM project_task WHERE id = ?', [existing.entity_id]);
-      entityOwnerIds = task?.assignee_employee_ids ? JSON.parse(task.assignee_employee_ids) : [];
+      let entityOwnerIds: string[] = [];
+      if (existing.entity_type === 'project') {
+        const [[project]] = await pool.query<RowDataPacket[]>('SELECT owner_employee_ids FROM project WHERE id = ?', [existing.entity_id]);
+        entityOwnerIds = project?.owner_employee_ids ? JSON.parse(project.owner_employee_ids) : [];
+      } else {
+        const [[task]] = await pool.query<RowDataPacket[]>('SELECT assignee_employee_ids FROM project_task WHERE id = ?', [existing.entity_id]);
+        entityOwnerIds = task?.assignee_employee_ids ? JSON.parse(task.assignee_employee_ids) : [];
+      }
+      const validOwnerIds = await resolveValidOwnerIds(entityOwnerIds);
+      canDecide = (isOwner(validOwnerIds, b.decidedBy) && validOwnerIds.length > 0) || (await isExecutiveActor(b.decidedBy));
     }
-    const validOwnerIds = await resolveValidOwnerIds(entityOwnerIds);
-    const canDecide = (isOwner(validOwnerIds, b.decidedBy) && validOwnerIds.length > 0) || (await isExecutiveActor(b.decidedBy));
     if (!canDecide) {
       return res.status(403).json({ message: 'คุณไม่มีสิทธิ์พิจารณาคำขอนี้' });
     }
@@ -158,11 +171,18 @@ changeRequestsRouter.put('/:id/decide', async (req, res) => {
         const proposedChanges = existing.proposed_changes ? JSON.parse(existing.proposed_changes) : {};
         if (existing.entity_type === 'project') {
           await applyProjectFields(existing.entity_id, proposedChanges);
+        } else if (existing.entity_type === 'employee') {
+          await applyEmployeeFields(existing.entity_id, proposedChanges);
         } else {
           await applyTaskFields(existing.entity_id, proposedChanges);
         }
       } else {
         // request_type === 'delete'
+        if (existing.entity_type === 'employee') {
+          // Employee deletion isn't a change-request flow (see employees.ts's DELETE) — an
+          // employee-entity request is only ever a name/nickname edit.
+          return res.status(400).json({ message: 'ประเภทคำขอไม่ถูกต้อง' });
+        }
         if (existing.entity_type === 'project') {
           await pool.query('DELETE FROM project WHERE id = ?', [existing.entity_id]);
         } else {
