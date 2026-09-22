@@ -1081,7 +1081,7 @@ export default function DocVault({
           )}
         </div>
 
-        <div className="flex items-center gap-3 flex-1 min-w-0">
+        <div className="flex flex-wrap lg:flex-nowrap items-center gap-3 flex-1 min-w-0">
           {/* Grid / list view toggle */}
           <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-xl p-1 shrink-0">
             <Tooltip content="มุมมองตาราง">
@@ -1136,10 +1136,10 @@ export default function DocVault({
           )}
 
           {/* "+" split button — opens a 3-way menu: folder / file upload / link */}
-          <div className="relative lg:ml-auto shrink-0" ref={addMenuRef}>
+          <div className="relative lg:ml-auto shrink-0 max-sm:w-full" ref={addMenuRef}>
             <button
               onClick={() => setAddMenuOpen((prev) => !prev)}
-              className="bg-[#FF6537] hover:opacity-90 text-white text-sm font-bold px-4 h-10 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+              className="bg-[#FF6537] hover:opacity-90 text-white text-sm font-bold px-4 h-10 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap max-sm:w-full"
             >
               <Plus size={16} /> สร้าง / อัปโหลด
               <ChevronDown size={14} className={`transition-transform duration-150 ease-out ${addMenuOpen ? 'rotate-180' : ''}`} />
@@ -1414,9 +1414,9 @@ export default function DocVault({
                 />
               );
               const footer = (
-                <div className="flex justify-between items-center text-[11px] font-normal text-[#6F6F6F] pt-2 border-t border-[#EDEEEF]">
-                  <span>สร้างโดย: {doc.creatorEmployeeId === currentUserId ? 'คุณ' : creatorName}</span>
-                  <span>สร้างเมื่อ: {formatThaiDateShort(createdDate)}</span>
+                <div className="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:items-center text-[11px] font-normal text-[#6F6F6F] pt-2 border-t border-[#EDEEEF]">
+                  <span className="min-w-0 truncate">สร้างโดย: {doc.creatorEmployeeId === currentUserId ? 'คุณ' : creatorName}</span>
+                  <span className="shrink-0">สร้างเมื่อ: {formatThaiDateShort(createdDate)}</span>
                 </div>
               );
 

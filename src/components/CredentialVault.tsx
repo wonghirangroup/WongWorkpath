@@ -7,6 +7,7 @@ import { getAvatarColor } from '../lib/avatarColor';
 import { getDepartmentTagClass } from '../lib/departmentColors';
 import Dropdown from './Dropdown';
 import { useConfirm } from '../context/ConfirmContext';
+import { isPhoneViewport } from '../lib/viewport';
 import {
   Eye,
   EyeOff,
@@ -230,7 +231,7 @@ export default function CredentialVault({
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [scopeFilter, setScopeFilter] = useState<CredentialItem['scope'] | '__all__'>('__all__');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => (isPhoneViewport() ? 'grid' : 'list'));
   const [sortBy, setSortBy] = useState<'latest' | 'oldest' | 'az'>('latest');
   const [isResultFilterOpen, setIsResultFilterOpen] = useState(false);
   const resultFilterRef = useRef<HTMLDivElement>(null);
@@ -701,7 +702,7 @@ export default function CredentialVault({
               )}
             </div>
 
-            <div className="flex items-center gap-3 flex-1 min-w-0">
+            <div className="flex flex-wrap lg:flex-nowrap items-center gap-3 flex-1 min-w-0">
               {/* Grid / list view toggle */}
               <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-xl p-1 shrink-0">
                 <Tooltip content="มุมมองตาราง">
@@ -739,7 +740,7 @@ export default function CredentialVault({
 
               <button
                 onClick={() => (showAddForm ? resetCredentialForm() : setShowAddForm(true))}
-                className="bg-[#FF6537] hover:opacity-90 text-white text-sm font-bold px-4 h-10 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shrink-0 whitespace-nowrap lg:ml-auto"
+                className="bg-[#FF6537] hover:opacity-90 text-white text-sm font-bold px-4 h-10 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shrink-0 whitespace-nowrap lg:ml-auto max-sm:w-full"
               >
                 <Plus size={16} /> สร้างรหัสผ่านใหม่
               </button>

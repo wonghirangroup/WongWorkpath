@@ -109,13 +109,13 @@ export default function DashboardToolbar({ onCreateProject, onExportCsv, onExpor
         </div>
       )}
 
-      <div className="flex items-center gap-3 print:hidden lg:ml-auto">
+      <div className="flex flex-wrap lg:flex-nowrap items-center gap-3 print:hidden lg:ml-auto">
         <WidgetSettingsMenu prefs={widgetPrefs} onChange={onWidgetPrefsChange} />
         <ExportMenu onExportCsv={onExportCsv} onExportPdf={onExportPdf} />
         <button
           type="button"
           onClick={onCreateProject}
-          className="bg-[#FF6537] hover:opacity-90 text-white text-sm font-bold px-4 h-10 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shrink-0 whitespace-nowrap transition-colors"
+          className="bg-[#FF6537] hover:opacity-90 text-white text-sm font-bold px-4 h-10 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shrink-0 whitespace-nowrap max-sm:w-full transition-colors"
           id="btn-create-project-dash"
         >
           <Plus size={16} />

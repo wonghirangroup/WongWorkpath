@@ -22,6 +22,7 @@ import ProjectCard from './ProjectCard';
 import ProjectDetail from './ProjectDetail';
 import CreateProjectModal from './CreateProjectModal';
 import Tooltip from '../Tooltip';
+import { isPhoneViewport } from '../../lib/viewport';
 
 type SortBy = 'newest' | 'oldest' | 'near_deadline' | 'progress' | 'name';
 
@@ -154,7 +155,8 @@ const PAGE_SIZE = 3;
 
 export default function ProjectBoard({ employees, onCreateFolder, currentUserId }: ProjectBoardProps) {
   const [search, setSearch] = useState('');
-  const [view, setView] = useState<'list' | 'grid'>('list');
+  // A 14-column table is unreadable on a phone, so phones start on the card view.
+  const [view, setView] = useState<'list' | 'grid'>(() => (isPhoneViewport() ? 'grid' : 'list'));
   const [filter, setFilter] = useState<ProjectFilter>('all');
   const [sortBy, setSortBy] = useState<SortBy>('newest');
   const [currentPage, setCurrentPage] = useState(1);
@@ -482,7 +484,7 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
           <button
             type="button"
             onClick={() => setIsCreateModalOpen(true)}
-            className="bg-[#FF6537] hover:opacity-90 text-white text-sm font-bold px-4 h-10 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shrink-0 whitespace-nowrap transition-colors"
+            className="bg-[#FF6537] hover:opacity-90 text-white text-sm font-bold px-4 h-10 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shrink-0 whitespace-nowrap transition-colors max-sm:w-full"
           >
             <Plus size={16} />
             สร้างโครงการใหม่

@@ -205,17 +205,19 @@ export default function Sidebar({ isMobileMenuOpen, onCloseMobileMenu }: Sidebar
         </div>
       </aside>
 
-      {/* Mobile Navigation Drawer Overlay */}
+      {/* Mobile Navigation Drawer Overlay — z-[45] sits above every page's sticky toolbar (z-30) and
+          the app Header (z-40) (at z-30 the toolbars painted over the menu) but below modals (z-50).
+          It covers the Header on purpose: the drawer has its own logo + close row. */}
       {isMobileMenuOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-30 lg:hidden flex" onClick={onCloseMobileMenu}>
-          <div className="bg-[#1c1c1e] w-64 h-full p-5 space-y-6 flex flex-col justify-between overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-[45] lg:hidden flex" onClick={onCloseMobileMenu}>
+          <div className="bg-[#1c1c1e] w-64 max-w-[85vw] h-full p-5 space-y-6 flex flex-col justify-between overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div>
               <div className="flex justify-between items-center pb-3 border-b border-white/10">
                 <div className="flex items-center gap-2">
                   <img src={logo} alt="" className="w-8 h-8 rounded-full shrink-0 object-cover" />
                   <span className="font-bold text-sm text-white">Wong Workpath</span>
                 </div>
-                <button onClick={onCloseMobileMenu} className="text-white cursor-pointer"><X size={18} /></button>
+                <button onClick={onCloseMobileMenu} className="text-white cursor-pointer p-2 -mr-2" aria-label="ปิดเมนู"><X size={20} /></button>
               </div>
 
               <nav className="space-y-1 mt-4">
@@ -226,24 +228,24 @@ export default function Sidebar({ isMobileMenuOpen, onCloseMobileMenu }: Sidebar
                       key={id}
                       to={`/${id}`}
                       onClick={onCloseMobileMenu}
-                      className={`group w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                      className={`group w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-all cursor-pointer ${
                         isActive ? 'bg-[#f4622f] text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'
                       }`}
                     >
-                      <span className="relative w-[15px] h-[15px] shrink-0 flex items-center justify-center">
+                      <span className="relative w-[18px] h-[18px] shrink-0 flex items-center justify-center">
                         {IconComponent ? (
-                          <IconComponent size={15} strokeWidth={1.75} />
+                          <IconComponent size={18} strokeWidth={1.75} />
                         ) : (
                           <>
                             <img
                               src={iconInactive}
                               alt=""
-                              className={`absolute inset-0 w-[15px] h-[15px] object-contain transition-opacity ${isActive ? 'opacity-0' : 'opacity-100 group-hover:opacity-0'}`}
+                              className={`absolute inset-0 w-[18px] h-[18px] object-contain transition-opacity ${isActive ? 'opacity-0' : 'opacity-100 group-hover:opacity-0'}`}
                             />
                             <img
                               src={iconActive}
                               alt=""
-                              className={`absolute inset-0 w-[15px] h-[15px] object-contain transition-opacity ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                              className={`absolute inset-0 w-[18px] h-[18px] object-contain transition-opacity ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
                             />
                           </>
                         )}
@@ -257,9 +259,9 @@ export default function Sidebar({ isMobileMenuOpen, onCloseMobileMenu }: Sidebar
 
             <button
               onClick={() => { onCloseMobileMenu(); setShowLogoutConfirm(true); }}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-[#f4622f] hover:text-white hover:bg-white/5 transition-all cursor-pointer"
+              className="w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium text-[#f4622f] hover:text-white hover:bg-white/5 transition-all cursor-pointer"
             >
-              <img src={logoutIcon} alt="" className="w-3.75 h-3.75 object-contain shrink-0" />
+              <img src={logoutIcon} alt="" className="w-[18px] h-[18px] object-contain shrink-0" />
               <span>ออกจากระบบ</span>
             </button>
           </div>

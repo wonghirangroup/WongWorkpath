@@ -471,7 +471,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
             <EmployeeLocateSearch employees={employees} onSelect={(id) => orgChartRef.current?.focusOnEmployee(id)} />
           </div>
 
-          <div className="flex items-center gap-2 flex-1 min-w-0">
+          <div className="flex flex-wrap lg:flex-nowrap items-center gap-2 flex-1 min-w-0">
             <div className="w-44 h-10 shrink-0">
               <Dropdown<string>
                 value={orgFilterDivision}

@@ -490,7 +490,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
           scroll underneath it — this in-body heading just labels the workspace below it. */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h2 className="text-2xl font-bold text-[#272220] truncate">รายละเอียดโครงการ</h2>
-        <div className="flex gap-2.5 shrink-0">
+        <div className="flex flex-wrap gap-2.5 w-full sm:w-auto sm:shrink-0">
           <button
             type="button"
             onClick={() => setIsAddOwnerOpen(true)}
@@ -510,7 +510,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
           <button
             type="button"
             onClick={openAddTask}
-            className="inline-flex items-center gap-1.5 bg-[#FF6537] hover:bg-[#e6572c] text-white text-sm font-bold px-4 h-10 rounded-xl cursor-pointer transition-colors shrink-0"
+            className="inline-flex items-center justify-center gap-1.5 bg-[#FF6537] hover:bg-[#e6572c] text-white text-sm font-bold px-4 h-10 rounded-xl cursor-pointer transition-colors shrink-0 max-sm:w-full"
           >
             <Plus size={16} />
             เพิ่มงาน/นัดประชุม
@@ -701,7 +701,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm border-collapse">
+              <table className="w-full min-w-190 text-sm border-collapse">
                 <thead>
                   <tr className="bg-[#F9F9F9] text-[12px] font-semibold text-[#000000] border-b border-[#EDEEEF]">
                     <th className="px-5 py-3">สถานะ</th>
@@ -737,7 +737,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                             )}
                           </div>
                         </td>
-                        <td className="px-5 py-3 font-medium text-[#272220] max-w-70">
+                        <td className="px-5 py-3 font-medium text-[#272220] min-w-52 max-w-70">
                           {t.title}
                           {t.description && <Tooltip content={t.description}><p className="text-[11px] font-normal text-[#6F6F6F] mt-0.5 truncate">{t.description}</p></Tooltip>}
                           {creator && <p className="text-[11px] font-normal text-[#A0A0A0] mt-0.5">สร้างโดย: {displayName(creator)}</p>}

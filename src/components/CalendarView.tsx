@@ -357,14 +357,15 @@ export default function CalendarView({
   }, [allCalendarTasks, meetings, scopedProjects, filterType, todayString, scope, currentUserId]);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-full" id="calendar-tab">
+    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 lg:h-full" id="calendar-tab">
 
       {/* Sidebar: Calendar Filters */}
-      <div className="lg:col-span-1 min-h-0">
+      {/* On phones the calendar itself comes first and the filters follow it. */}
+      <div className="lg:col-span-1 min-h-0 max-lg:order-last">
 
         {/* Calendar View Filters — h-full/flex-col so this card's bottom edge lines up with the
             (much taller, always-6-rows) calendar card next to it, instead of stopping short. */}
-        <div className="h-full flex flex-col bg-white p-5 rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] space-y-4">
+        <div className="lg:h-full flex flex-col bg-white p-5 rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] space-y-4">
           <button
             type="button"
             onClick={() => setIsScheduleMeetingOpen(true)}
@@ -539,7 +540,7 @@ export default function CalendarView({
           the whole page fits the viewport without a page-level scroll: the nav row, weekday
           header, and legend all keep their natural height, and the 6 week-rows simply divide up
           whatever vertical space is actually left, on any screen size. */}
-      <div className="lg:col-span-3 min-h-0 h-full flex flex-col bg-white p-6 rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)]">
+      <div className="lg:col-span-3 min-h-0 lg:h-full flex flex-col bg-white p-4 sm:p-6 rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)]">
 
         {/* Calendar Nav Header */}
         <div className="shrink-0 flex items-center justify-between">
@@ -593,7 +594,7 @@ export default function CalendarView({
         </div>
 
         {filterType === 'Projects' ? (
-          <div className="mt-4 flex-1 min-h-0 flex flex-col border border-slate-100 rounded-xl">
+          <div className="mt-4 flex-1 min-h-0 max-lg:flex-none max-lg:h-[26rem] flex flex-col border border-slate-100 rounded-xl">
             <ProjectsGanttChart projects={scopedProjects} projectTasks={projectTasks} onSelectProject={goToProject} />
           </div>
         ) : (
@@ -616,7 +617,7 @@ export default function CalendarView({
             month used to pad most months' last row with 100% next-month filler. */}
         <div
           ref={gridRef}
-          className="flex-1 min-h-0 mt-1.5 grid grid-cols-7 gap-1.5"
+          className="flex-1 min-h-0 max-lg:flex-none max-lg:h-[23rem] mt-1.5 grid grid-cols-7 gap-1.5"
           style={{ gridTemplateRows: `repeat(${calendarGrid.totalRows}, minmax(0, 1fr))` }}
         >
           {calendarGrid.cells.map((cell, index) => {
