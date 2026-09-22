@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarRange } from 'lucide-react';
+import { CalendarRange, CornerDownRight } from 'lucide-react';
 import { Employee } from '../../types';
 import { ProjectRow, ProjectTaskItem } from './types';
 import { TASK_STATUS_COLOR, TASK_STATUS_LABEL } from './statusMeta';
@@ -114,19 +114,58 @@ export default function ProjectGantt({ tasks, employees, projects }: ProjectGant
     return map;
   }, [employees]);
 
+  // Parent-first, depth-first order so a subtask's row always sits directly under its parent's
+  // (and its own subtasks directly under it, to any depth) instead of wherever it happened to
+  // fall in the caller's own array — what makes the connector line below able to draw a short,
+  // sensible elbow instead of jumping across unrelated rows.
+  const orderedTasks = useMemo(() => {
+    const byParent = new Map<string, ProjectTaskItem[]>();
+    tasks.forEach((t) => {
+      if (!t.parentTaskId) return;
+      const list = byParent.get(t.parentTaskId) ?? [];
+      list.push(t);
+      byParent.set(t.parentTaskId, list);
+    });
+    const visited = new Set<string>();
+    const result: { task: ProjectTaskItem; depth: number }[] = [];
+    const visit = (list: ProjectTaskItem[], depth: number) => {
+      list.forEach((t) => {
+        visited.add(t.id);
+        result.push({ task: t, depth });
+        visit(byParent.get(t.id) ?? [], depth + 1);
+      });
+    };
+    visit(tasks.filter((t) => !t.parentTaskId), 0);
+    // A subtask whose own parent isn't in this list at all — e.g. MyWorkspace's cross-project
+    // Gantt only ever includes tasks the current account is responsible for, and the parent might
+    // be someone else's — still needs to show up somewhere rather than silently vanishing.
+    tasks.forEach((t) => {
+      if (!visited.has(t.id)) result.push({ task: t, depth: 0 });
+    });
+    return result;
+  }, [tasks]);
+
   const bars = useMemo(() => {
-    return tasks
-      .map((t) => {
+    return orderedTasks
+      .map(({ task: t, depth }) => {
         const end = parseThaiDate(t.dueDate);
         if (!end) return null;
         const parsedStart = parseThaiDate(t.startDate);
         // Tasks with no recorded start date still get a visible bar — assume a 3-day span
         // ending at the due date, rather than dropping them from the chart entirely.
         const start = parsedStart && parsedStart <= end ? parsedStart : new Date(end.getTime() - 3 * DAY_MS);
-        return { task: t, start, end };
+        return { task: t, start, end, depth };
       })
-      .filter((b): b is { task: ProjectTaskItem; start: Date; end: Date } => Boolean(b));
-  }, [tasks]);
+      .filter((b): b is { task: ProjectTaskItem; start: Date; end: Date; depth: number } => Boolean(b));
+  }, [orderedTasks]);
+
+  // Row index (not task order) is what the connector-line SVG below positions itself against —
+  // a task missing from `bars` (no due date) has no row and so gets no line drawn to/from it.
+  const rowIndexById = useMemo(() => {
+    const map = new Map<string, number>();
+    bars.forEach((b, idx) => map.set(b.task.id, idx));
+    return map;
+  }, [bars]);
 
   const range = useMemo(() => {
     if (bars.length === 0) return null;
@@ -153,6 +192,11 @@ export default function ProjectGantt({ tasks, employees, projects }: ProjectGant
     );
   }
 
+  // Matches each row's own min-h-14 — the connector SVG below positions itself against this, not
+  // a measured DOM height, same "trust the layout constant" approach dayOffset/pxPerDay already
+  // take for horizontal position.
+  const ROW_HEIGHT_PX = 56;
+
   // Stretching short ranges to fill the card only makes sense at day-zoom (individual day cells
   // widening to stay readable) — doing the same at month/year zoom would inflate pxPerDay right
   // when those levels are supposed to compress time, making them render almost identically to
@@ -161,6 +205,26 @@ export default function ProjectGantt({ tasks, employees, projects }: ProjectGant
   const pxPerDay = zoom === 'day' ? Math.max(PX_PER_DAY[zoom], availableColumnsWidth / range.totalDays) : PX_PER_DAY[zoom];
   const dayOffset = (d: Date) => (d.getTime() - range.min.getTime()) / DAY_MS;
   const totalWidth = range.totalDays * pxPerDay;
+
+  // One elbow connector per subtask whose parent also has its own visible bar — drawn from the
+  // parent bar's left edge (its own start date, where a dependency line conventionally begins)
+  // straight down to the subtask's row, then across to the subtask bar's left edge. A subtask
+  // whose parent isn't in `bars` (no due date, or filtered out of this particular list — see
+  // orderedTasks' own note) simply gets no line, same as it already gets no special indentation.
+  const connectors = bars
+    .map((b) => {
+      if (!b.task.parentTaskId) return null;
+      const parentRow = rowIndexById.get(b.task.parentTaskId);
+      const childRow = rowIndexById.get(b.task.id);
+      if (parentRow === undefined || childRow === undefined) return null;
+      const parentBar = bars[parentRow];
+      const x1 = dayOffset(parentBar.start) * pxPerDay;
+      const x2 = dayOffset(b.start) * pxPerDay;
+      const y1 = parentRow * ROW_HEIGHT_PX + ROW_HEIGHT_PX / 2;
+      const y2 = childRow * ROW_HEIGHT_PX + ROW_HEIGHT_PX / 2;
+      return { key: b.task.id, x1, y1, x2, y2 };
+    })
+    .filter((c): c is { key: string; x1: number; y1: number; x2: number; y2: number } => Boolean(c));
 
   // Day-zoom header: one bordered cell per real calendar day (weekday + day number), shaded for
   // Saturday/Sunday and ringed for today — this is the "จัดวันเป็นช่องๆ" grid the reference asked for.
@@ -287,7 +351,25 @@ export default function ProjectGantt({ tasks, employees, projects }: ProjectGant
               />
             )}
 
-            {bars.map(({ task: t, start, end }) => {
+            {connectors.length > 0 && (
+              <svg
+                className="absolute top-0 pointer-events-none"
+                style={{ left: LABEL_COL_WIDTH, width: totalWidth, height: bars.length * ROW_HEIGHT_PX }}
+              >
+                {connectors.map((c) => (
+                  <path
+                    key={c.key}
+                    d={`M ${c.x1} ${c.y1} V ${c.y2} H ${c.x2}`}
+                    fill="none"
+                    stroke="#CBD5E1"
+                    strokeWidth={1.5}
+                    strokeDasharray="3 3"
+                  />
+                ))}
+              </svg>
+            )}
+
+            {bars.map(({ task: t, start, end, depth }) => {
               const assignees = t.assigneeEmployeeIds.map((id) => employeeById.get(id)).filter((e): e is Employee => Boolean(e));
               const firstAssignee = assignees[0];
               const leftPx = dayOffset(start) * pxPerDay;
@@ -300,7 +382,10 @@ export default function ProjectGantt({ tasks, employees, projects }: ProjectGant
                     className="shrink-0 px-5 py-3 border-r border-[#F4F4F4] sticky left-0 z-10 bg-white"
                     style={{ width: LABEL_COL_WIDTH }}
                   >
-                    <p className="text-sm font-medium text-[#272220] truncate">{t.title}</p>
+                    <p className="text-sm font-medium text-[#272220] truncate flex items-center gap-1" style={{ paddingLeft: depth * 16 }}>
+                      {depth > 0 && <CornerDownRight size={11} className="text-[#A0A0A0] shrink-0" />}
+                      <span className="truncate">{t.title}</span>
+                    </p>
                     {projects && (
                       <p className="text-[10px] text-[#A0A0A0] truncate">โครงการ: {projectById.get(t.projectId)?.title ?? 'ไม่ทราบโครงการ'}</p>
                     )}

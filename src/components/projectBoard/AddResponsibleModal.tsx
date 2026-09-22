@@ -8,6 +8,7 @@ import { ApiError, ChangeRequest } from '../../lib/api';
 import { isOwner, resolveValidIds } from '../../lib/ownership';
 import { useEscapeToClose } from '../../lib/useEscapeToClose';
 import { useConfirm } from '../../context/ConfirmContext';
+import Tooltip from '../Tooltip';
 
 export interface ResponsibleUpdates {
   ownerEmployeeIds: string[];
@@ -58,6 +59,7 @@ export default function AddResponsibleModal({
   );
   const [ownerIds, setOwnerIds] = useState<string[]>(currentOwnerIds);
   const [memberIds, setMemberIds] = useState<string[]>(currentMemberIds);
+  const [memberDuties, setMemberDuties] = useState<Record<string, string>>(currentMemberDuties);
   const [reason, setReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
@@ -68,6 +70,7 @@ export default function AddResponsibleModal({
     if (isOpen) {
       setOwnerIds(currentOwnerIds);
       setMemberIds(currentMemberIds);
+      setMemberDuties(currentMemberDuties);
       setReason('');
       setFormError('');
     }
@@ -79,7 +82,10 @@ export default function AddResponsibleModal({
     setMemberIds((prev) => prev.filter((id) => !ids.includes(id)));
   };
 
-  const isChanged = !sameIds(ownerIds, currentOwnerIds) || !sameIds(memberIds, currentMemberIds);
+  const memberEmps = employees.filter((e) => memberIds.includes(e.id));
+
+  const isChanged = !sameIds(ownerIds, currentOwnerIds) || !sameIds(memberIds, currentMemberIds)
+    || memberIds.some((id) => (memberDuties[id] ?? '') !== (currentMemberDuties[id] ?? ''));
   const reasonValid = canEditDirectly || reason.trim() !== '';
   const isValid = isChanged && reasonValid;
 
@@ -102,7 +108,9 @@ export default function AddResponsibleModal({
     const updates: ResponsibleUpdates = {
       ownerEmployeeIds: ownerIds,
       memberEmployeeIds: memberIds,
-      memberDuties: Object.fromEntries(Object.entries(currentMemberDuties).filter(([id]) => memberIds.includes(id))),
+      memberDuties: Object.fromEntries(
+        Object.entries(memberDuties).filter(([id, duty]) => memberIds.includes(id) && duty.trim() !== '')
+      ),
     };
     try {
       if (canEditDirectly) {
@@ -156,7 +164,7 @@ export default function AddResponsibleModal({
                   <span className="text-[10px] text-[#6F6F6F]">เลือกได้หลายคน สิทธิ์เท่ากันทุกคน</span>
                 </div>
                 <EmployeeMultiSelect
-                  employees={employees}
+                  employees={employees.filter((emp) => !memberIds.includes(emp.id))}
                   valueIds={ownerIds}
                   onChange={handleOwnersChange}
                   placeholder="ค้นหาแล้วเลือกเพิ่มได้หลายคน..."
@@ -164,16 +172,33 @@ export default function AddResponsibleModal({
               </div>
 
               <div>
-                <div className="flex items-baseline justify-between mb-1">
-                  <label className="block text-[#272220] font-bold text-[11px]">ผู้รับผิดชอบร่วม</label>
-                  <span className="text-[10px] text-[#6F6F6F]">ระบุหน้าที่ได้ที่ "แก้ไขโครงการ"</span>
-                </div>
+                <label className="block text-[#272220] font-bold text-[11px] mb-1">ผู้รับผิดชอบร่วม</label>
                 <EmployeeMultiSelect
                   employees={employees.filter((emp) => !ownerIds.includes(emp.id))}
                   valueIds={memberIds}
                   onChange={setMemberIds}
                   placeholder="ค้นหาแล้วเลือกเพิ่มได้หลายคน..."
                 />
+                {memberEmps.length > 0 && (
+                  <div className="mt-2 space-y-1.5">
+                    {memberEmps.map((emp) => (
+                      <div key={emp.id} className="flex items-center gap-2">
+                        <Tooltip content={displayName(emp)}>
+                          <span className="text-[11px] text-[#6F6F6F] w-20 truncate shrink-0">
+                            {displayName(emp)}
+                          </span>
+                        </Tooltip>
+                        <input
+                          type="text"
+                          placeholder="หน้าที่ในโครงการนี้..."
+                          value={memberDuties[emp.id] ?? ''}
+                          onChange={(e) => setMemberDuties((prev) => ({ ...prev, [emp.id]: e.target.value }))}
+                          className="flex-1 p-1.5 text-xs border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {pendingRequest ? (

@@ -11,10 +11,10 @@ import { DEFAULT_ORG_DIVISIONS, OrgDivisionData } from '../data/orgStructure';
 import {
   INITIAL_EMPLOYEES
 } from '../data/mockData';
-import { fetchEmployees, createEmployee, updateEmployeeRemote, changeSelfPassword, deleteEmployeeRemote, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote, fetchProjects, createProject, updateProjectRemote, deleteProjectRemote, CreateProjectPayload, fetchMeetings, createMeeting, updateMeetingRemote, fetchProjectTasks, createProjectTask, updateProjectTaskRemote, deleteProjectTaskRemote, fetchProjectCustomStatuses, createProjectCustomStatus, deleteProjectCustomStatusRemote, fetchNotifications, createNotification, markNotificationRead, markAllNotificationsRead, CreateNotificationPayload, fetchChangeRequests, createChangeRequest, decideChangeRequest, ChangeRequest, fetchDocuments, createDocument, updateDocumentRemote, deleteDocumentRemote, fetchOrgStructure, addOrgDivision, renameOrgDivision, deleteOrgDivision, addOrgSection, renameOrgSection, deleteOrgSection, fetchAuditLogs, createAuditLog } from '../lib/api';
+import { fetchEmployees, createEmployee, updateEmployeeRemote, changeSelfPassword, deleteEmployeeRemote, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote, fetchProjects, createProject, updateProjectRemote, deleteProjectRemote, CreateProjectPayload, fetchMeetings, createMeeting, updateMeetingRemote, fetchProjectTasks, createProjectTask, updateProjectTaskRemote, deleteProjectTaskRemote, fetchProjectCustomStatuses, createProjectCustomStatus, deleteProjectCustomStatusRemote, fetchNotifications, createNotification, markNotificationRead, markAllNotificationsRead, CreateNotificationPayload, fetchChangeRequests, createChangeRequest, decideChangeRequest, ChangeRequest, fetchDocuments, createDocument, updateDocumentRemote, deleteDocumentRemote, fetchOrgStructure, addOrgDivision, renameOrgDivision, deleteOrgDivision, addOrgSection, renameOrgSection, deleteOrgSection, fetchAuditLogs, createAuditLog, fetchProjectCustomTypes, createProjectCustomType } from '../lib/api';
 import { nowTimestamp } from '../lib/datetime';
-import type { ProjectRow, ProjectTaskItem, CustomProjectStatus } from '../components/projectBoard/types';
-import { registerCustomStatusLabels } from '../components/projectBoard/statusMeta';
+import type { ProjectRow, ProjectTaskItem, CustomProjectStatus, CustomProjectType } from '../components/projectBoard/types';
+import { registerCustomStatusLabels, registerCustomTypeLabels } from '../components/projectBoard/statusMeta';
 
 interface AppDataContextValue {
   // Auth
@@ -49,6 +49,8 @@ interface AppDataContextValue {
   customProjectStatuses: CustomProjectStatus[];
   handleAddCustomProjectStatus: (label: string) => Promise<CustomProjectStatus>;
   handleDeleteCustomProjectStatus: (id: string) => Promise<void>;
+  customProjectTypes: CustomProjectType[];
+  handleAddCustomProjectType: (label: string, abbreviation: string) => Promise<CustomProjectType>;
   handleAddProjectTask: (task: Omit<ProjectTaskItem, 'id'>) => Promise<ProjectTaskItem>;
   handleUpdateProjectTask: (id: string, updates: Partial<ProjectTaskItem>) => Promise<void>;
   handleDeleteProjectTask: (id: string) => Promise<void>;
@@ -123,6 +125,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [customProjectStatuses, setCustomProjectStatuses] = useState<CustomProjectStatus[]>([]);
+  const [customProjectTypes, setCustomProjectTypes] = useState<CustomProjectType[]>([]);
   const [projectTasks, setProjectTasks] = useState<ProjectTaskItem[]>([]);
   const [changeRequests, setChangeRequests] = useState<ChangeRequest[]>([]);
   const [documents, setDocuments] = useState<LinkedDoc[]>([]);
@@ -228,6 +231,26 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       })
       .catch((err) => {
         console.warn('Could not load project custom statuses from the API:', err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Custom project types (see server/routes/project-custom-types.ts) — same registration
+  // pattern as custom project statuses above, into statusMeta.ts's PROJECT_TYPE_META instead.
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchProjectCustomTypes()
+      .then((types) => {
+        if (cancelled) return;
+        setCustomProjectTypes(types);
+        registerCustomTypeLabels(types);
+      })
+      .catch((err) => {
+        console.warn('Could not load project custom types from the API:', err);
       });
 
     return () => {
@@ -699,6 +722,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     const target = projects.find((p) => p.id === id);
     await deleteProjectRemote(id, currentUser?.id ?? '');
     setProjects((prev) => prev.filter((p) => p.id !== id));
+    // The server already cascades this at the DB level (project_task.project_id ON DELETE
+    // CASCADE) — without this, the client's own in-memory projectTasks kept the now-deleted
+    // project's tasks around, showing up as ghost rows tagged "ไม่ทราบโครงการ" (e.g. in
+    // MyWorkspace) until the next full reload silently dropped them.
+    setProjectTasks((prev) => prev.filter((t) => t.projectId !== id));
     if (target) handleLogAudit('DELETE_PROJECT', `ลบโครงการ: "${target.title}" (${target.code}) ออกจากระบบถาวร`);
   };
 
@@ -722,6 +750,18 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       registerCustomStatusLabels(next);
       return next;
     });
+  };
+
+  // Custom project types ("อื่นๆ ระบุ..." in CreateProjectModal's type dropdown) — same immediate
+  // re-registration as custom project statuses above, into statusMeta.ts's PROJECT_TYPE_META.
+  const handleAddCustomProjectType = async (label: string, abbreviation: string) => {
+    const created = await createProjectCustomType(label, abbreviation, currentUser?.id);
+    setCustomProjectTypes((prev) => {
+      const next = [...prev, created];
+      registerCustomTypeLabels(next);
+      return next;
+    });
+    return created;
   };
 
   const handleAddProjectTask = async (task: Omit<ProjectTaskItem, 'id'>) => {
@@ -1277,6 +1317,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     customProjectStatuses,
     handleAddCustomProjectStatus,
     handleDeleteCustomProjectStatus,
+    customProjectTypes,
+    handleAddCustomProjectType,
     handleAddProjectTask,
     handleUpdateProjectTask,
     handleDeleteProjectTask,

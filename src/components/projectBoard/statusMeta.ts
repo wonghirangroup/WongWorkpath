@@ -1,5 +1,5 @@
 import { Ban, CheckCircle2, Clock, ClipboardCheck, FileText, Lightbulb, PauseCircle, Tag } from 'lucide-react';
-import { CustomProjectStatus, ProjectPriority, ProjectStatus, ProjectTaskStatus, ProjectType } from './types';
+import { CustomProjectStatus, CustomProjectType, ProjectPriority, ProjectStatus, ProjectTaskStatus, ProjectType } from './types';
 
 export const PROJECT_STATUS_OPTIONS: ProjectStatus[] = ['draft', 'pending_review', 'in_progress', 'on_hold', 'completed', 'cancelled', 'idea'];
 
@@ -145,7 +145,7 @@ export const PROJECT_PRIORITY_META: Record<ProjectPriority, { label: string; cla
 
 // "ประเภทโครงการ" — label shown wherever a project's type appears, and the abbreviation used to
 // build the project code ({abbreviation}-{2-digit BE year}-{type}-{sequence}).
-export const PROJECT_TYPE_META: Record<ProjectType, { label: string }> = {
+const BASE_PROJECT_TYPE_META: Record<ProjectType, { label: string }> = {
   P: { label: 'โครงการ' },
   SP: { label: 'โครงการย่อย' },
   I: { label: 'นวัตกรรม' },
@@ -155,3 +155,20 @@ export const PROJECT_TYPE_META: Record<ProjectType, { label: string }> = {
 };
 
 export const PROJECT_TYPE_OPTIONS: ProjectType[] = ['P', 'SP', 'I', 'C', 'B', 'FND'];
+
+// Same pattern as customStatusLabels/registerCustomStatusLabels above — populated from
+// AppDataContext's customProjectTypes, so PROJECT_TYPE_META[row.type] resolves a user-created
+// custom type's own label everywhere a built-in one would already work, with no call-site changes.
+const customTypeLabels = new Map<string, string>();
+export function registerCustomTypeLabels(list: CustomProjectType[]): void {
+  customTypeLabels.clear();
+  list.forEach((t) => customTypeLabels.set(t.id, t.label));
+}
+
+function isBuiltInType(type: string): type is ProjectType {
+  return type in BASE_PROJECT_TYPE_META;
+}
+
+export const PROJECT_TYPE_META: Record<string, { label: string }> = new Proxy(BASE_PROJECT_TYPE_META, {
+  get: (target, prop: string) => (isBuiltInType(prop) ? target[prop] : { label: customTypeLabels.get(prop) ?? prop }),
+});

@@ -1,5 +1,5 @@
 import { Employee, CredentialItem, Meeting, Notification, NotificationCategory, LinkedDoc, AuditLog } from '../types';
-import type { ProjectRow, ProjectTaskItem, CustomProjectStatus } from '../components/projectBoard/types';
+import type { ProjectRow, ProjectTaskItem, CustomProjectStatus, CustomProjectType } from '../components/projectBoard/types';
 import type { OrgDivisionData } from '../data/orgStructure';
 
 // Vite only exposes env vars prefixed VITE_ to client code — set in .env,
@@ -192,7 +192,7 @@ export async function fetchProjects(): Promise<ProjectRow[]> {
 }
 
 export type CreateProjectPayload = Partial<
-  Pick<ProjectRow, 'id' | 'title' | 'description' | 'department' | 'type' | 'abbreviation' | 'priority' | 'budget' | 'ownerEmployeeIds' | 'memberEmployeeIds' | 'memberDuties' | 'docFolderId' | 'progress' | 'status'>
+  Pick<ProjectRow, 'id' | 'title' | 'description' | 'department' | 'type' | 'abbreviation' | 'priority' | 'budget' | 'ownerEmployeeIds' | 'memberEmployeeIds' | 'memberDuties' | 'docFolderId' | 'progress' | 'status' | 'parentProjectId'>
 > & { title: string; startDate?: string | null; endDate?: string | null; createdBy?: string | null };
 
 export async function createProject(payload: CreateProjectPayload): Promise<ProjectRow> {
@@ -284,6 +284,31 @@ export async function deleteProjectCustomStatusRemote(id: string): Promise<void>
     const data = await res.json().catch(() => ({}));
     throw new ApiError(data.message ?? 'ลบสถานะไม่สำเร็จ', res.status);
   }
+}
+
+export async function fetchProjectCustomTypes(): Promise<CustomProjectType[]> {
+  const res = await fetch(`${API_BASE_URL}/api/project-custom-types`);
+  if (!res.ok) throw new Error(`Failed to fetch project custom types: ${res.status}`);
+  return res.json();
+}
+
+// `abbreviation` becomes the created type's `id` — see server/routes/project-custom-types.ts.
+export async function createProjectCustomType(label: string, abbreviation: string, createdBy?: string | null): Promise<CustomProjectType> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/project-custom-types`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label, abbreviation, createdBy }),
+    });
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(data.message ?? 'สร้างประเภทโครงการไม่สำเร็จ', res.status);
+  }
+  return data as CustomProjectType;
 }
 
 export async function fetchMeetings(): Promise<Meeting[]> {

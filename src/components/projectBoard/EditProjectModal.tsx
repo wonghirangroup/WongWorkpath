@@ -5,7 +5,7 @@ import { X, ArrowRight } from 'lucide-react';
 import { useEscapeToClose } from '../../lib/useEscapeToClose';
 import ThaiDatePicker from '../ThaiDatePicker';
 import { Employee } from '../../types';
-import { ProjectRow, ProjectType, CustomProjectStatus } from './types';
+import { ProjectRow, CustomProjectStatus, CustomProjectType } from './types';
 import { STATUS_LABEL, PROJECT_TYPE_META, PROJECT_TYPE_OPTIONS } from './statusMeta';
 import {
   EmployeeMultiSelect,
@@ -30,6 +30,10 @@ interface EditProjectModalProps {
   onSave: (updates: Partial<ProjectRow>) => Promise<void>;
   existingTitles: string[];
   customStatuses: CustomProjectStatus[];
+  customTypes: CustomProjectType[];
+  // For the "โครงการหลัก" picker, offered only when type === 'SP' — same as CreateProjectModal's
+  // own use of this list.
+  projects: ProjectRow[];
   currentUserId: string;
   // ผู้บริหาร bypasses the owner-approval gate regardless of whether they're actually an
   // owner of this project.
@@ -48,7 +52,7 @@ interface EditProjectModalProps {
 // show every field at once rather than re-running a step-by-step flow each time. Only fields the
 // create wizard itself collects are editable here (see CreateProjectModal's own note on why
 // "department" has no field yet) — this stays a straight edit of what's already there.
-export default function EditProjectModal({ isOpen, onClose, row, employees, onSave, existingTitles, customStatuses, currentUserId, isExecutive, changeRequests, onRequestChange }: EditProjectModalProps) {
+export default function EditProjectModal({ isOpen, onClose, row, employees, onSave, existingTitles, customStatuses, customTypes, projects, currentUserId, isExecutive, changeRequests, onRequestChange }: EditProjectModalProps) {
   useEscapeToClose(isOpen, onClose);
   const confirm = useConfirm();
   // Once row.ownerEmployeeIds has ≥1 person, only they may save directly — anyone else's submit
@@ -67,10 +71,20 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
   // Renaming to the project's own current title is never a "collision" with itself.
   const otherTitles = existingTitles.filter((t) => t.trim().toLowerCase() !== row.title.trim().toLowerCase());
   const [description, setDescription] = useState(row.description ?? '');
-  const [type, setType] = useState<ProjectType | null>(row.type ?? null);
+  const [type, setType] = useState<string | null>(row.type ?? null);
+  const [parentProjectId, setParentProjectId] = useState<string | null>(row.parentProjectId ?? null);
+  const isSubProject = type === 'SP';
+  const topLevelProjects = projects.filter((p) => p.type === 'P' && p.id !== row.id);
   const [abbreviation, setAbbreviation] = useState(row.abbreviation ?? '');
   const [ownerIds, setOwnerIds] = useState<string[]>(row.ownerEmployeeIds ?? []);
   const [memberIds, setMemberIds] = useState<string[]>(row.memberEmployeeIds ?? []);
+  // Someone can't be both at once — matches AddResponsibleModal's own handleOwnersChange. The
+  // pickers below also each exclude the other list's current people, so this mostly guards
+  // against a stale/racy value already in state; the two together keep the two lists disjoint.
+  const handleOwnersChange = (ids: string[]) => {
+    setOwnerIds(ids);
+    setMemberIds((prev) => prev.filter((id) => !ids.includes(id)));
+  };
   const [memberDuties, setMemberDuties] = useState<Record<string, string>>(row.memberDuties ?? {});
   const [priority, setPriority] = useState<Priority | null>(row.priority ?? null);
   const [status, setStatus] = useState<string>(row.status);
@@ -83,10 +97,11 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
   const titleValid = title.trim() !== '';
   const dateOrderValid = !(startDate && endDate && endDate < startDate);
   const reasonValid = canEditDirectly || reason.trim() !== '';
+  const parentValid = !isSubProject || parentProjectId !== null;
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!titleValid || !dateOrderValid || !reasonValid || isSubmitting || pendingRequest) return;
+    if (!titleValid || !dateOrderValid || !reasonValid || !parentValid || isSubmitting || pendingRequest) return;
     const confirmed = await confirm({
       title: canEditDirectly ? 'ยืนยันการบันทึกการแก้ไขโครงการ?' : 'ยืนยันการส่งคำขอแก้ไขโครงการ?',
       message: canEditDirectly ? `บันทึกการแก้ไขของโครงการ "${row.title}"` : `ส่งคำขอแก้ไขโครงการ "${row.title}" ให้ผู้รับผิดชอบหลักพิจารณา`,
@@ -102,6 +117,7 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
       description: description.trim() || undefined,
       type: type ?? undefined,
       abbreviation: abbreviation.trim() || undefined,
+      parentProjectId: isSubProject ? parentProjectId ?? undefined : undefined,
       priority: priority ?? undefined,
       ownerEmployeeIds: ownerIds,
       memberEmployeeIds: memberIds,
@@ -212,17 +228,18 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[#272220] font-bold text-[11px] mb-1">ประเภทโครงการ</label>
-                    <Dropdown<ProjectType | ''>
+                    <Dropdown<string>
                       value={type ?? ''}
-                      onChange={(v) => setType((v || null) as ProjectType | null)}
+                      onChange={(v) => setType(v || null)}
                       options={[
                         { value: '', label: 'ไม่ระบุ' },
-                        ...PROJECT_TYPE_OPTIONS.map((t) => ({ value: t, label: `${PROJECT_TYPE_META[t].label} (${t})` })),
+                        ...PROJECT_TYPE_OPTIONS.map((t) => ({ value: t as string, label: `${PROJECT_TYPE_META[t].label} (${t})` })),
+                        ...customTypes.map((t) => ({ value: t.id, label: `${t.label} (${t.id})` })),
                       ]}
                     />
                   </div>
                   <div>
-                    <label className="block text-[#272220] font-bold text-[11px] mb-1">ตัวย่อโครงการ</label>
+                    <label className="block text-[#272220] font-bold text-[11px] mb-1">ตัวย่อประเภทโครงการ</label>
                     <input
                       type="text"
                       readOnly
@@ -249,15 +266,35 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
                   />
                 </div>
 
+                {isSubProject && (
+                  <div>
+                    <label className="block text-[#272220] font-bold text-[11px] mb-1">
+                      โครงการหลัก <span className="text-[#FF6537]">*</span>
+                    </label>
+                    {topLevelProjects.length === 0 ? (
+                      <p className="text-xs text-[#A0A0A0] bg-slate-50 border border-[#E5E5E5] rounded-lg px-3 py-2.5">
+                        ยังไม่มีโครงการประเภท "โครงการ (P)" ในระบบให้เลือกเป็นโครงการหลัก
+                      </p>
+                    ) : (
+                      <Dropdown<string>
+                        value={parentProjectId ?? ''}
+                        onChange={(v) => setParentProjectId(v || null)}
+                        placeholder="เลือกโครงการหลัก"
+                        options={topLevelProjects.map((p) => ({ value: p.id, label: `${p.title} (${p.code})` }))}
+                      />
+                    )}
+                  </div>
+                )}
+
                 <div>
                   <div className="flex items-baseline justify-between mb-1">
                     <label className="block text-[#272220] font-bold text-[11px]">ผู้รับผิดชอบหลัก</label>
                     <span className="text-[10px] text-[#6F6F6F]">เลือกได้หลายคน สิทธิ์เท่ากันทุกคน</span>
                   </div>
                   <EmployeeMultiSelect
-                    employees={employees}
+                    employees={employees.filter((emp) => !memberIds.includes(emp.id))}
                     valueIds={ownerIds}
-                    onChange={setOwnerIds}
+                    onChange={handleOwnersChange}
                     placeholder="ค้นหาแล้วเลือกเพิ่มได้หลายคน..."
                   />
                 </div>
@@ -265,7 +302,7 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
                 <div>
                   <label className="block text-[#272220] font-bold text-[11px] mb-1">ผู้รับผิดชอบร่วม</label>
                   <EmployeeMultiSelect
-                    employees={employees}
+                    employees={employees.filter((emp) => !ownerIds.includes(emp.id))}
                     valueIds={memberIds}
                     onChange={setMemberIds}
                     placeholder="ค้นหาแล้วเลือกเพิ่มได้หลายคน..."
@@ -395,9 +432,9 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
                 {!pendingRequest && (
                 <button
                   type="submit"
-                  disabled={!titleValid || !dateOrderValid || !reasonValid || isSubmitting}
+                  disabled={!titleValid || !dateOrderValid || !reasonValid || !parentValid || isSubmitting}
                   className={`flex-1 h-10 flex items-center justify-center gap-1.5 text-white font-bold text-sm rounded-lg transition-colors ${
-                    titleValid && dateOrderValid && reasonValid && !isSubmitting ? 'bg-[#FF6537] hover:bg-[#e6572c] cursor-pointer' : 'bg-[#F68C6C] cursor-not-allowed'
+                    titleValid && dateOrderValid && reasonValid && parentValid && !isSubmitting ? 'bg-[#FF6537] hover:bg-[#e6572c] cursor-pointer' : 'bg-[#F68C6C] cursor-not-allowed'
                   }`}
                 >
                   {isSubmitting ? (canEditDirectly ? 'กำลังบันทึก...' : 'กำลังส่งคำขอ...') : canEditDirectly ? 'บันทึกการแก้ไข' : 'ส่งคำขอแก้ไข'}

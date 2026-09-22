@@ -3,6 +3,7 @@ import type { RowDataPacket } from 'mysql2';
 import { pool } from '../db.ts';
 import { nowBangkokDateTime, formatThaiDateShort } from '../lib/datetime.ts';
 import { customStatusIds } from './project-custom-statuses.ts';
+import { customTypeIds } from './project-custom-types.ts';
 import { isOwner, isExecutiveActor, resolveValidOwnerIds } from '../lib/ownership.ts';
 
 export const projectsRouter = Router();
@@ -10,6 +11,15 @@ export const projectsRouter = Router();
 const STATUSES = ['draft', 'pending_review', 'in_progress', 'on_hold', 'completed', 'cancelled', 'idea'];
 const PRIORITIES = [1, 2, 3, 4, 5]; // numeric 1-5 scale, 1 = most important — same scale as project_task.priority
 const PROJECT_TYPES = ['P', 'SP', 'I', 'C', 'B', 'FND'];
+
+// A project's type can also be a user-created custom type id (project_custom_type table, its
+// abbreviation doubling as the id) — same "checked fresh, not cached" reasoning as
+// isValidProjectStatus below.
+async function isValidProjectType(type: unknown): Promise<boolean> {
+  if (typeof type !== 'string') return false;
+  if (PROJECT_TYPES.includes(type)) return true;
+  return (await customTypeIds()).includes(type);
+}
 
 // A project's status can also be a user-created custom status id (project_custom_status table),
 // not just one of the 7 built-ins above — checked against the DB fresh each call rather than
@@ -75,6 +85,8 @@ interface ProjectRowDb extends RowDataPacket {
   start_date: string | null;
   end_date: string | null;
   status: string;
+  created_by: string | null;
+  parent_project_id: string | null;
   created_at: string;
 }
 
@@ -133,14 +145,27 @@ function toProjectRow(r: ProjectRowDb) {
     createdDate: formatThaiDateShort(r.created_at ? r.created_at.slice(0, 10) : null),
     daysUntilDue: daysUntilDue(r.end_date),
     status: r.status,
+    createdByEmployeeId: r.created_by ?? undefined,
+    parentProjectId: r.parent_project_id ?? undefined,
   };
+}
+
+// A parent is only meaningful for a "โครงการย่อย" (type SP) and must itself be a top-level
+// "โครงการ" (type P) — never another sub-project, so a chain can never nest more than one level
+// deep. Anything else (missing, wrong type, or the project pointing at itself) silently becomes
+// no parent, same defensive fallback isValidProjectType/isValidProjectStatus already use for a
+// bad value rather than hard-erroring the whole request over one field.
+async function resolveParentProjectId(type: string | null, candidateId: unknown, ownId: string | null): Promise<string | null> {
+  if (type !== 'SP' || typeof candidateId !== 'string' || !candidateId || candidateId === ownId) return null;
+  const [[parent]] = await pool.query<RowDataPacket[]>('SELECT id FROM project WHERE id = ? AND type = ?', [candidateId, 'P']);
+  return parent ? candidateId : null;
 }
 
 projectsRouter.get('/', async (_req, res) => {
   try {
     const [rows] = await pool.query<ProjectRowDb[]>(
       `SELECT id, code, title, description, department, type, abbreviation, priority, budget, owner_employee_ids,
-              member_employee_ids, member_duties, doc_folder_id, progress, start_date, end_date, status, created_at
+              member_employee_ids, member_duties, doc_folder_id, progress, start_date, end_date, status, created_by, parent_project_id, created_at
        FROM project ORDER BY created_at DESC`
     );
     res.json(rows.map(toProjectRow));
@@ -160,7 +185,7 @@ projectsRouter.post('/', async (req, res) => {
   }
   const status = (await isValidProjectStatus(p.status)) ? p.status : 'draft';
   const priority = PRIORITIES.includes(p.priority) ? p.priority : null;
-  const type = PROJECT_TYPES.includes(p.type) ? p.type : null;
+  const type = (await isValidProjectType(p.type)) ? p.type : null;
   const abbreviation = typeof p.abbreviation === 'string' ? p.abbreviation.trim().toUpperCase() : '';
   const ownerEmployeeIds = sanitizeIds(p.ownerEmployeeIds);
   const memberEmployeeIds = sanitizeIds(p.memberEmployeeIds);
@@ -173,24 +198,25 @@ projectsRouter.post('/', async (req, res) => {
     // document row can be tagged scope='โครงการ' + this projectId right away, instead of briefly
     // existing untagged) — it pre-generates and sends one in that case.
     const id = typeof p.id === 'string' && p.id ? p.id : `PROJ_${Date.now()}`;
+    const parentProjectId = await resolveParentProjectId(type, p.parentProjectId, id);
     const now = nowBangkokDateTime();
 
     await pool.query(
       `INSERT INTO project
          (id, code, title, description, department, type, abbreviation, priority, budget, owner_employee_ids,
-          member_employee_ids, member_duties, doc_folder_id, progress, start_date, end_date, status, created_by, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          member_employee_ids, member_duties, doc_folder_id, progress, start_date, end_date, status, created_by, parent_project_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id, code, p.title.trim(), p.description?.trim() || null, p.department || null, type, abbreviation || null, priority,
         p.budget ?? null, ownerEmployeeIds.length ? JSON.stringify(ownerEmployeeIds) : null, memberEmployeeIds.length ? JSON.stringify(memberEmployeeIds) : null,
         Object.keys(memberDuties).length ? JSON.stringify(memberDuties) : null,
-        p.docFolderId || null, p.progress ?? 0, p.startDate || null, p.endDate || null, status, p.createdBy || null, now, now,
+        p.docFolderId || null, p.progress ?? 0, p.startDate || null, p.endDate || null, status, p.createdBy || null, parentProjectId, now, now,
       ]
     );
 
     const [[row]] = await pool.query<ProjectRowDb[]>(
       `SELECT id, code, title, description, department, type, abbreviation, priority, budget, owner_employee_ids,
-              member_employee_ids, member_duties, doc_folder_id, progress, start_date, end_date, status, created_at
+              member_employee_ids, member_duties, doc_folder_id, progress, start_date, end_date, status, created_by, parent_project_id, created_at
        FROM project WHERE id = ?`,
       [id]
     );
@@ -216,7 +242,7 @@ export async function applyProjectFields(id: string, p: any) {
   // type/abbreviation are editable after creation (per spec), but the code itself — already
   // generated from whatever they were at creation time — is intentionally never regenerated, so
   // a project's code stays a stable identifier even if its type/abbreviation are corrected later.
-  if ('type' in p) { fields.push('type = ?'); values.push(PROJECT_TYPES.includes(p.type) ? p.type : null); }
+  if ('type' in p) { fields.push('type = ?'); values.push((await isValidProjectType(p.type)) ? p.type : null); }
   if ('abbreviation' in p) { fields.push('abbreviation = ?'); values.push(typeof p.abbreviation === 'string' && p.abbreviation.trim() ? p.abbreviation.trim().toUpperCase() : null); }
   if ('priority' in p) { fields.push('priority = ?'); values.push(PRIORITIES.includes(p.priority) ? p.priority : null); }
   if ('budget' in p) { fields.push('budget = ?'); values.push(p.budget ?? null); }
@@ -240,6 +266,20 @@ export async function applyProjectFields(id: string, p: any) {
   if ('startDate' in p) { fields.push('start_date = ?'); values.push(p.startDate || null); }
   if ('endDate' in p) { fields.push('end_date = ?'); values.push(p.endDate || null); }
   if (typeof p.status === 'string' && (await isValidProjectStatus(p.status))) { fields.push('status = ?'); values.push(p.status); }
+  if ('parentProjectId' in p) {
+    // Needs the project's own effective type to validate against — either what THIS same request
+    // is also setting `type` to, or (if `type` isn't part of this update) whatever it's already
+    // stored as.
+    let effectiveType: string | null;
+    if ('type' in p) {
+      effectiveType = (await isValidProjectType(p.type)) ? p.type : null;
+    } else {
+      const [[current]] = await pool.query<RowDataPacket[]>('SELECT type FROM project WHERE id = ?', [id]);
+      effectiveType = current?.type ?? null;
+    }
+    fields.push('parent_project_id = ?');
+    values.push(await resolveParentProjectId(effectiveType, p.parentProjectId, id));
+  }
 
   if (fields.length === 0) return null;
 
@@ -249,7 +289,7 @@ export async function applyProjectFields(id: string, p: any) {
 
   const [[row]] = await pool.query<ProjectRowDb[]>(
     `SELECT id, code, title, description, department, type, abbreviation, priority, budget, owner_employee_ids,
-            member_employee_ids, member_duties, doc_folder_id, progress, start_date, end_date, status, created_at
+            member_employee_ids, member_duties, doc_folder_id, progress, start_date, end_date, status, created_by, parent_project_id, created_at
      FROM project WHERE id = ?`,
     [id]
   );

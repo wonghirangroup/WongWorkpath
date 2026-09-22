@@ -1,11 +1,14 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, KeyboardEvent } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, KeyboardEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { ChevronDown } from 'lucide-react';
 
 interface DropdownProps<T extends string> {
   value: T;
-  options: { value: T; label: string }[];
+  // ReactNode (not just string) so a special option — e.g. "อื่นๆ ระบุ..." with its own + icon —
+  // can render more than plain text; every existing caller passing a plain string still works
+  // unchanged, since JSX renders a string child exactly the same way.
+  options: { value: T; label: ReactNode }[];
   onChange: (value: T) => void;
   placeholder?: string;
   // 'compact' matches a page-level search/filter row; 'cozy' matches h-[44px] text inputs
@@ -73,10 +76,17 @@ export default function Dropdown<T extends string>({ value, options, onChange, p
   // tracked — simplest correct fix is to close instead of drifting out of place if the trigger's
   // own position changes underneath it (scrolling the page, or a horizontally-scrolling ancestor
   // like ProjectTable's wrapper). `true` = capture phase, so this still fires for a scroll inside
-  // a nested scrollable container, which wouldn't otherwise bubble a scroll event to window.
+  // a nested scrollable container, which wouldn't otherwise bubble a scroll event to window — but
+  // that also caught scrolling the panel's OWN option list (it's `max-h-60 overflow-y-auto`),
+  // closing the dropdown on every attempt to scroll down to a lower option. Skip closing when the
+  // scroll happened inside the panel itself; every other scroll (the page, or an ancestor of the
+  // trigger) still closes it as before.
   useEffect(() => {
     if (!isOpen) return;
-    const close = () => setIsOpen(false);
+    const close = (e: Event) => {
+      if (panelRef.current && e.target instanceof Node && panelRef.current.contains(e.target)) return;
+      setIsOpen(false);
+    };
     window.addEventListener('scroll', close, true);
     window.addEventListener('resize', close);
     return () => {

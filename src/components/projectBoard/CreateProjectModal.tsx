@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, FormEvent, KeyboardEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
-import { X, Check, Folder, Pencil, CalendarClock, ArrowRight } from 'lucide-react';
+import { X, Check, Folder, Pencil, CalendarClock, ArrowRight, Plus } from 'lucide-react';
 import { Employee } from '../../types';
-import { ProjectPriority, ProjectStatus, ProjectType, CustomProjectStatus } from './types';
+import { ProjectPriority, ProjectStatus, ProjectRow, CustomProjectStatus, CustomProjectType } from './types';
 import { STATUS_LABEL, STATUS_PILL, PROJECT_TYPE_META, PROJECT_TYPE_OPTIONS } from './statusMeta';
 import { getAvatarColor } from '../../lib/avatarColor';
 import { ApiError, CreateProjectPayload } from '../../lib/api';
@@ -231,11 +231,22 @@ interface CreateProjectModalProps {
   // Best-effort preview only — the real code (and its sequence number) is always generated
   // server-side at submit time; this just reflects it back live as the user picks a type/types
   // in an abbreviation, since the exact code can't be known until then.
-  getNextCodePreview: (abbreviation: string, type: ProjectType | null) => string;
+  getNextCodePreview: (abbreviation: string, type: string | null) => string;
   employees: Employee[];
   existingTitles: string[];
   customStatuses: CustomProjectStatus[];
+  customTypes: CustomProjectType[];
+  onAddCustomType: (label: string, abbreviation: string) => Promise<CustomProjectType>;
+  // For the "โครงการหลัก" picker, offered only when type === 'SP' — filtered down to just the
+  // top-level "โครงการ (P)" ones right where it's used below, not here, so the full list stays
+  // available if this modal ever needs it for something else later.
+  projects: ProjectRow[];
 }
+
+// Sentinel dropdown value for "อื่นๆ ระบุ..." — picking it reveals free-entry name/abbreviation
+// inputs; the real custom type is only actually created (via onAddCustomType) at final submit, so
+// backing out of the wizard without submitting never pollutes the shared custom-type list.
+const CUSTOM_TYPE_VALUE = '__custom__';
 
 // Same silent auto-rename convention as CredentialVault's getUniqueLabel — a collision never
 // blocks submission, it just gets a numeric suffix appended and the user is told so.
@@ -270,12 +281,15 @@ function deriveAbbreviation(title: string): string {
 // in the step 3 summary) is sent through as memberEmployeeIds and shows up in the project detail
 // page's "ทีม" tab. The optional "create a folder" step writes to the shared document store via
 // onCreateFolder, and only runs after the project itself is confirmed created.
-export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreated, onCreateFolder, getNextCodePreview, employees, existingTitles, customStatuses }: CreateProjectModalProps) {
+export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreated, onCreateFolder, getNextCodePreview, employees, existingTitles, customStatuses, customTypes, onAddCustomType, projects }: CreateProjectModalProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [title, setTitle] = useState('');
   const [renameNotice, setRenameNotice] = useState('');
   const [description, setDescription] = useState('');
-  const [type, setType] = useState<ProjectType | null>(null);
+  const [type, setType] = useState<string | null>(null);
+  const [customTypeName, setCustomTypeName] = useState('');
+  const [customTypeAbbrev, setCustomTypeAbbrev] = useState('');
+  const [parentProjectId, setParentProjectId] = useState<string | null>(null);
   const [abbreviation, setAbbreviation] = useState('');
   // Once the user types their own abbreviation, retyping the title stops overwriting it.
   const [abbreviationTouched, setAbbreviationTouched] = useState(false);
@@ -314,6 +328,9 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
     setRenameNotice('');
     setDescription('');
     setType(null);
+    setCustomTypeName('');
+    setCustomTypeAbbrev('');
+    setParentProjectId(null);
     setAbbreviation('');
     setAbbreviationTouched(false);
     setOwnerIds([]);
@@ -336,7 +353,12 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
   // Latin letters — a Thai-only title (the overwhelming majority here) derives nothing, and
   // without this check that silently produced a generic "PRJ-NNN" code instead of the intended
   // "{ตัวย่อ}-{ปี}-{ประเภท}-{ลำดับ}" format (see generateProjectCode server-side).
-  const step1Valid = title.trim() !== '' && type !== null && abbreviation.trim() !== '';
+  const isCustomTypeSelected = type === CUSTOM_TYPE_VALUE;
+  const isSubProject = type === 'SP';
+  const topLevelProjects = projects.filter((p) => p.type === 'P');
+  const step1Valid = title.trim() !== '' && type !== null && abbreviation.trim() !== ''
+    && (!isCustomTypeSelected || (customTypeName.trim() !== '' && customTypeAbbrev.trim() !== ''))
+    && (!isSubProject || parentProjectId !== null);
   // Only meaningful once both dates are set — an open-ended start or end date has nothing to
   // compare against yet.
   const dateOrderValid = !(startDate && endDate && endDate < startDate);
@@ -350,6 +372,15 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
     // reliably fire a native blur first, so a duplicate could otherwise slip through un-renamed.
     const finalTitle = getUniqueTitle(title, existingTitles);
     try {
+      // A brand-new "อื่นๆ ระบุ..." type is only actually registered here, right before the
+      // project itself is created — never earlier in the wizard — so backing out without
+      // submitting never leaves an orphaned custom type in the shared list. Its real (server-
+      // validated, uppercased) abbreviation becomes this project's own `type` value below.
+      let finalType = type;
+      if (isCustomTypeSelected) {
+        const createdType = await onAddCustomType(customTypeName.trim(), customTypeAbbrev.trim());
+        finalType = createdType.id;
+      }
       // Created first (not after) so its id can be saved as the project's own docFolderId in the
       // same request — a task's own "create folder" checkbox later nests inside this folder
       // instead of always dropping it at the Drive root. The folder's own document row needs to be
@@ -364,8 +395,9 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
         id: newProjectId,
         title: finalTitle,
         description: description.trim() || undefined,
-        type: type ?? undefined,
+        type: finalType ?? undefined,
         abbreviation: abbreviation.trim() || undefined,
+        parentProjectId: isSubProject ? parentProjectId ?? undefined : undefined,
         priority: priority ?? undefined,
         ownerEmployeeIds: ownerIds,
         memberEmployeeIds: assigneeIds,
@@ -389,6 +421,15 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
 
   const ownerEmps = employees.filter((e) => ownerIds.includes(e.id));
   const assigneeEmps = employees.filter((e) => assigneeIds.includes(e.id));
+
+  // Someone can't be both ผู้รับผิดชอบหลัก and ผู้รับผิดชอบร่วม at once — matches
+  // AddResponsibleModal/EditProjectModal's own handleOwnersChange. The pickers below also each
+  // exclude the other list's current people so it can't happen from the UI in the first place;
+  // this is just the reactive cleanup half of that same rule.
+  const handleOwnersChange = (ids: string[]) => {
+    setOwnerIds(ids);
+    setAssigneeIds((prev) => prev.filter((id) => !ids.includes(id)));
+  };
 
   // Enter anywhere in the wizard advances to the next step, all the way through to actually
   // submitting on the final step — without this, hitting Enter in the title field on step 1 (the
@@ -431,7 +472,9 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-bold text-slate-800">สร้างโครงการใหม่</h3>
-                  <span className="text-[10px] font-bold text-[#FF6537] bg-[#FFF1EC] px-2 py-0.5 rounded-full">{getNextCodePreview(abbreviation.trim().toUpperCase(), type)}</span>
+                  <span className="text-[10px] font-bold text-[#FF6537] bg-[#FFF1EC] px-2 py-0.5 rounded-full">
+                    {getNextCodePreview(abbreviation.trim().toUpperCase(), isCustomTypeSelected ? (customTypeAbbrev.trim().toUpperCase() || null) : type)}
+                  </span>
                 </div>
                 <p className="text-[11px] text-[#6F6F6F] mt-0.5">
                   ตรวจสอบความถูกต้องของข้อมูลก่อนยืนยันการบันทึกเข้าสู่ระบบ
@@ -480,27 +523,79 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                         <label className="block text-[#272220] font-bold text-[11px] mb-1">
                           ประเภทโครงการ <span className="text-[#FF6537]">*</span>
                         </label>
-                        <Dropdown<ProjectType | ''>
+                        <Dropdown<string>
                           value={type ?? ''}
-                          onChange={(v) => setType((v || null) as ProjectType | null)}
+                          onChange={(v) => setType(v || null)}
                           placeholder="เลือกประเภทโครงการ"
-                          options={PROJECT_TYPE_OPTIONS.map((t) => ({ value: t, label: `${PROJECT_TYPE_META[t].label} (${t})` }))}
+                          options={[
+                            ...PROJECT_TYPE_OPTIONS.map((t) => ({ value: t as string, label: `${PROJECT_TYPE_META[t].label} (${t})` })),
+                            ...customTypes.map((t) => ({ value: t.id, label: `${t.label} (${t.id})` })),
+                            { value: CUSTOM_TYPE_VALUE, label: <span className="flex items-center gap-1.5"><Plus size={12} /> อื่นๆ ระบุ...</span> },
+                          ]}
                         />
                       </div>
                       <div>
                         <label className="block text-[#272220] font-bold text-[11px] mb-1">
-                          ตัวย่อโครงการ <span className="text-[#FF6537]">*</span>
+                          ตัวย่อประเภทโครงการ <span className="text-[#FF6537]">*</span>
+                        </label>
+                        {isCustomTypeSelected ? (
+                          <input
+                            type="text"
+                            placeholder="เช่น MKT"
+                            maxLength={10}
+                            value={customTypeAbbrev}
+                            onChange={(e) => setCustomTypeAbbrev(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                            className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                          />
+                        ) : (
+                          <input
+                            type="text"
+                            readOnly
+                            tabIndex={-1}
+                            value={type ?? ''}
+                            placeholder="เลือกประเภทก่อน"
+                            className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg bg-slate-50 text-[#6F6F6F] placeholder:text-[#B0B0B0] cursor-default focus:outline-none"
+                          />
+                        )}
+                      </div>
+                    </div>
+                    {isCustomTypeSelected && (
+                      <div>
+                        <label className="block text-[#272220] font-bold text-[11px] mb-1">
+                          ชื่อประเภทโครงการ <span className="text-[#FF6537]">*</span>
                         </label>
                         <input
                           type="text"
-                          readOnly
-                          tabIndex={-1}
-                          value={type ?? ''}
-                          placeholder="เลือกประเภทก่อน"
-                          className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg bg-slate-50 text-[#6F6F6F] placeholder:text-[#B0B0B0] cursor-default focus:outline-none"
+                          placeholder="เช่น การตลาดพิเศษ"
+                          value={customTypeName}
+                          onChange={(e) => setCustomTypeName(e.target.value)}
+                          className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
                         />
+                        <p className="text-[10px] text-[#A0A0A0] mt-1">
+                          ประเภทและตัวย่อนี้จะถูกบันทึกไว้ให้เลือกใช้กับโครงการอื่นได้ในครั้งถัดไป
+                        </p>
                       </div>
-                    </div>
+                    )}
+                    {isSubProject && (
+                      <div>
+                        <label className="block text-[#272220] font-bold text-[11px] mb-1">
+                          โครงการหลัก <span className="text-[#FF6537]">*</span>
+                        </label>
+                        {topLevelProjects.length === 0 ? (
+                          <p className="text-xs text-[#A0A0A0] bg-slate-50 border border-[#E5E5E5] rounded-lg px-3 py-2.5">
+                            ยังไม่มีโครงการประเภท "โครงการ (P)" ในระบบให้เลือกเป็นโครงการหลัก
+                          </p>
+                        ) : (
+                          <Dropdown<string>
+                            value={parentProjectId ?? ''}
+                            onChange={(v) => setParentProjectId(v || null)}
+                            placeholder="เลือกโครงการหลัก"
+                            options={topLevelProjects.map((p) => ({ value: p.id, label: `${p.title} (${p.code})` }))}
+                          />
+                        )}
+                        <p className="text-[10px] text-[#A0A0A0] mt-1">โครงการย่อยต้องผูกกับโครงการหลักที่เป็นประเภท "โครงการ (P)" เท่านั้น</p>
+                      </div>
+                    )}
                     <div>
                       <div className="flex items-baseline justify-between mb-1">
                         <label className="block text-[#272220] font-bold text-[11px]">
@@ -544,9 +639,9 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                         <span className="text-[10px] text-[#6F6F6F]">เลือกได้หลายคน สิทธิ์เท่ากันทุกคน</span>
                       </div>
                       <EmployeeMultiSelect
-                        employees={employees}
+                        employees={employees.filter((emp) => !assigneeIds.includes(emp.id))}
                         valueIds={ownerIds}
-                        onChange={setOwnerIds}
+                        onChange={handleOwnersChange}
                         placeholder="ค้นหาแล้วเลือกเพิ่มได้หลายคน..."
                       />
                     </div>
@@ -604,7 +699,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                     <div>
                       <label className="block text-[#272220] font-bold text-[11px] mb-1">ผู้รับผิดชอบงาน</label>
                       <EmployeeMultiSelect
-                        employees={employees}
+                        employees={employees.filter((emp) => !ownerIds.includes(emp.id))}
                         valueIds={assigneeIds}
                         onChange={setAssigneeIds}
                         placeholder="ค้นหาแล้วเลือกเพิ่มได้หลายคน..."
@@ -679,9 +774,19 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                       <SummaryRow label="ชื่อโครงการ" value={title} />
                       <SummaryRow
                         label="ประเภทโครงการ"
-                        value={type ? `${PROJECT_TYPE_META[type].label} (${type})` : 'ไม่ระบุ'}
+                        value={
+                          isCustomTypeSelected
+                            ? (customTypeName.trim() ? `${customTypeName.trim()} (${customTypeAbbrev.trim() || '?'})` : 'ไม่ระบุ')
+                            : type ? `${PROJECT_TYPE_META[type].label} (${type})` : 'ไม่ระบุ'
+                        }
                       />
                       <SummaryRow label="ตัวย่อชื่อโครงการ" value={abbreviation || 'ไม่ระบุ'} />
+                      {isSubProject && (
+                        <SummaryRow
+                          label="โครงการหลัก"
+                          value={topLevelProjects.find((p) => p.id === parentProjectId)?.title ?? 'ไม่ระบุ'}
+                        />
+                      )}
                       <SummaryRow
                         label="รายละเอียด"
                         value={

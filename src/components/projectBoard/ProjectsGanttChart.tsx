@@ -25,28 +25,43 @@ export default function ProjectsGanttChart({ projects, projectTasks, onSelectPro
   const rows = useMemo(() => {
     return projects
       .map((p) => {
-        if (!p.endDateISO) return null;
-        const end = new Date(`${p.endDateISO}T00:00:00`);
-        const parsedStart = p.startDateISO ? new Date(`${p.startDateISO}T00:00:00`) : null;
-        const start = parsedStart && parsedStart <= end ? parsedStart : end;
+        const tasksForProject = projectTasks.filter((t) => t.projectId === p.id && t.dueDateISO);
+
+        let start: Date | null = null;
+        let end: Date | null = null;
+        if (p.endDateISO) {
+          end = new Date(`${p.endDateISO}T00:00:00`);
+          const parsedStart = p.startDateISO ? new Date(`${p.startDateISO}T00:00:00`) : null;
+          start = parsedStart && parsedStart <= end ? parsedStart : end;
+        } else if (tasksForProject.length > 0) {
+          // No end date set on the project itself yet, but real work already exists under it —
+          // derive the visible range from its own tasks' due dates instead of hiding the whole
+          // project from the timeline until someone gets around to filling in its dates.
+          const dueTimes = tasksForProject.map((t) => new Date(`${t.dueDateISO}T00:00:00`).getTime());
+          start = new Date(Math.min(...dueTimes));
+          end = new Date(Math.max(...dueTimes));
+        }
+        if (!end || !start) return null;
+        const isDerivedFromTasks = !p.endDateISO;
+
         const startMonthKey = start.getFullYear() * 12 + start.getMonth();
         const endMonthKey = end.getFullYear() * 12 + end.getMonth();
 
         const tasksByMonth = new Map<number, ProjectTaskItem[]>();
-        projectTasks
-          .filter((t) => t.projectId === p.id && t.dueDateISO)
-          .forEach((t) => {
-            const due = new Date(`${t.dueDateISO}T00:00:00`);
-            const key = due.getFullYear() * 12 + due.getMonth();
-            const list = tasksByMonth.get(key) ?? [];
-            list.push(t);
-            tasksByMonth.set(key, list);
-          });
+        tasksForProject.forEach((t) => {
+          const due = new Date(`${t.dueDateISO}T00:00:00`);
+          const key = due.getFullYear() * 12 + due.getMonth();
+          const list = tasksByMonth.get(key) ?? [];
+          list.push(t);
+          tasksByMonth.set(key, list);
+        });
 
-        return { project: p, startMonthKey, endMonthKey, tasksByMonth };
+        return { project: p, startMonthKey, endMonthKey, tasksByMonth, isDerivedFromTasks, start, end };
       })
-      .filter((r): r is { project: ProjectRow; startMonthKey: number; endMonthKey: number; tasksByMonth: Map<number, ProjectTaskItem[]> } => Boolean(r));
+      .filter((r): r is { project: ProjectRow; startMonthKey: number; endMonthKey: number; tasksByMonth: Map<number, ProjectTaskItem[]>; isDerivedFromTasks: boolean; start: Date; end: Date } => Boolean(r));
   }, [projects, projectTasks]);
+
+  const formatShort = (d: Date) => `${d.getDate()} ${THAI_MONTHS_SHORT[d.getMonth()]} ${d.getFullYear() + 543}`;
 
   if (rows.length === 0) {
     return (
@@ -95,7 +110,7 @@ export default function ProjectsGanttChart({ projects, projectTasks, onSelectPro
           </div>
 
           <div className="divide-y divide-[#F9F9F9]">
-            {rows.map(({ project: p, startMonthKey, endMonthKey, tasksByMonth }) => {
+            {rows.map(({ project: p, startMonthKey, endMonthKey, tasksByMonth, isDerivedFromTasks, start, end }) => {
               const color = STATUS_DOT[p.status];
               const yearStartKey = year * 12;
               const visibleStart = Math.max(startMonthKey, yearStartKey);
@@ -122,16 +137,34 @@ export default function ProjectsGanttChart({ projects, projectTasks, onSelectPro
                     </div>
                     <div className="relative grid grid-cols-12 gap-y-1 py-2">
                       {hasBar && (
-                        <Tooltip content={`${p.title} · ${p.startDate ?? '—'} – ${p.endDate ?? '—'}`}>
+                        <Tooltip
+                          content={
+                            isDerivedFromTasks
+                              ? `${p.title} · ยังไม่กำหนดวันที่โครงการ — ช่วงนี้มาจากกำหนดส่งงาน (${formatShort(start)} – ${formatShort(end)})`
+                              : `${p.title} · ${p.startDate ?? '—'} – ${p.endDate ?? '—'}`
+                          }
+                        >
                           <div
                             className={`h-3 self-center ${continuesBefore ? 'rounded-l-none' : 'ml-1 rounded-l-full'} ${
                               continuesAfter ? 'rounded-r-none' : 'mr-1 rounded-r-full'
                             }`}
-                            style={{
-                              gridRow: 1,
-                              gridColumn: `${visibleStart - yearStartKey + 1} / ${visibleEnd - yearStartKey + 2}`,
-                              backgroundColor: color,
-                            }}
+                            style={
+                              isDerivedFromTasks
+                                // Dashed outline instead of a solid fill — signals "this range came
+                                // from task due dates, not a date the project itself has set" at a
+                                // glance, same distinction the tooltip spells out.
+                                ? {
+                                    gridRow: 1,
+                                    gridColumn: `${visibleStart - yearStartKey + 1} / ${visibleEnd - yearStartKey + 2}`,
+                                    backgroundColor: `${color}1A`,
+                                    border: `1.5px dashed ${color}`,
+                                  }
+                                : {
+                                    gridRow: 1,
+                                    gridColumn: `${visibleStart - yearStartKey + 1} / ${visibleEnd - yearStartKey + 2}`,
+                                    backgroundColor: color,
+                                  }
+                            }
                           />
                         </Tooltip>
                       )}

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Employee } from './../types';
-import { ProjectRow, ProjectTaskItem, CustomProjectStatus } from './projectBoard/types';
+import { ProjectRow, ProjectTaskItem, CustomProjectStatus, CustomProjectType } from './projectBoard/types';
 import { Wallet, Briefcase, AlertCircle, Users } from 'lucide-react';
 import DashboardToolbar from './dashboard/DashboardToolbar';
 import StatCard from './dashboard/StatCard';
@@ -30,6 +30,8 @@ interface DashboardProps {
   onCreateProject: (payload: Omit<CreateProjectPayload, 'createdBy'>) => Promise<void>;
   onCreateFolder: (name: string, parentId: string | null, taskId: string | undefined, projectId: string) => Promise<string>;
   customProjectStatuses: CustomProjectStatus[];
+  customProjectTypes: CustomProjectType[];
+  onAddCustomProjectType: (label: string, abbreviation: string) => Promise<CustomProjectType>;
   onSelectProject: (id: string) => void;
   orgSections: string[];
 }
@@ -42,6 +44,8 @@ export default function Dashboard({
   onCreateProject,
   onCreateFolder,
   customProjectStatuses,
+  customProjectTypes,
+  onAddCustomProjectType,
   onSelectProject,
   orgSections
 }: DashboardProps) {
@@ -92,7 +96,12 @@ export default function Dashboard({
   const filteredProjectTasks = projectTasks.filter((t) => filteredProjectIds.has(t.projectId));
 
   const activeProjectsCount = filteredProjects.filter((p) => p.status === 'in_progress').length;
-  const blockedCount = filteredProjectTasks.filter((t) => t.status === 'blocked').length;
+  const activeTasksCount = filteredProjectTasks.filter((t) => t.status === 'in_progress').length;
+  // A task the reviewer bounced back (see ReviewTaskModal's reject flow) stays status 'in_progress'
+  // with reviewNote set to why — cleared again the moment it's resubmitted (SubmitTaskModal) — so
+  // this combination uniquely means "currently sitting rejected, not yet reworked", which counts as
+  // an issue here alongside the assignee's own explicit 'blocked' status.
+  const blockedCount = filteredProjectTasks.filter((t) => t.status === 'blocked' || (t.status === 'in_progress' && !!t.reviewNote)).length;
   const budgetedProjects = filteredProjects.filter((p) => p.budget !== null);
   const totalBudget = budgetedProjects.reduce((sum, p) => sum + (p.budget ?? 0), 0);
 
@@ -151,13 +160,23 @@ export default function Dashboard({
           value={formatBaht(totalBudget)}
           detail={`จาก ${budgetedProjects.length} โครงการที่ตั้งงบไว้`}
         />
-        <StatCard
-          icon={<Briefcase size={32} strokeWidth={2} />}
-          iconColor="#2563EB"
-          label="โครงการ"
-          value={filteredProjects.length}
-          detail={`กำลังดำเนินการ ${activeProjectsCount} โครงการ`}
-        />
+        {isSingleProjectView ? (
+          <StatCard
+            icon={<Briefcase size={32} strokeWidth={2} />}
+            iconColor="#2563EB"
+            label="งาน"
+            value={filteredProjectTasks.length}
+            detail={`กำลังดำเนินการ ${activeTasksCount} งาน`}
+          />
+        ) : (
+          <StatCard
+            icon={<Briefcase size={32} strokeWidth={2} />}
+            iconColor="#2563EB"
+            label="โครงการ"
+            value={filteredProjects.length}
+            detail={`กำลังดำเนินการ ${activeProjectsCount} โครงการ`}
+          />
+        )}
         <StatCard
           icon={<AlertCircle size={32} strokeWidth={2} />}
           iconColor="#E11D48"
@@ -226,6 +245,9 @@ export default function Dashboard({
         onCreateFolder={onCreateFolder}
         existingTitles={projects.map((p) => p.title)}
         customStatuses={customProjectStatuses}
+        customTypes={customProjectTypes}
+        onAddCustomType={onAddCustomProjectType}
+        projects={projects}
       />
 
       {actionToast && (

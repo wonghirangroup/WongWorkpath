@@ -2,7 +2,7 @@ import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 
 import { motion } from 'motion/react';
 import { Clock, ListChecks, Users2, Plus, Eye, CalendarClock, Pencil, Trash2, X, Maximize2, Minimize2, Ban, Send, ClipboardCheck, ChevronDown, ChevronRight, CornerDownRight } from 'lucide-react';
 import { Employee, Meeting, LinkedDoc } from '../../types';
-import { ProjectRow, ProjectTaskItem, ProjectTaskStatus, CustomProjectStatus } from './types';
+import { ProjectRow, ProjectTaskItem, ProjectTaskStatus, CustomProjectStatus, CustomProjectType } from './types';
 import { STATUS_DOT, TASK_STATUS_LABEL, TASK_STATUS_COLOR, PROJECT_PRIORITY_META } from './statusMeta';
 import { displayName, PRIORITY_OPTIONS, EmployeeMultiSelect } from './CreateProjectModal';
 import { ChangeRequest } from '../../lib/api';
@@ -152,6 +152,7 @@ interface ProjectDetailProps {
   onUpdateProject: (updates: Partial<ProjectRow>) => Promise<void>;
   existingProjectTitles: string[];
   customStatuses: CustomProjectStatus[];
+  customTypes: CustomProjectType[];
   changeRequests: ChangeRequest[];
   onRequestChange: (
     entityType: 'project' | 'project_task',
@@ -164,6 +165,10 @@ interface ProjectDetailProps {
   documents: LinkedDoc[];
   onAddDocument: (doc: Omit<LinkedDoc, 'id'>) => Promise<LinkedDoc>;
   orgSections: string[];
+  // Every other project — for resolving/showing this one's โครงการหลัก/โครงการย่อย (see
+  // parentProject/childProjects below) and for EditProjectModal's own "โครงการหลัก" picker.
+  projects: ProjectRow[];
+  onSelectProject: (id: string) => void;
   // ผู้บริหาร bypasses the owner-approval gate everywhere in this component — sees an "unowned"
   // experience (direct save/delete) regardless of whether they're actually an owner/assignee.
   isExecutive: boolean;
@@ -174,7 +179,7 @@ interface ProjectDetailProps {
 
 const DETAIL_TABS: DetailTab[] = ['overview', 'tasks', 'team', 'meetings', 'timeline'];
 
-export default function ProjectDetail({ row, tasks, meetings, employees, currentUserId, onAddTask, onUpdateTask, onDeleteTask, onAddMeeting, onUpdateMeeting, onCreateFolder, onUpdateProject, existingProjectTitles, customStatuses, changeRequests, onRequestChange, onDecideChangeRequest, documents, onAddDocument, orgSections, isExecutive, initialTab }: ProjectDetailProps) {
+export default function ProjectDetail({ row, tasks, meetings, employees, currentUserId, onAddTask, onUpdateTask, onDeleteTask, onAddMeeting, onUpdateMeeting, onCreateFolder, onUpdateProject, existingProjectTitles, customStatuses, customTypes, projects, onSelectProject, changeRequests, onRequestChange, onDecideChangeRequest, documents, onAddDocument, orgSections, isExecutive, initialTab }: ProjectDetailProps) {
   const [tab, setTab] = useState<DetailTab>(() => (
     initialTab && (DETAIL_TABS as string[]).includes(initialTab) ? (initialTab as DetailTab) : 'overview'
   ));
@@ -301,10 +306,11 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
     [filteredTasks, currentUserId]
   );
 
-  // งานย่อย — the overview table groups subtasks directly under their parent task (one level
-  // deep only) instead of listing every row flat; ภาพรวม is the one place this hierarchy is
-  // worth showing — งาน/ทีม/Timeline still treat every row (task or subtask) as flat, matching
-  // how MyWorkspace and the project's overall progress already do.
+  // งานย่อย — the overview table groups subtasks directly under their parent task, nested to
+  // any depth (a subtask can have its own subtasks, and so on) instead of listing every row
+  // flat; ภาพรวม is the one place this hierarchy is worth showing — งาน/ทีม/Timeline still treat
+  // every row (task or subtask, whatever its depth) as flat, matching how MyWorkspace and the
+  // project's overall progress already do.
   const topLevelFilteredTasks = useMemo(() => filteredTasks.filter((t) => !t.parentTaskId), [filteredTasks]);
   const subtasksByParent = useMemo(() => {
     const map = new Map<string, ProjectTaskItem[]>();
@@ -317,20 +323,26 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
     return map;
   }, [filteredTasks]);
 
-  // Shared by ภาพรวม's table for both a top-level task row and its indented งานย่อย rows — a
-  // subtask is otherwise rendered identically (same columns, same ส่งงาน/ตรวจงาน/แก้ไข/ลบ actions,
-  // same ownership-gate exemption already baked into InlineDeleteConfirm/AddTaskModal), so the only
-  // real differences here are indentation, the expand chevron, and the "+เพิ่มงานย่อย" button
-  // (only offered one level deep — a subtask doesn't get its own "+" to add a sub-subtask).
-  const renderOverviewTaskRow = (t: ProjectTaskItem, isSubtask: boolean) => {
+  // Shared by ภาพรวม's table for a top-level task row and every level of its งานย่อย rows — a
+  // subtask is otherwise rendered identically to a top-level task (same columns, same ส่งงาน/
+  // ตรวจงาน/แก้ไข/ลบ actions, same ownership-gate exemption already baked into
+  // InlineDeleteConfirm/AddTaskModal), so the only real differences here are indentation (scales
+  // with depth) and the expand chevron. `depth` nests recursively — a subtask can have its own
+  // subtasks, and so on, with no fixed limit — rendering itself plus, when expanded, every one of
+  // its own children one level deeper.
+  const renderOverviewTaskRow = (t: ProjectTaskItem, depth: number): React.ReactNode => {
     const taskAssignees = t.assigneeEmployeeIds.map((id) => employeeById.get(id)).filter((e): e is Employee => Boolean(e));
     const taskReviewers = (t.reviewerEmployeeIds ?? []).map((id) => employeeById.get(id)).filter((e): e is Employee => Boolean(e));
-    const subtaskCount = isSubtask ? 0 : (subtasksByParent.get(t.id)?.length ?? 0);
+    const taskCreator = t.creatorEmployeeId ? employeeById.get(t.creatorEmployeeId) : undefined;
+    const children = subtasksByParent.get(t.id) ?? [];
+    const subtaskCount = children.length;
+    const isSubtask = depth > 0;
     const isExpanded = expandedTaskIds.has(t.id);
     return (
-      <tr key={t.id} className={`border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50 ${isSubtask ? 'bg-slate-50/40' : ''}`}>
+      <Fragment key={t.id}>
+      <tr className={`border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50 ${isSubtask ? 'bg-slate-50/40' : ''}`}>
         <td className="px-5 py-3 font-medium text-[#272220] whitespace-nowrap">
-          <span className={`flex items-center gap-2 min-w-0 ${isSubtask ? 'pl-6' : ''}`}>
+          <span className="flex items-center gap-2 min-w-0" style={{ paddingLeft: depth * 24 }}>
             {subtaskCount > 0 ? (
               <button
                 type="button"
@@ -357,6 +369,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
         </td>
         <td className="px-5 py-3 whitespace-nowrap"><PeopleCell people={taskAssignees} /></td>
         <td className="px-5 py-3 whitespace-nowrap"><PeopleCell people={taskReviewers} /></td>
+        <td className="px-5 py-3 whitespace-nowrap"><PeopleCell people={taskCreator ? [taskCreator] : []} /></td>
         <td className="px-5 py-3 text-[#6F6F6F] whitespace-nowrap">{t.startDate ?? 'ยังไม่มี'}</td>
         <td className="px-5 py-3 text-[#6F6F6F] whitespace-nowrap">{t.dueDate ?? 'ยังไม่มีกำหนด'}</td>
         <td className="px-5 py-3 whitespace-nowrap">
@@ -405,18 +418,16 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                 </button>
               </Tooltip>
             )}
-            {!isSubtask && (
-              <Tooltip content="เพิ่มงานย่อย">
-                <button
-                  type="button"
-                  onClick={() => openAddSubtask(t)}
-                  aria-label="เพิ่มงานย่อย"
-                  className="text-[#A0A0A0] hover:text-[#FF6537] cursor-pointer transition-colors"
-                >
-                  <Plus size={13} />
-                </button>
-              </Tooltip>
-            )}
+            <Tooltip content="เพิ่มงานย่อย">
+              <button
+                type="button"
+                onClick={() => openAddSubtask(t)}
+                aria-label="เพิ่มงานย่อย"
+                className="text-[#A0A0A0] hover:text-[#FF6537] cursor-pointer transition-colors"
+              >
+                <Plus size={13} />
+              </button>
+            </Tooltip>
             <Tooltip content="แก้ไข">
               <button
                 type="button"
@@ -442,6 +453,8 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
           </div>
         </td>
       </tr>
+      {isExpanded && children.map((st) => renderOverviewTaskRow(st, depth + 1))}
+      </Fragment>
     );
   };
 
@@ -466,6 +479,8 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
   }, [filteredTasks, employeeById, row.memberEmployeeIds]);
 
   const owners = row.ownerEmployeeIds.map((id) => employeeById.get(id)).filter((e): e is Employee => Boolean(e));
+  const parentProject = row.parentProjectId ? projects.find((p) => p.id === row.parentProjectId) : undefined;
+  const childProjects = projects.filter((p) => p.parentProjectId === row.id);
 
   // If any of the project's ผู้รับผิดชอบหลัก turn out to also be task assignees already listed
   // below, show them once at the top (with their real tasks) instead of twice.
@@ -572,6 +587,40 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
             <p className="font-medium text-[#272220]">{formatBudget(row.budget)}</p>
           </div>
         </div>
+
+        {(parentProject || childProjects.length > 0) && (
+          <div className="flex flex-wrap items-start gap-x-6 gap-y-2 pt-3 border-t border-slate-50 text-xs">
+            {parentProject && (
+              <div>
+                <p className="text-[#A0A0A0] mb-1">โครงการหลัก</p>
+                <button
+                  type="button"
+                  onClick={() => onSelectProject(parentProject.id)}
+                  className="font-medium text-[#FF6537] hover:underline cursor-pointer"
+                >
+                  {parentProject.title}
+                </button>
+              </div>
+            )}
+            {childProjects.length > 0 && (
+              <div>
+                <p className="text-[#A0A0A0] mb-1">โครงการย่อย ({childProjects.length})</p>
+                <div className="flex flex-wrap gap-x-3 gap-y-1">
+                  {childProjects.map((cp) => (
+                    <button
+                      key={cp.id}
+                      type="button"
+                      onClick={() => onSelectProject(cp.id)}
+                      className="font-medium text-[#FF6537] hover:underline cursor-pointer"
+                    >
+                      {cp.title}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {pendingRequests.length > 0 && (
@@ -669,6 +718,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                     <th className="px-5 py-2 text-left">รายละเอียด</th>
                     <th className="px-5 py-2 text-left whitespace-nowrap">ผู้รับผิดชอบ</th>
                     <th className="px-5 py-2 text-left whitespace-nowrap">ผู้ตรวจ</th>
+                    <th className="px-5 py-2 text-left whitespace-nowrap">ผู้สร้าง</th>
                     <th className="px-5 py-2 text-left whitespace-nowrap">วันที่เริ่ม</th>
                     <th className="px-5 py-2 text-left whitespace-nowrap">กำหนดส่ง</th>
                     <th className="px-5 py-2 text-left whitespace-nowrap">สถานะ</th>
@@ -676,16 +726,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                   </tr>
                 </thead>
                 <tbody>
-                  {topLevelFilteredTasks.map((t) => {
-                    const subtasks = subtasksByParent.get(t.id) ?? [];
-                    const isExpanded = expandedTaskIds.has(t.id);
-                    return (
-                      <Fragment key={t.id}>
-                        {renderOverviewTaskRow(t, false)}
-                        {isExpanded && subtasks.map((st) => renderOverviewTaskRow(st, true))}
-                      </Fragment>
-                    );
-                  })}
+                  {topLevelFilteredTasks.map((t) => renderOverviewTaskRow(t, 0))}
                 </tbody>
               </table>
             </div>
@@ -1104,6 +1145,8 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
         onSave={onUpdateProject}
         existingTitles={existingProjectTitles}
         customStatuses={customStatuses}
+        customTypes={customTypes}
+        projects={projects}
         currentUserId={currentUserId}
         isExecutive={isExecutive}
         changeRequests={changeRequests}

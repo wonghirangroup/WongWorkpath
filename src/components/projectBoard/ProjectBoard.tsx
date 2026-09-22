@@ -191,6 +191,8 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
     customProjectStatuses,
     handleAddCustomProjectStatus,
     handleDeleteCustomProjectStatus,
+    customProjectTypes,
+    handleAddCustomProjectType,
     handleAddProjectTask,
     handleUpdateProjectTask,
     handleDeleteProjectTask,
@@ -371,6 +373,9 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
         onUpdateProject={(updates) => handleUpdateProject(selectedProject.id, updates)}
         existingProjectTitles={projects.map((p) => p.title)}
         customStatuses={customProjectStatuses}
+        customTypes={customProjectTypes}
+        projects={projects}
+        onSelectProject={setTaskSelectedProjectId}
         changeRequests={changeRequests}
         onRequestChange={handleRequestChange}
         onDecideChangeRequest={handleDecideChangeRequest}
@@ -582,6 +587,9 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
         onCreateFolder={onCreateFolder}
         existingTitles={projects.map((p) => p.title)}
         customStatuses={customProjectStatuses}
+        customTypes={customProjectTypes}
+        onAddCustomType={handleAddCustomProjectType}
+        projects={projects}
       />
 
       {actionToast && (

@@ -85,6 +85,7 @@ export default function ProjectTable({ rows, employees, onViewDetail, canDelete,
             <th className="px-4 py-3 sticky top-0 z-20 bg-[#F9F9F9]">วันที่เริ่ม</th>
             <th className="px-4 py-3 sticky top-0 z-20 bg-[#F9F9F9]">วันที่สิ้นสุด</th>
             <th className="px-4 py-3 sticky top-0 z-20 bg-[#F9F9F9]">สร้างเมื่อ</th>
+            <th className="px-4 py-3 sticky top-0 z-20 bg-[#F9F9F9]">ผู้สร้าง</th>
             <th className="px-4 py-3 sticky top-0 z-20 bg-[#F9F9F9]">สถานะ</th>
             <th className="px-4 py-3 sticky top-0 z-20 bg-[#F9F9F9]">การกระทำ</th>
           </tr>
@@ -96,6 +97,7 @@ export default function ProjectTable({ rows, employees, onViewDetail, canDelete,
             const showDueWarning = row.daysUntilDue !== undefined && row.daysUntilDue <= 2;
             const accentColor = rowAccentColor(row);
             const owners = row.ownerEmployeeIds.map((id) => employees.find((e) => e.id === id)).filter((e): e is Employee => Boolean(e));
+            const creator = row.createdByEmployeeId ? employees.find((e) => e.id === row.createdByEmployeeId) : undefined;
             // `owners` already resolved each id against the real employee list, so reusing its ids
             // here doubles as resolveValidIds — a deleted owner can't permanently lock the row.
             const canEditPriority = isExecutive || isOwner(owners.map((o) => o.id), currentUserId);
@@ -168,6 +170,9 @@ export default function ProjectTable({ rows, employees, onViewDetail, canDelete,
                   {row.endDate ?? 'ยังไม่มี'}
                 </td>
                 <td className="px-4 py-4 text-[#272220] whitespace-nowrap">{row.createdDate ?? 'ยังไม่มี'}</td>
+                <td className="px-4 py-4 whitespace-nowrap">
+                  <PeopleCell people={creator ? [creator] : []} size={32} showRole />
+                </td>
                 <td className="px-4 py-4 whitespace-nowrap">
                   <span
                     className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap"

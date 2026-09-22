@@ -19,8 +19,21 @@ export interface CustomProjectStatus {
 }
 
 // "ประเภทโครงการ" — feeds both a dedicated filter/label and the project code format
-// ({abbreviation}-{2-digit BE year}-{type}-{sequence}, e.g. "WP-69-P-001").
+// ({abbreviation}-{2-digit BE year}-{type}-{sequence}, e.g. "WP-69-P-001"). The 6 built-ins below;
+// a project's actual `type` field (on ProjectRow) is a plain string since it can also hold a
+// user-created custom type's own abbreviation (see CustomProjectType) — statusMeta.ts's
+// PROJECT_TYPE_META falls back to that custom type's own label for anything outside this union,
+// same pattern as ProjectStatus/CustomProjectStatus above it.
 export type ProjectType = 'P' | 'SP' | 'I' | 'C' | 'B' | 'FND';
+
+// A user-defined project type beyond the 6 built-ins, picked via "อื่นๆ ระบุ..." in
+// CreateProjectModal — real, DB-backed (server/routes/project-custom-types.ts) so it's reusable
+// on future projects too, not just a one-off free-text field. `id` is the abbreviation itself
+// (e.g. "MKT"), embedded into the generated project code exactly like a built-in type's own code.
+export interface CustomProjectType {
+  id: string;
+  label: string;
+}
 
 // Numeric priority scale shared by both a project's own priority and a task's priority —
 // 1 = most important, 5 = least — so the two concepts sort/compare/process identically instead
@@ -33,7 +46,7 @@ export interface ProjectRow {
   title: string;
   description?: string; // short one-line summary shown under the title in grid/card view
   department?: string; // shown as "ทีม" in the project detail meta grid
-  type?: ProjectType; // "ประเภทโครงการ" — also embedded in the generated code
+  type?: string; // one of the 6 ProjectType built-ins, or a CustomProjectType.id — also embedded in the generated code
   abbreviation?: string; // "ตัวย่อชื่อโครงการ" (e.g. "GS" for Grow store) — derived from the title, user-editable, the code's first segment
   priority?: ProjectPriority; // shown as "ความสำคัญ" in the project detail meta grid
   budget: number | null; // null renders as "ยังไม่มี" (draft projects with no figure yet)
@@ -49,6 +62,11 @@ export interface ProjectRow {
   createdDate: string | null; // pre-formatted Thai date string — when the project record was created
   daysUntilDue?: number; // when set and small, shows the red "อีก N วัน" line above endDate
   status: string; // one of the 7 ProjectStatus built-ins, or a CustomProjectStatus.id
+  createdByEmployeeId?: string; // who created the project, from CreateProjectModal — optional since older rows predate this
+  // Only meaningful when type === 'SP' — which top-level "โครงการ (P)" this โครงการย่อย belongs
+  // under. Server-validated (see projects.ts's resolveParentProjectId): the referenced project
+  // must itself be type 'P', so a sub-project chain can never nest more than one level deep.
+  parentProjectId?: string;
 }
 
 // A single work item inside a project's "งาน" tab — a self-contained mock task list scoped to

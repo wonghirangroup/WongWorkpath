@@ -11,6 +11,8 @@ export default function DashboardPage() {
     currentUser,
     handleAddProject,
     customProjectStatuses,
+    customProjectTypes,
+    handleAddCustomProjectType,
     handleAddDocument,
     setTaskSelectedProjectId,
     orgSections,
@@ -34,6 +36,8 @@ export default function DashboardPage() {
       onCreateProject={async (payload) => { await handleAddProject({ ...payload, createdBy: currentUser?.id ?? '' }); }}
       onCreateFolder={handleCreateFolder}
       customProjectStatuses={customProjectStatuses}
+      customProjectTypes={customProjectTypes}
+      onAddCustomProjectType={handleAddCustomProjectType}
       onSelectProject={goToProject}
       orgSections={orgSections}
     />
