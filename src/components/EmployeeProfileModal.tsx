@@ -265,7 +265,7 @@ export default function EmployeeProfileModal({
 
               {/* Contact strip — always reflects the last-saved record, editable fields live below */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 pb-5 border-b border-slate-100 text-[13px]">
-                <div className="flex items-center gap-2 text-[#6F6F6F] min-w-0"><Mail size={14} className="shrink-0" /><span className="truncate">{employee.email}</span></div>
+                <div className="flex items-center gap-2 text-[#6F6F6F] min-w-0"><Mail size={14} className="shrink-0" /><span className="truncate">{employee.email || '—'}</span></div>
                 <div className="flex items-center gap-2 text-[#6F6F6F] min-w-0"><AtSign size={14} className="shrink-0" /><span className="truncate">{employee.username || '—'}</span></div>
                 <div className="flex items-center gap-2 text-[#6F6F6F] min-w-0"><Phone size={14} className="shrink-0" /><span className="truncate">{employee.phone || '—'}</span></div>
                 <div className="flex items-center gap-2 text-[#6F6F6F] min-w-0"><Calendar size={14} className="shrink-0" /><span className="truncate">เข้าร่วมเมื่อ {formatThaiDate(employee.createdAt)}</span></div>

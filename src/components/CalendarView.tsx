@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Task, Meeting, Employee } from '../types';
+import { Meeting, Employee } from '../types';
 import { useAppData } from '../context/AppDataContext';
 import {
   Calendar as CalIcon,
@@ -23,10 +23,6 @@ import { formatThaiDateShort, displayName } from './projectBoard/CreateProjectMo
 import { isResponsibleForProject } from '../lib/ownership';
 import Tooltip from './Tooltip';
 
-interface CalendarViewProps {
-  tasks: Task[];
-}
-
 type FilterType = 'All' | 'Tasks' | 'Meetings' | 'Projects';
 
 const FILTER_OPTIONS: { value: FilterType; label: string; icon: typeof CalIcon }[] = [
@@ -36,10 +32,8 @@ const FILTER_OPTIONS: { value: FilterType; label: string; icon: typeof CalIcon }
   { value: 'Projects', label: 'เฉพาะโครงการ', icon: Briefcase },
 ];
 
-// A single shape both the old app-wide Task and the newer, real project_task rows get mapped
-// into for the grid/popover/upcoming-list — they're different types (different status scales,
-// different id schemes, Task has no real project link) but a user browsing the calendar just
-// wants to see "what's due", regardless of which table it actually lives in.
+// The shape a real project_task row gets mapped into for the grid/popover/upcoming-list — a user
+// browsing the calendar just wants to see "what's due".
 interface CalendarTaskItem {
   id: string;
   title: string;
@@ -47,9 +41,7 @@ interface CalendarTaskItem {
   startDateISO: string | null;
   // Real project tasks carry colorHex (from the canonical TASK_STATUS_COLOR in statusMeta.ts, the
   // same palette ProjectDetail/ProjectGantt/MyWorkspace already color this exact status with) and
-  // render via inline style, same technique as this file's own project-deadline chips below —
-  // colorClasses is only still used for the legacy Task type, whose own status scale
-  // ('Completed'/'In Progress'/'On Hold') has no equivalent in TASK_STATUS_COLOR.
+  // render via inline style, same technique as this file's own project-deadline chips below.
   colorClasses: string;
   colorHex?: string;
   projectLabel: string;
@@ -91,9 +83,7 @@ function isPastMeeting(meeting: Meeting): boolean {
   return `${meeting.date}T${meeting.endTime || meeting.startTime}` < nowString;
 }
 
-export default function CalendarView({
-  tasks
-}: CalendarViewProps) {
+export default function CalendarView() {
   const { orgSections, meetings, projects, projectTasks, employees, currentUser, handleAddMeeting, handleUpdateMeeting, setTaskSelectedProjectId, setTaskSelectedTab } = useAppData();
   const navigate = useNavigate();
   const [isScheduleMeetingOpen, setIsScheduleMeetingOpen] = useState(false);
@@ -135,9 +125,6 @@ export default function CalendarView({
     return () => document.removeEventListener('mousedown', handler);
   }, [openDayKey]);
 
-  // Real for meetings (which store a real projectId into the DB-backed `project` table), not
-  // available for tasks from the older Task/Gantt/Calendar data model (its `project` field is
-  // just a free-text label with no matching id to link to).
   const projectById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
   const employeeById = useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
   const namesFor = (ids: string[]) => {
@@ -236,39 +223,10 @@ export default function CalendarView({
     }
   };
 
-  // Maps the older Task model's own status scale onto the same TASK_STATUS_COLOR hex palette the
-  // real project_task chips below already render from, so both kinds of task chip on this
-  // calendar read as one consistent color system instead of two disconnected ones.
-  const getTaskStatusColor = (status: string): string => {
-    switch (status) {
-      case 'Completed': return TASK_STATUS_COLOR.done;
-      case 'In Progress': return TASK_STATUS_COLOR.in_progress;
-      case 'On Hold': return TASK_STATUS_COLOR.blocked;
-      default: return TASK_STATUS_COLOR.todo;
-    }
-  };
-
-  // The old app-wide Task and the newer, real project_task rows are different types (different
-  // status scales, project_task has no department field of its own) — mapped into one common
-  // shape here so the grid/popover/upcoming-list below only ever deal with one kind of "task".
-  // This is also the actual fix for project tasks never appearing on the calendar at all: they
-  // used to not be read here in any form.
+  // Real project tasks mapped into the common CalendarTaskItem shape the grid/popover/upcoming-
+  // list below deal with. No department field to filter project tasks by — shown regardless of
+  // the department dropdown.
   const allCalendarTasks = useMemo<CalendarTaskItem[]>(() => {
-    const fromOldTasks: CalendarTaskItem[] = tasks
-      .filter((task) => selectedDept === 'All' || task.department === selectedDept)
-      .filter((task) => isMineOnly([task.primaryOwnerId, ...task.secondaryAssigneeIds]))
-      .map((task) => ({
-        id: `task-${task.id}`,
-        title: task.title,
-        dueDateISO: task.dueDate,
-        startDateISO: task.startDate,
-        colorClasses: 'border',
-        colorHex: getTaskStatusColor(task.status),
-        projectLabel: task.project,
-        assigneeNames: namesFor([task.primaryOwnerId, ...task.secondaryAssigneeIds]),
-      }));
-
-    // No department field to filter by — shown regardless of the department dropdown.
     const fromProjectTasks: CalendarTaskItem[] = projectTasks
       .filter((t) => t.dueDateISO)
       .filter((t) => isMineOnly(t.assigneeEmployeeIds))
@@ -284,8 +242,8 @@ export default function CalendarView({
         assigneeNames: namesFor(t.assigneeEmployeeIds),
       }));
 
-    return [...fromOldTasks, ...fromProjectTasks];
-  }, [tasks, projectTasks, selectedDept, projectById, employeeById, scope, currentUserId]);
+    return fromProjectTasks;
+  }, [projectTasks, projectById, employeeById, scope, currentUserId]);
 
   // Check if a date has tasks falling on it
   const getTasksOnDate = (date: Date) => {
@@ -749,8 +707,7 @@ export default function CalendarView({
                 {/* Full day detail popover — opened by clicking a cell that has anything on it.
                     Shows every task/meeting for the day (not just the first 2) plus which
                     project each is from; a meeting's project is a real, clickable link (it
-                    stores a real projectId), a task's is shown as plain text only (the older
-                    Task data model's `project` field is free text with no id to link to). */}
+                    stores a real projectId), a task's is shown as plain text only. */}
                 {isOpen && (
                   <div
                     onClick={(e) => e.stopPropagation()}

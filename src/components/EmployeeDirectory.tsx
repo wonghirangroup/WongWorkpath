@@ -90,7 +90,7 @@ function EmployeeQuickViewModal({ employee, onClose }: { employee: Employee | nu
                 </div>
                 <div className="flex items-center gap-2 text-[#272220]">
                   <Mail size={14} className="text-[#A0A0A0] shrink-0" />
-                  <span className="break-all">{employee.email}</span>
+                  <span className="break-all">{employee.email || '—'}</span>
                 </div>
               </div>
             </div>
@@ -140,7 +140,7 @@ export default function EmployeeDirectory({ employees, orgDivisions, currentUser
   const filteredEmployees = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
     return employees.filter((emp) => {
-      const matchesSearch = !query || emp.name.toLowerCase().includes(query) || (emp.nickname ?? '').toLowerCase().includes(query) || emp.email.toLowerCase().includes(query);
+      const matchesSearch = !query || emp.name.toLowerCase().includes(query) || (emp.nickname ?? '').toLowerCase().includes(query) || (emp.email ?? '').toLowerCase().includes(query);
       const matchesDepartment = departmentFilter === '__all__' || emp.department === departmentFilter;
       return matchesSearch && matchesDepartment;
     });
@@ -339,7 +339,7 @@ export default function EmployeeDirectory({ employees, orgDivisions, currentUser
                     )}
                     <div className="flex items-center gap-1.5 text-[12px] text-[#6F6F6F] min-w-0">
                       <Mail size={12} className="shrink-0" />
-                      <span className="truncate">{emp.email}</span>
+                      <span className="truncate">{emp.email || '—'}</span>
                     </div>
                   </div>
                 </div>

@@ -121,7 +121,7 @@ employeesRouter.get('/', async (_req, res) => {
 // mirrors what server/seed-employee-logins.ts does for the seeded roster.
 employeesRouter.post('/', async (req, res) => {
   const e = req.body ?? {};
-  const email = typeof e.email === 'string' ? e.email.trim().toLowerCase() : '';
+  const email = typeof e.email === 'string' && e.email.trim() ? e.email.trim().toLowerCase() : null;
   const username = typeof e.username === 'string' ? e.username.trim() : '';
   const password = typeof e.password === 'string' ? e.password : '';
   const nickname = typeof e.nickname === 'string' && e.nickname.trim() ? e.nickname.trim() : e.name;
@@ -137,14 +137,17 @@ employeesRouter.post('/', async (req, res) => {
   const isDepartmentExempt = roleTrim === 'ผู้บริหาร' || roleTrim === 'หัวหน้าฝ่าย';
   const hasDepartment = typeof e.department === 'string' && e.department.trim();
   const hasDivision = typeof e.division === 'string' && e.division.trim();
-  if (!e.id || !e.name || !email || !username || !e.role || !hasDivision || !password || (!isDepartmentExempt && !hasDepartment)) {
+  if (!e.id || !e.name || !username || !e.role || !hasDivision || !password || (!isDepartmentExempt && !hasDepartment)) {
     return res.status(400).json({ message: 'ข้อมูลไม่ครบถ้วนหรือไม่ถูกต้อง' });
   }
-  if (!EMAIL_PATTERN.test(email)) {
+  if (email && !EMAIL_PATTERN.test(email)) {
     return res.status(400).json({ message: 'รูปแบบอีเมลไม่ถูกต้อง' });
   }
 
   try {
+    // email is optional now — `email = ?` against a null parameter never matches any row (not
+    // even another blank one), same as the UNIQUE key's own "multiple NULLs are distinct" rule,
+    // so this still only flags a real duplicate.
     const [existing] = await pool.query<RowDataPacket[]>(
       'SELECT id FROM employee WHERE id = ? OR email = ? LIMIT 1',
       [e.id, email]
@@ -289,11 +292,14 @@ employeesRouter.put('/:id', async (req, res) => {
     employeeFields.push('muted_notification_categories = ?');
     employeeValues.push(muted.length ? JSON.stringify(muted) : null);
   }
-  // Contact email — also mirrored into login.email below (the forgot-password OTP flow looks the
-  // account up by that column), so the two never drift apart.
-  const newEmail = typeof e.email === 'string' && e.email.trim() ? e.email.trim().toLowerCase() : null;
-  if (newEmail) {
-    if (!EMAIL_PATTERN.test(newEmail)) {
+  // Contact email — optional, and also mirrored into login.email below (the forgot-password OTP
+  // flow looks the account up by that column) so the two never drift apart. Presence-checked like
+  // phone/address above so sending an empty string actually clears an existing email instead of
+  // being silently ignored — a blank one just means that account can't use "ลืมรหัสผ่าน" via OTP.
+  const emailProvided = 'email' in e;
+  const newEmail = emailProvided && typeof e.email === 'string' && e.email.trim() ? e.email.trim().toLowerCase() : null;
+  if (emailProvided) {
+    if (newEmail && !EMAIL_PATTERN.test(newEmail)) {
       return res.status(400).json({ message: 'รูปแบบอีเมลไม่ถูกต้อง' });
     }
     employeeFields.push('email = ?');
@@ -357,14 +363,14 @@ employeesRouter.put('/:id', async (req, res) => {
       await pool.query(`UPDATE employee SET ${employeeFields.join(', ')} WHERE id = ?`, [...employeeValues, req.params.id]);
     }
 
-    if (newUsername || newPassword || newEmail) {
+    if (newUsername || newPassword || emailProvided) {
       const loginFields: string[] = ['updated_at = ?'];
       const loginValues: unknown[] = [nowBangkokDateTime()];
       if (newUsername) {
         loginFields.push('username = ?');
         loginValues.push(newUsername);
       }
-      if (newEmail) {
+      if (emailProvided) {
         loginFields.push('email = ?');
         loginValues.push(newEmail);
       }

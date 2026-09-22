@@ -22,7 +22,7 @@ export interface Employee {
   id: string;
   name: string; // Legal name — a plain employee changes it only via an admin-approved change request (Settings)
   nickname?: string; // Same approval rule as `name`; defaults to `name` until changed
-  email: string; // Contact info only — login now uses `username`, not this
+  email?: string; // Contact info only, optional — login uses `username`, not this. Absent means that account has no "ลืมรหัสผ่าน" via OTP.
   username?: string; // Login credential, joined in from the `login` table
   phone?: string;
   address?: string;
@@ -39,43 +39,6 @@ export interface Employee {
   // everything on. Muted rows are still created, the server just never returns them.
   mutedNotificationCategories?: NotificationCategory[];
   createdAt?: string; // When the account row was created (server-assigned) — shown as "เข้าร่วมเมื่อ"
-}
-
-export type Priority = 'Low' | 'Medium' | 'High';
-export type TaskStatus = 'Not Started' | 'In Progress' | 'Completed' | 'On Hold';
-
-export interface Task {
-  id: string;
-  title: string;
-  description: string;
-  project: string;
-  priority: Priority;
-  status: TaskStatus;
-  progress: number; // 0 to 100
-  startDate: string;
-  dueDate: string;
-  actualEndDate?: string;
-  department: string; // Real org-chart section (แผนก)
-  primaryOwnerId: string; // Primary responsible person
-  secondaryAssigneeIds: string[]; // Secondary assignees
-  contributorIds: string[]; // Contributors
-  dependencies: string[]; // Task IDs that must be completed first
-  approvalStatus: 'None' | 'Pending Approval' | 'Approved' | 'Rejected';
-  approvalNote?: string;
-  linkedDocIds: string[]; // Document IDs linked to this task
-  handovers: HandoverRecord[];
-}
-
-export interface HandoverRecord {
-  id: string;
-  fromUserId: string;
-  toUserId: string;
-  stageName: string;
-  notes: string;
-  timestamp: string;
-  status: 'Pending' | 'Approved' | 'Rejected';
-  approvedBy?: string;
-  approvalNotes?: string;
 }
 
 export interface LinkedDoc {

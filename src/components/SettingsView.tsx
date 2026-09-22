@@ -126,7 +126,7 @@ export default function SettingsView({ currentUser, changeRequests, onUpdateEmpl
   const [name, setName] = useState(currentUser.name);
   const [nickname, setNickname] = useState(currentNickname);
   const [phone, setPhone] = useState(currentPhone);
-  const [email, setEmail] = useState(currentUser.email);
+  const [email, setEmail] = useState(currentUser.email ?? '');
   const [avatar, setAvatar] = useState(currentAvatar);
   const [reason, setReason] = useState('');
   const [avatarError, setAvatarError] = useState('');
@@ -142,7 +142,7 @@ export default function SettingsView({ currentUser, changeRequests, onUpdateEmpl
     setName(currentUser.name);
     setNickname(currentNickname);
     setPhone(currentPhone);
-    setEmail(currentUser.email);
+    setEmail(currentUser.email ?? '');
     setAvatar(currentAvatar);
     setReason('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -167,7 +167,7 @@ export default function SettingsView({ currentUser, changeRequests, onUpdateEmpl
   const namesChanged = !pendingRequest && (nameChanged || nicknameChanged);
   const needsApproval = needsApprovalForNames && namesChanged;
   const phoneChanged = phone !== currentPhone;
-  const emailChanged = email.trim().toLowerCase() !== currentUser.email.toLowerCase();
+  const emailChanged = email.trim().toLowerCase() !== (currentUser.email ?? '').toLowerCase();
   const avatarChanged = avatar !== currentAvatar;
   const isDirty = namesChanged || phoneChanged || emailChanged || avatarChanged;
 
@@ -175,7 +175,7 @@ export default function SettingsView({ currentUser, changeRequests, onUpdateEmpl
   const phoneError = phone && phone.length !== 10 ? 'กรอกเบอร์โทรให้ครบ 10 หลัก' : '';
   const namesValid = Boolean(name.trim()) && Boolean(nickname.trim());
   const canSaveProfile =
-    isDirty && namesValid && !emailError && !phoneError && email.trim() !== '' && (!needsApproval || reason.trim() !== '') && !isSavingProfile;
+    isDirty && namesValid && !emailError && !phoneError && (!needsApproval || reason.trim() !== '') && !isSavingProfile;
 
   const handleAvatarPicked = async (file: globalThis.File | null) => {
     setAvatarError('');
@@ -191,7 +191,7 @@ export default function SettingsView({ currentUser, changeRequests, onUpdateEmpl
     setName(currentUser.name);
     setNickname(currentNickname);
     setPhone(currentPhone);
-    setEmail(currentUser.email);
+    setEmail(currentUser.email ?? '');
     setAvatar(currentAvatar);
     setReason('');
     setAvatarError('');

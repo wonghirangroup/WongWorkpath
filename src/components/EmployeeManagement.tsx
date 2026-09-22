@@ -266,7 +266,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
   const hidesDepartmentField = roleExemptFromDepartment(newRole);
 
   const isFormValid = !!(
-    newName.trim() && newEmail.trim() && newUsername.trim() && newRole.trim() && newPassword.trim()
+    newName.trim() && newUsername.trim() && newRole.trim() && newPassword.trim()
   );
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -279,7 +279,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
         id: getNextEmployeeId(employees),
         name: newName.trim(),
         nickname: newNickname.trim() || newName.trim(),
-        email: newEmail.trim(),
+        email: newEmail.trim() || undefined,
         phone: newPhone.trim() || undefined,
         username: newUsername.trim(),
         role: newRole.trim(),
@@ -307,7 +307,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
     const matchesQuery = !query
       || emp.name.toLowerCase().includes(query)
       || (emp.nickname || '').toLowerCase().includes(query)
-      || emp.email.toLowerCase().includes(query)
+      || (emp.email || '').toLowerCase().includes(query)
       || (emp.username || '').toLowerCase().includes(query);
     const matchesDepartment = departmentFilter === '__all__' || emp.department === departmentFilter;
     return matchesQuery && matchesDepartment;
@@ -646,7 +646,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                 )}
                 <div className="flex items-center gap-1.5 text-[12px] text-[#6F6F6F] min-w-0">
                   <Mail size={12} className="shrink-0" />
-                  <span className="truncate">{emp.email}</span>
+                  <span className="truncate">{emp.email || '—'}</span>
                 </div>
               </div>
             </div>
@@ -878,10 +878,9 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                     </div>
 
                     <div>
-                      <label className="block text-[#272220] font-bold text-[11px] mb-1">อีเมล *</label>
+                      <label className="block text-[#272220] font-bold text-[11px] mb-1">อีเมล <span className="font-normal text-slate-400">(ไม่บังคับ)</span></label>
                       <input
                         type="email"
-                        required
                         placeholder="name@company.com"
                         value={newEmail}
                         onChange={(e) => setNewEmail(e.target.value)}

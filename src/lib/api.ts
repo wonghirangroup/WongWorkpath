@@ -1,5 +1,6 @@
-import { Employee, CredentialItem, Meeting, Notification, NotificationCategory, LinkedDoc } from '../types';
+import { Employee, CredentialItem, Meeting, Notification, NotificationCategory, LinkedDoc, AuditLog } from '../types';
 import type { ProjectRow, ProjectTaskItem, CustomProjectStatus } from '../components/projectBoard/types';
+import type { OrgDivisionData } from '../data/orgStructure';
 
 // Vite only exposes env vars prefixed VITE_ to client code — set in .env,
 // separate from the server-only DB_* vars that server/db.ts reads.
@@ -560,4 +561,155 @@ export async function decideChangeRequest(
     throw new ApiError(data.message ?? 'บันทึกผลการพิจารณาไม่สำเร็จ', res.status);
   }
   return data as ChangeRequest;
+}
+
+// โครงสร้างองค์กร (ฝ่าย/แผนก) — server/routes/org-structure.ts. Name-based, not id-based, matching
+// how the rest of the app already treats division/department as identity. Every mutation returns
+// the full, freshly-reloaded list so the caller can just setOrgDivisions(result) directly instead
+// of re-deriving the update locally.
+export async function fetchOrgStructure(): Promise<OrgDivisionData[]> {
+  const res = await fetch(`${API_BASE_URL}/api/org-structure`);
+  if (!res.ok) throw new Error(`Failed to fetch org structure: ${res.status}`);
+  return res.json();
+}
+
+export async function addOrgDivision(name: string, actorEmployeeId: string): Promise<OrgDivisionData[]> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/org-structure/divisions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, actorEmployeeId }),
+    });
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(data.message ?? 'เพิ่มฝ่ายไม่สำเร็จ', res.status);
+  }
+  return data as OrgDivisionData[];
+}
+
+export async function renameOrgDivision(oldName: string, newName: string, actorEmployeeId: string): Promise<OrgDivisionData[]> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/org-structure/divisions/${encodeURIComponent(oldName)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newName, actorEmployeeId }),
+    });
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(data.message ?? 'เปลี่ยนชื่อฝ่ายไม่สำเร็จ', res.status);
+  }
+  return data as OrgDivisionData[];
+}
+
+export async function deleteOrgDivision(name: string, actorEmployeeId: string): Promise<OrgDivisionData[]> {
+  let res: Response;
+  try {
+    res = await fetch(
+      `${API_BASE_URL}/api/org-structure/divisions/${encodeURIComponent(name)}?actorEmployeeId=${encodeURIComponent(actorEmployeeId)}`,
+      { method: 'DELETE' }
+    );
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(data.message ?? 'ลบฝ่ายไม่สำเร็จ', res.status);
+  }
+  return data as OrgDivisionData[];
+}
+
+export async function addOrgSection(divisionName: string, sectionName: string, actorEmployeeId: string): Promise<OrgDivisionData[]> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/org-structure/divisions/${encodeURIComponent(divisionName)}/sections`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: sectionName, actorEmployeeId }),
+    });
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(data.message ?? 'เพิ่มแผนกไม่สำเร็จ', res.status);
+  }
+  return data as OrgDivisionData[];
+}
+
+export async function renameOrgSection(
+  divisionName: string,
+  oldName: string,
+  newName: string,
+  actorEmployeeId: string
+): Promise<OrgDivisionData[]> {
+  let res: Response;
+  try {
+    res = await fetch(
+      `${API_BASE_URL}/api/org-structure/divisions/${encodeURIComponent(divisionName)}/sections/${encodeURIComponent(oldName)}`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName, actorEmployeeId }),
+      }
+    );
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(data.message ?? 'เปลี่ยนชื่อแผนกไม่สำเร็จ', res.status);
+  }
+  return data as OrgDivisionData[];
+}
+
+export async function deleteOrgSection(divisionName: string, sectionName: string, actorEmployeeId: string): Promise<OrgDivisionData[]> {
+  let res: Response;
+  try {
+    res = await fetch(
+      `${API_BASE_URL}/api/org-structure/divisions/${encodeURIComponent(divisionName)}/sections/${encodeURIComponent(sectionName)}?actorEmployeeId=${encodeURIComponent(actorEmployeeId)}`,
+      { method: 'DELETE' }
+    );
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(data.message ?? 'ลบแผนกไม่สำเร็จ', res.status);
+  }
+  return data as OrgDivisionData[];
+}
+
+// บันทึกกิจกรรม (audit log) — server/routes/audit-logs.ts. Small internal-tool dataset, always
+// fetched whole (see that route's own note on why) so EmployeeManagement.tsx's existing
+// client-side search/date/department/action filters keep working unmodified.
+export async function fetchAuditLogs(): Promise<AuditLog[]> {
+  const res = await fetch(`${API_BASE_URL}/api/audit-logs`);
+  if (!res.ok) throw new Error(`Failed to fetch audit logs: ${res.status}`);
+  return res.json();
+}
+
+export async function createAuditLog(entry: AuditLog): Promise<AuditLog> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/audit-logs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(entry),
+    });
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(data.message ?? 'บันทึกกิจกรรมไม่สำเร็จ', res.status);
+  }
+  return data as AuditLog;
 }

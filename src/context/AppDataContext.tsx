@@ -1,19 +1,17 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useRef, ReactNode } from 'react';
 import {
   Employee,
-  Task,
   LinkedDoc,
   CredentialItem,
   Meeting,
   Notification,
   AuditLog,
-  HandoverRecord
 } from '../types';
 import { DEFAULT_ORG_DIVISIONS, OrgDivisionData } from '../data/orgStructure';
 import {
   INITIAL_EMPLOYEES
 } from '../data/mockData';
-import { fetchEmployees, createEmployee, updateEmployeeRemote, changeSelfPassword, deleteEmployeeRemote, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote, fetchProjects, createProject, updateProjectRemote, deleteProjectRemote, CreateProjectPayload, fetchMeetings, createMeeting, updateMeetingRemote, fetchProjectTasks, createProjectTask, updateProjectTaskRemote, deleteProjectTaskRemote, fetchProjectCustomStatuses, createProjectCustomStatus, deleteProjectCustomStatusRemote, fetchNotifications, createNotification, markNotificationRead, markAllNotificationsRead, CreateNotificationPayload, fetchChangeRequests, createChangeRequest, decideChangeRequest, ChangeRequest, fetchDocuments, createDocument, updateDocumentRemote, deleteDocumentRemote } from '../lib/api';
+import { fetchEmployees, createEmployee, updateEmployeeRemote, changeSelfPassword, deleteEmployeeRemote, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote, fetchProjects, createProject, updateProjectRemote, deleteProjectRemote, CreateProjectPayload, fetchMeetings, createMeeting, updateMeetingRemote, fetchProjectTasks, createProjectTask, updateProjectTaskRemote, deleteProjectTaskRemote, fetchProjectCustomStatuses, createProjectCustomStatus, deleteProjectCustomStatusRemote, fetchNotifications, createNotification, markNotificationRead, markAllNotificationsRead, CreateNotificationPayload, fetchChangeRequests, createChangeRequest, decideChangeRequest, ChangeRequest, fetchDocuments, createDocument, updateDocumentRemote, deleteDocumentRemote, fetchOrgStructure, addOrgDivision, renameOrgDivision, deleteOrgDivision, addOrgSection, renameOrgSection, deleteOrgSection, fetchAuditLogs, createAuditLog } from '../lib/api';
 import { nowTimestamp } from '../lib/datetime';
 import type { ProjectRow, ProjectTaskItem, CustomProjectStatus } from '../components/projectBoard/types';
 import { registerCustomStatusLabels } from '../components/projectBoard/statusMeta';
@@ -29,7 +27,6 @@ interface AppDataContextValue {
   employees: Employee[];
   projects: ProjectRow[];
   projectTasks: ProjectTaskItem[];
-  tasks: Task[];
   documents: LinkedDoc[];
   credentials: CredentialItem[];
   meetings: Meeting[];
@@ -64,9 +61,6 @@ interface AppDataContextValue {
     reason: string
   ) => Promise<void>;
   handleDecideChangeRequest: (requestId: string, decision: 'approve' | 'reject', note?: string) => Promise<void>;
-  handleDeleteTask: (id: string) => void;
-  handleInitiateHandover: (taskId: string, fromUserId: string, toUserId: string, stageName: string, notes: string) => void;
-  handleApproveHandover: (taskId: string, handoverId: string, approved: boolean, notes: string) => void;
   handleAddDocument: (newDoc: Omit<LinkedDoc, 'id'>) => Promise<LinkedDoc>;
   handleEditDocument: (docId: string, updates: { name: string; url?: string; scope: LinkedDoc['scope']; projectId?: string }) => Promise<void>;
   handleDeleteDocument: (docId: string) => Promise<void>;
@@ -131,7 +125,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [customProjectStatuses, setCustomProjectStatuses] = useState<CustomProjectStatus[]>([]);
   const [projectTasks, setProjectTasks] = useState<ProjectTaskItem[]>([]);
   const [changeRequests, setChangeRequests] = useState<ChangeRequest[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
   const [documents, setDocuments] = useState<LinkedDoc[]>([]);
   const [docCurrentFolderId, setDocCurrentFolderId] = useState<string | null>(null);
   const [taskSelectedProjectId, setTaskSelectedProjectId] = useState<string | null>(null);
@@ -500,61 +493,37 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       });
   }, [currentUser, projectTasks, meetings, projects]);
 
-  // Initialize remaining domain data on mount (still localStorage/mock-only — no backend yet)
+  // One-time cleanup of domains that used to live in localStorage and are now real, shared
+  // backend tables (or, for unityspace_tasks/unityspace_leaves/unityspace_notifications, are gone
+  // entirely) — drops the old keys from any browser that still has them so they can't linger
+  // unused. The actual data for the still-live domains now comes from the API, in their own
+  // effects below.
   useEffect(() => {
-    const localTasks = localStorage.getItem('unityspace_tasks');
-    const localLogs = localStorage.getItem('unityspace_audit_logs');
-    const localOrgDivisions = localStorage.getItem('unityspace_org_divisions');
-
-    // No longer seeding INITIAL_TASKS — the Gantt/Dashboard/Calendar pages should start empty
-    // until real work is entered, not populated with demo data. A browser that already has the
-    // old mock seed saved (from before this change) gets it cleared out here too, but only when
-    // every single stored task is still one of the 5 known mock ids — the moment even one task
-    // isn't (a real one the user added), nothing here is touched, erring on the side of never
-    // deleting real work.
-    const MOCK_TASK_IDS = new Set(['TASK01', 'TASK02', 'TASK03', 'TASK04', 'TASK05']);
-    if (localTasks) {
-      const parsedTasks = JSON.parse(localTasks);
-      const isPureMockSeed = Array.isArray(parsedTasks) && parsedTasks.length > 0
-        && parsedTasks.every((t: Task) => MOCK_TASK_IDS.has(t.id));
-      if (isPureMockSeed) {
-        setTasks([]);
-        localStorage.setItem('unityspace_tasks', JSON.stringify([]));
-      } else {
-        setTasks(parsedTasks);
-      }
-    } else {
-      setTasks([]);
-      localStorage.setItem('unityspace_tasks', JSON.stringify([]));
-    }
-
-    // The leave-request module was removed from the app entirely — drop its old mock data too.
+    localStorage.removeItem('unityspace_tasks');
     localStorage.removeItem('unityspace_leaves');
-
-    // Notifications are real, per-employee DB rows now (server/routes/notifications.ts) — fetched
-    // and polled in their own effect below, keyed to the logged-in user. Any leftover mock list
-    // from the old localStorage-only version is cleared so it can't linger in the bell dropdown.
     localStorage.removeItem('unityspace_notifications');
+    localStorage.removeItem('unityspace_audit_logs');
+    localStorage.removeItem('unityspace_org_divisions');
+  }, []);
 
-    if (localLogs) setAuditLogs(JSON.parse(localLogs));
-    else {
-      const initialLogs: AuditLog[] = [
-        {
-          id: 'LOG01',
-          timestamp: '2026-07-02 09:00',
-          user: 'ผู้จัดการระบบ',
-          role: '-',
-          department: '',
-          action: 'SYSTEM_STARTUP',
-          details: 'เริ่มต้นระบบจัดการแผนงานและข้อมูลความปลอดภัย UnitySpace สมบูรณ์แบบ'
-        }
-      ];
-      setAuditLogs(initialLogs);
-      localStorage.setItem('unityspace_audit_logs', JSON.stringify(initialLogs));
-    }
+  // บันทึกกิจกรรม (audit log) — now a real, shared table (server/routes/audit-logs.ts) instead of
+  // per-browser localStorage, so two employees on two different computers see the same history.
+  // Starts from whatever the state already had (empty) if the API is unreachable — history that
+  // used to live only in some browser's localStorage cannot be recovered from here either way.
+  useEffect(() => {
+    fetchAuditLogs()
+      .then(setAuditLogs)
+      .catch((err) => console.warn('Could not load audit logs from the API:', err));
+  }, []);
 
-    if (localOrgDivisions) setOrgDivisions(JSON.parse(localOrgDivisions));
-    else localStorage.setItem('unityspace_org_divisions', JSON.stringify(DEFAULT_ORG_DIVISIONS));
+  // โครงสร้างองค์กร (ฝ่าย/แผนก) — now a real, shared table (server/routes/org-structure.ts) instead
+  // of per-browser localStorage, same reasoning. Falls back to keeping the DEFAULT_ORG_DIVISIONS
+  // the state already started with if the API is unreachable, same "stay as-is" fallback the
+  // employees fetch above uses.
+  useEffect(() => {
+    fetchOrgStructure()
+      .then(setOrgDivisions)
+      .catch((err) => console.warn('Could not load org structure from the API:', err));
   }, []);
 
   // Restore login session once the employee directory has loaded
@@ -581,13 +550,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('unityspace_current_user_id');
   };
 
-  // Sync to localStorage helpers
-  const saveTasks = (newTasks: Task[]) => {
-    setTasks(newTasks);
-    localStorage.setItem('unityspace_tasks', JSON.stringify(newTasks));
-  };
-
-
   // Every notification is a real row owned by one target employee. Fire-and-forget: a failure to
   // notify must never fail (or roll back) the action that triggered it — the task really was
   // assigned, the meeting really was cancelled. The optimistic local prepend only applies when
@@ -603,6 +565,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       .catch((err) => console.warn('Could not create notification:', err));
   };
 
+  // Prepends locally right away so the Log tab still feels instant, then persists to the real
+  // table in the background — same fire-and-forget shape as pushNotification above. A failure to
+  // save server-side never blocks or rolls back the action that triggered this log entry.
   const handleLogAudit = (action: string, details: string, actor: Employee | null = currentUser) => {
     const newLog: AuditLog = {
       id: 'LOG_' + Date.now(),
@@ -613,11 +578,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       action,
       details
     };
-    setAuditLogs((prev) => {
-      const updated = [newLog, ...prev];
-      localStorage.setItem('unityspace_audit_logs', JSON.stringify(updated));
-      return updated;
-    });
+    setAuditLogs((prev) => [newLog, ...prev]);
+    createAuditLog(newLog).catch((err) => console.warn('Could not save audit log entry:', err));
   };
 
   // 0. Employee Operations
@@ -1034,174 +996,85 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     );
   };
 
-  // 0b. Org Chart Structure Operations (โครงสร้างองค์กร) — client-side/localStorage only, admin-
-  // editable from Employee Management's โครงสร้างองค์กร tab. Renaming a division or section
-  // cascades to every employee currently pointing at the old name so no one silently falls out of
-  // the chart; deleting one does not — affected employees just show up as "ยังไม่ระบุฝ่าย" until
-  // reassigned.
-  const saveOrgDivisions = (updated: OrgDivisionData[]) => {
-    setOrgDivisions(updated);
-    localStorage.setItem('unityspace_org_divisions', JSON.stringify(updated));
-  };
-
+  // 0b. Org Chart Structure Operations (โครงสร้างองค์กร) — now a real, shared table
+  // (server/routes/org-structure.ts) instead of localStorage, editable from Employee Management's
+  // โครงสร้างองค์กร tab. Renaming a division or section cascades to every employee currently
+  // pointing at the old name so no one silently falls out of the chart; deleting one does not —
+  // affected employees just show up as "ยังไม่ระบุฝ่าย" until reassigned.
+  //
+  // OrgChart.tsx's modals call these synchronously and don't await or catch anything, same as
+  // before this migration — orgDivisions only actually updates once the server confirms the
+  // change (each API call resolves with the full, freshly-reloaded list), so a rejected request
+  // (e.g. a duplicate name from a race with another admin, or a permission check failing) just
+  // leaves the chart as it was instead of drifting from what the server actually has.
   const handleAddDivision = (name: string) => {
     const trimmed = name.trim();
-    if (!trimmed || orgDivisions.some((d) => d.name === trimmed)) return;
-    saveOrgDivisions([...orgDivisions, { name: trimmed, sections: [] }]);
-    handleLogAudit('ADD_ORG_DIVISION', `เพิ่มฝ่ายใหม่: "${trimmed}"`);
+    if (!trimmed || orgDivisions.some((d) => d.name === trimmed) || !currentUser) return;
+    addOrgDivision(trimmed, currentUser.id)
+      .then((updated) => {
+        setOrgDivisions(updated);
+        handleLogAudit('ADD_ORG_DIVISION', `เพิ่มฝ่ายใหม่: "${trimmed}"`);
+      })
+      .catch((err) => console.warn('Could not add org division:', err));
   };
 
   const handleRenameDivision = (oldName: string, newName: string) => {
     const trimmed = newName.trim();
-    if (!trimmed || trimmed === oldName || orgDivisions.some((d) => d.name === trimmed)) return;
-    saveOrgDivisions(orgDivisions.map((d) => (d.name === oldName ? { ...d, name: trimmed } : d)));
-    employees.filter((emp) => emp.division === oldName).forEach((emp) => {
-      handleUpdateEmployee(emp.id, { division: trimmed });
-    });
-    handleLogAudit('RENAME_ORG_DIVISION', `เปลี่ยนชื่อฝ่าย: "${oldName}" → "${trimmed}"`);
+    if (!trimmed || trimmed === oldName || orgDivisions.some((d) => d.name === trimmed) || !currentUser) return;
+    renameOrgDivision(oldName, trimmed, currentUser.id)
+      .then((updated) => {
+        setOrgDivisions(updated);
+        employees.filter((emp) => emp.division === oldName).forEach((emp) => {
+          handleUpdateEmployee(emp.id, { division: trimmed });
+        });
+        handleLogAudit('RENAME_ORG_DIVISION', `เปลี่ยนชื่อฝ่าย: "${oldName}" → "${trimmed}"`);
+      })
+      .catch((err) => console.warn('Could not rename org division:', err));
   };
 
   const handleDeleteDivision = (name: string) => {
-    saveOrgDivisions(orgDivisions.filter((d) => d.name !== name));
-    handleLogAudit('DELETE_ORG_DIVISION', `ลบฝ่าย: "${name}"`);
+    if (!currentUser) return;
+    deleteOrgDivision(name, currentUser.id)
+      .then((updated) => {
+        setOrgDivisions(updated);
+        handleLogAudit('DELETE_ORG_DIVISION', `ลบฝ่าย: "${name}"`);
+      })
+      .catch((err) => console.warn('Could not delete org division:', err));
   };
 
   const handleAddSection = (divisionName: string, sectionName: string) => {
     const trimmed = sectionName.trim();
-    if (!trimmed) return;
-    saveOrgDivisions(orgDivisions.map((d) =>
-      d.name === divisionName && !d.sections.includes(trimmed) ? { ...d, sections: [...d.sections, trimmed] } : d
-    ));
-    handleLogAudit('ADD_ORG_SECTION', `เพิ่มแผนกใหม่: "${trimmed}" ในฝ่าย "${divisionName}"`);
+    if (!trimmed || !currentUser) return;
+    addOrgSection(divisionName, trimmed, currentUser.id)
+      .then((updated) => {
+        setOrgDivisions(updated);
+        handleLogAudit('ADD_ORG_SECTION', `เพิ่มแผนกใหม่: "${trimmed}" ในฝ่าย "${divisionName}"`);
+      })
+      .catch((err) => console.warn('Could not add org section:', err));
   };
 
   const handleRenameSection = (divisionName: string, oldName: string, newName: string) => {
     const trimmed = newName.trim();
-    if (!trimmed || trimmed === oldName) return;
-    saveOrgDivisions(orgDivisions.map((d) =>
-      d.name === divisionName
-        ? { ...d, sections: d.sections.map((s) => (s === oldName ? trimmed : s)) }
-        : d
-    ));
-    employees.filter((emp) => emp.department === oldName).forEach((emp) => {
-      handleUpdateEmployee(emp.id, { department: trimmed });
-    });
-    handleLogAudit('RENAME_ORG_SECTION', `เปลี่ยนชื่อแผนก: "${oldName}" → "${trimmed}"`);
+    if (!trimmed || trimmed === oldName || !currentUser) return;
+    renameOrgSection(divisionName, oldName, trimmed, currentUser.id)
+      .then((updated) => {
+        setOrgDivisions(updated);
+        employees.filter((emp) => emp.department === oldName).forEach((emp) => {
+          handleUpdateEmployee(emp.id, { department: trimmed });
+        });
+        handleLogAudit('RENAME_ORG_SECTION', `เปลี่ยนชื่อแผนก: "${oldName}" → "${trimmed}"`);
+      })
+      .catch((err) => console.warn('Could not rename org section:', err));
   };
 
   const handleDeleteSection = (divisionName: string, sectionName: string) => {
-    saveOrgDivisions(orgDivisions.map((d) =>
-      d.name === divisionName ? { ...d, sections: d.sections.filter((s) => s !== sectionName) } : d
-    ));
-    handleLogAudit('DELETE_ORG_SECTION', `ลบแผนก: "${sectionName}" ออกจากฝ่าย "${divisionName}"`);
-  };
-
-  // 1. Task Operations
-  const handleDeleteTask = (id: string) => {
-    const taskToDelete = tasks.find(t => t.id === id);
-    if (window.confirm(`ยืนยันที่จะลบงาน "${taskToDelete?.title}" หรือไม่?`)) {
-      const updated = tasks.filter(t => t.id !== id);
-      saveTasks(updated);
-      handleLogAudit('DELETE_TASK', `ลบงาน "${taskToDelete?.title}" ออกจากระบบถาวร`);
-    }
-  };
-
-  // 2. Handover staged workflows
-  const handleInitiateHandover = (
-    taskId: string,
-    fromUserId: string,
-    toUserId: string,
-    stageName: string,
-    notes: string
-  ) => {
-    const handover: HandoverRecord = {
-      id: 'HO_' + Date.now(),
-      fromUserId,
-      toUserId,
-      stageName,
-      notes,
-      timestamp: nowTimestamp(),
-      status: 'Pending'
-    };
-
-    const updated = tasks.map(t => {
-      if (t.id === taskId) {
-        return {
-          ...t,
-          handovers: [...t.handovers, handover]
-        };
-      }
-      return t;
-    });
-
-    saveTasks(updated);
-
-    // Create system notification for target receiver
-    const receiver = employees.find(e => e.id === toUserId);
-    const sender = employees.find(e => e.id === fromUserId);
-    pushNotification({
-      targetEmployeeId: toUserId,
-      title: 'ต้องการอนุมัติส่งมอบงาน',
-      message: `${sender?.name} ได้ทำการส่งมอบสเตจงานเพื่อให้คุณดูแลต่อเพื่อยืนยันโปรโตคอล`,
-      type: 'warning',
-    });
-
-    handleLogAudit('INITIATE_HANDOVER', `เริ่มขั้นตอนส่งมอบงานย่อยจาก ${sender?.name} ไปยัง ${receiver?.name}`);
-  };
-
-  const handleApproveHandover = (
-    taskId: string,
-    handoverId: string,
-    approved: boolean,
-    notes: string
-  ) => {
-    const task = tasks.find(t => t.id === taskId);
-    if (!task) return;
-
-    const updatedHandovers = task.handovers.map(h => {
-      if (h.id === handoverId) {
-        return {
-          ...h,
-          status: approved ? 'Approved' : 'Rejected',
-          approvedBy: 'สมศักดิ์ รักดี', // Simulated manager or supervisor
-          approvalNotes: notes
-        } as HandoverRecord;
-      }
-      return h;
-    });
-
-    const activeH = task.handovers.find(h => h.id === handoverId);
-
-    // If approved, update the task's primary owner to the receiver
-    const updated = tasks.map(t => {
-      if (t.id === taskId) {
-        return {
-          ...t,
-          primaryOwnerId: approved && activeH ? activeH.toUserId : t.primaryOwnerId,
-          handovers: updatedHandovers,
-          // Set to Completed if final stage is approved, or boost progress
-          progress: approved ? Math.max(t.progress, 85) : t.progress
-        };
-      }
-      return t;
-    });
-
-    saveTasks(updated);
-
-    // Create response notification for sender
-    const sender = employees.find(e => e.id === activeH?.fromUserId);
-    if (activeH?.fromUserId) {
-      pushNotification({
-        targetEmployeeId: activeH.fromUserId,
-        title: approved ? 'ส่งต่อสเตจงานอนุมัติแล้ว' : 'คำขอส่งต่องานถูกปฏิเสธ',
-        message: approved
-          ? 'ยินดีด้วย! การส่งมอบสเตจของคุณให้กับฝ่ายรับมอบช่วงผ่านการตรวจทานแล้ว'
-          : `ข้อเสนอส่งมอบสเตจงานของคุณได้รับการตีกลับ: "${notes}"`,
-        type: approved ? 'success' : 'warning',
-      });
-    }
-
-    handleLogAudit('RESOLVE_HANDOVER', `${approved ? 'อนุมัติ' : 'ปฏิเสธ'} สเตจส่งมอบงานของ ${sender?.name}: "${notes}"`);
+    if (!currentUser) return;
+    deleteOrgSection(divisionName, sectionName, currentUser.id)
+      .then((updated) => {
+        setOrgDivisions(updated);
+        handleLogAudit('DELETE_ORG_SECTION', `ลบแผนก: "${sectionName}" ออกจากฝ่าย "${divisionName}"`);
+      })
+      .catch((err) => console.warn('Could not delete org section:', err));
   };
 
   // 3. Document Operations — documents live in the real `document` table now (see
@@ -1387,7 +1260,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     employees,
     projects: projectsWithComputedProgress,
     projectTasks,
-    tasks,
     documents,
     credentials,
     meetings,
@@ -1411,9 +1283,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     changeRequests,
     handleRequestChange,
     handleDecideChangeRequest,
-    handleDeleteTask,
-    handleInitiateHandover,
-    handleApproveHandover,
     handleAddDocument,
     handleEditDocument,
     handleDeleteDocument,

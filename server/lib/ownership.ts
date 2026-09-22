@@ -41,3 +41,12 @@ export async function isEmployeeManagerActor(actorId: string | undefined | null)
   const [[row]] = await pool.query<RowDataPacket[]>('SELECT account_type FROM employee WHERE id = ?', [actorId]);
   return row?.account_type === 'admin' || row?.account_type === 'superadmin' || row?.account_type === 'executive';
 }
+
+// Narrower than isEmployeeManagerActor — mirrors the client's canEditOrgStructure. A plain Admin
+// can view the org chart but not add/rename/delete divisions or sections; only Super Admin and
+// ผู้บริหาร can (see server/routes/org-structure.ts).
+export async function isOrgStructureEditorActor(actorId: string | undefined | null): Promise<boolean> {
+  if (!actorId) return false;
+  const [[row]] = await pool.query<RowDataPacket[]>('SELECT account_type FROM employee WHERE id = ?', [actorId]);
+  return row?.account_type === 'superadmin' || row?.account_type === 'executive';
+}

@@ -11,6 +11,8 @@ import { projectCustomStatusesRouter } from './routes/project-custom-statuses.ts
 import { notificationsRouter } from './routes/notifications.ts';
 import { changeRequestsRouter } from './routes/change-requests.ts';
 import { documentsRouter } from './routes/documents.ts';
+import { orgStructureRouter } from './routes/org-structure.ts';
+import { auditLogsRouter } from './routes/audit-logs.ts';
 import { assertDbConnection } from './db.ts';
 
 const app = express();
@@ -42,6 +44,8 @@ app.use('/api/project-custom-statuses', projectCustomStatusesRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/change-requests', changeRequestsRouter);
 app.use('/api/documents', documentsRouter);
+app.use('/api/org-structure', orgStructureRouter);
+app.use('/api/audit-logs', auditLogsRouter);
 
 app.listen(port, () => {
   console.log(`API server listening on http://localhost:${port}`);
