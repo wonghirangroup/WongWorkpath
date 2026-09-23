@@ -22,43 +22,44 @@ interface ProjectsGanttChartProps {
 export default function ProjectsGanttChart({ projects, projectTasks, onSelectProject }: ProjectsGanttChartProps) {
   const [year, setYear] = useState(() => new Date().getFullYear());
 
+  // Every project is its own row here regardless of whether it has any dates at all — a project
+  // with no end date and no due-dated tasks yet simply gets no bar (see hasBar below), same as
+  // any month it doesn't otherwise touch, rather than being hidden from the list entirely until
+  // someone gets around to scheduling it.
   const rows = useMemo(() => {
-    return projects
-      .map((p) => {
-        const tasksForProject = projectTasks.filter((t) => t.projectId === p.id && t.dueDateISO);
+    return projects.map((p) => {
+      const tasksForProject = projectTasks.filter((t) => t.projectId === p.id && t.dueDateISO);
 
-        let start: Date | null = null;
-        let end: Date | null = null;
-        if (p.endDateISO) {
-          end = new Date(`${p.endDateISO}T00:00:00`);
-          const parsedStart = p.startDateISO ? new Date(`${p.startDateISO}T00:00:00`) : null;
-          start = parsedStart && parsedStart <= end ? parsedStart : end;
-        } else if (tasksForProject.length > 0) {
-          // No end date set on the project itself yet, but real work already exists under it —
-          // derive the visible range from its own tasks' due dates instead of hiding the whole
-          // project from the timeline until someone gets around to filling in its dates.
-          const dueTimes = tasksForProject.map((t) => new Date(`${t.dueDateISO}T00:00:00`).getTime());
-          start = new Date(Math.min(...dueTimes));
-          end = new Date(Math.max(...dueTimes));
-        }
-        if (!end || !start) return null;
-        const isDerivedFromTasks = !p.endDateISO;
+      let start: Date | null = null;
+      let end: Date | null = null;
+      if (p.endDateISO) {
+        end = new Date(`${p.endDateISO}T00:00:00`);
+        const parsedStart = p.startDateISO ? new Date(`${p.startDateISO}T00:00:00`) : null;
+        start = parsedStart && parsedStart <= end ? parsedStart : end;
+      } else if (tasksForProject.length > 0) {
+        // No end date set on the project itself yet, but real work already exists under it —
+        // derive the visible range from its own tasks' due dates instead of hiding the whole
+        // project from the timeline until someone gets around to filling in its dates.
+        const dueTimes = tasksForProject.map((t) => new Date(`${t.dueDateISO}T00:00:00`).getTime());
+        start = new Date(Math.min(...dueTimes));
+        end = new Date(Math.max(...dueTimes));
+      }
+      const isDerivedFromTasks = !p.endDateISO && start !== null;
 
-        const startMonthKey = start.getFullYear() * 12 + start.getMonth();
-        const endMonthKey = end.getFullYear() * 12 + end.getMonth();
+      const startMonthKey = start ? start.getFullYear() * 12 + start.getMonth() : null;
+      const endMonthKey = end ? end.getFullYear() * 12 + end.getMonth() : null;
 
-        const tasksByMonth = new Map<number, ProjectTaskItem[]>();
-        tasksForProject.forEach((t) => {
-          const due = new Date(`${t.dueDateISO}T00:00:00`);
-          const key = due.getFullYear() * 12 + due.getMonth();
-          const list = tasksByMonth.get(key) ?? [];
-          list.push(t);
-          tasksByMonth.set(key, list);
-        });
+      const tasksByMonth = new Map<number, ProjectTaskItem[]>();
+      tasksForProject.forEach((t) => {
+        const due = new Date(`${t.dueDateISO}T00:00:00`);
+        const key = due.getFullYear() * 12 + due.getMonth();
+        const list = tasksByMonth.get(key) ?? [];
+        list.push(t);
+        tasksByMonth.set(key, list);
+      });
 
-        return { project: p, startMonthKey, endMonthKey, tasksByMonth, isDerivedFromTasks, start, end };
-      })
-      .filter((r): r is { project: ProjectRow; startMonthKey: number; endMonthKey: number; tasksByMonth: Map<number, ProjectTaskItem[]>; isDerivedFromTasks: boolean; start: Date; end: Date } => Boolean(r));
+      return { project: p, startMonthKey, endMonthKey, tasksByMonth, isDerivedFromTasks, start, end };
+    });
   }, [projects, projectTasks]);
 
   const formatShort = (d: Date) => `${d.getDate()} ${THAI_MONTHS_SHORT[d.getMonth()]} ${d.getFullYear() + 543}`;
@@ -67,7 +68,7 @@ export default function ProjectsGanttChart({ projects, projectTasks, onSelectPro
     return (
       <div className="flex-1 min-h-0 flex items-center justify-center gap-2 text-sm text-[#A0A0A0]">
         <CalendarRange size={16} />
-        ยังไม่มีโครงการที่มีกำหนดวันที่สิ้นสุดสำหรับแสดง Timeline
+        ยังไม่มีโครงการในระบบ
       </div>
     );
   }
@@ -113,11 +114,12 @@ export default function ProjectsGanttChart({ projects, projectTasks, onSelectPro
             {rows.map(({ project: p, startMonthKey, endMonthKey, tasksByMonth, isDerivedFromTasks, start, end }) => {
               const color = STATUS_DOT[p.status];
               const yearStartKey = year * 12;
-              const visibleStart = Math.max(startMonthKey, yearStartKey);
-              const visibleEnd = Math.min(endMonthKey, yearStartKey + 11);
-              const hasBar = visibleStart <= visibleEnd;
-              const continuesBefore = startMonthKey < yearStartKey;
-              const continuesAfter = endMonthKey > yearStartKey + 11;
+              const hasDates = startMonthKey !== null && endMonthKey !== null;
+              const visibleStart = hasDates ? Math.max(startMonthKey, yearStartKey) : 0;
+              const visibleEnd = hasDates ? Math.min(endMonthKey, yearStartKey + 11) : -1;
+              const hasBar = hasDates && visibleStart <= visibleEnd;
+              const continuesBefore = hasDates && startMonthKey < yearStartKey;
+              const continuesAfter = hasDates && endMonthKey > yearStartKey + 11;
               return (
                 <button
                   key={p.id}
@@ -167,6 +169,11 @@ export default function ProjectsGanttChart({ projects, projectTasks, onSelectPro
                             }
                           />
                         </Tooltip>
+                      )}
+                      {!hasDates && (
+                        <div className="flex items-center h-3 self-center" style={{ gridRow: 1, gridColumn: '1 / 4' }}>
+                          <span className="text-[10px] text-[#A0A0A0] italic ml-1">ยังไม่กำหนดวันที่</span>
+                        </div>
                       )}
                       {months.map((monthKey, idx) => {
                         const monthTasks = tasksByMonth.get(monthKey) ?? [];

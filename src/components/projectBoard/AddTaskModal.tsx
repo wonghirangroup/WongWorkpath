@@ -108,6 +108,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
   const [meetingEndTime, setMeetingEndTime] = useState('');
   const [attendeeIds, setAttendeeIds] = useState<string[]>([]);
   const [location, setLocation] = useState('');
+  const [locationLink, setLocationLink] = useState('');
   const [meetingLink, setMeetingLink] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
@@ -158,6 +159,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
     setMeetingEndTime('');
     setAttendeeIds([]);
     setLocation('');
+    setLocationLink('');
     setMeetingLink('');
     setFormError('');
     setReason('');
@@ -257,6 +259,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
           endTime: meetingEndTime || undefined,
           attendeeIds,
           location: location.trim() || undefined,
+          locationLink: locationLink.trim() || undefined,
           meetingLink: meetingLink.trim() || undefined,
           createdBy: currentUserId,
           status: 'scheduled',
@@ -675,6 +678,17 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                         placeholder="เช่น ห้องประชุมชั้น 3"
                         value={location}
                         onChange={(e) => setLocation(e.target.value)}
+                        className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[#272220] font-bold text-[11px] mb-1">ลิงก์แผนที่ (ไม่บังคับ)</label>
+                      <input
+                        type="text"
+                        placeholder="เช่น https://maps.google.com/..."
+                        value={locationLink}
+                        onChange={(e) => setLocationLink(e.target.value)}
                         className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
                       />
                     </div>

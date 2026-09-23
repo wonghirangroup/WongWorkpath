@@ -670,6 +670,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                 <th className="px-4 py-3 whitespace-nowrap sticky top-0 z-20 bg-[#F9F9F9]">ตำแหน่ง</th>
                 <th className="px-4 py-3 whitespace-nowrap sticky top-0 z-20 bg-[#F9F9F9]">Username</th>
                 <th className="px-4 py-3 whitespace-nowrap sticky top-0 z-20 bg-[#F9F9F9]">อีเมล</th>
+                <th className="px-4 py-3 whitespace-nowrap sticky top-0 z-20 bg-[#F9F9F9]">ฝ่าย</th>
                 <th className="px-4 py-3 whitespace-nowrap sticky top-0 z-20 bg-[#F9F9F9]">แผนก</th>
                 <th className="px-4 py-3 whitespace-nowrap sticky top-0 z-20 bg-[#F9F9F9]">การกระทำ</th>
               </tr>
@@ -713,6 +714,15 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                   <td className="px-4 py-3 whitespace-nowrap text-[12px] font-normal text-[#6F6F6F]">{emp.role}</td>
                   <td className="px-4 py-3 whitespace-nowrap text-[12px] font-normal text-[#6F6F6F]">{emp.username || '—'}</td>
                   <td className="px-4 py-3 whitespace-nowrap text-[12px] font-normal text-[#6F6F6F]">{emp.email}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    {emp.division ? (
+                      <span className={`inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(emp.division)}`}>
+                        {emp.division}
+                      </span>
+                    ) : (
+                      <span className="text-[#A0A0A0]">—</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     {emp.department ? (
                       <span className={`inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(emp.department)}`}>
