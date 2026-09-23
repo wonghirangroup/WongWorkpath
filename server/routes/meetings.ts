@@ -8,6 +8,7 @@ export const meetingsRouter = Router();
 interface MeetingRowDb extends RowDataPacket {
   id: string;
   project_id: string | null;
+  task_id: string | null;
   department: string | null;
   title: string;
   description: string | null;
@@ -35,6 +36,7 @@ function toMeeting(r: MeetingRowDb) {
   return {
     id: r.id,
     projectId: r.project_id ?? undefined,
+    taskId: r.task_id ?? undefined,
     department: r.department ?? undefined,
     title: r.title,
     description: r.description ?? undefined,
@@ -51,7 +53,7 @@ function toMeeting(r: MeetingRowDb) {
   };
 }
 
-const SELECT_FIELDS = `id, project_id, department, title, description, date, start_time, end_time, attendee_ids, location, location_link, meeting_link, created_by, status, cancellation_reason`;
+const SELECT_FIELDS = `id, project_id, task_id, department, title, description, date, start_time, end_time, attendee_ids, location, location_link, meeting_link, created_by, status, cancellation_reason`;
 
 meetingsRouter.get('/', async (_req, res) => {
   try {
@@ -80,10 +82,10 @@ meetingsRouter.post('/', async (req, res) => {
     const now = nowBangkokDateTime();
     await pool.query(
       `INSERT INTO meeting
-         (id, project_id, department, title, description, date, start_time, end_time, attendee_ids, location, location_link, meeting_link, created_by, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, project_id, task_id, department, title, description, date, start_time, end_time, attendee_ids, location, location_link, meeting_link, created_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        id, m.projectId || null, m.department?.trim() || null, m.title.trim(), m.description?.trim() || null, m.date, m.startTime,
+        id, m.projectId || null, m.taskId || null, m.department?.trim() || null, m.title.trim(), m.description?.trim() || null, m.date, m.startTime,
         m.endTime || null, attendeeIds.length ? JSON.stringify(attendeeIds) : null, m.location?.trim() || null,
         m.locationLink?.trim() || null, m.meetingLink?.trim() || null, m.createdBy || null, now, now,
       ]
@@ -105,6 +107,7 @@ meetingsRouter.put('/:id', async (req, res) => {
   if (typeof m.title === 'string' && m.title.trim()) { fields.push('title = ?'); values.push(m.title.trim()); }
   if ('description' in m) { fields.push('description = ?'); values.push(m.description?.trim() || null); }
   if ('projectId' in m) { fields.push('project_id = ?'); values.push(m.projectId || null); }
+  if ('taskId' in m) { fields.push('task_id = ?'); values.push(m.taskId || null); }
   if ('department' in m) { fields.push('department = ?'); values.push(m.department?.trim() || null); }
   if (typeof m.date === 'string' && m.date) { fields.push('date = ?'); values.push(m.date); }
   if (typeof m.startTime === 'string' && m.startTime) { fields.push('start_time = ?'); values.push(m.startTime); }

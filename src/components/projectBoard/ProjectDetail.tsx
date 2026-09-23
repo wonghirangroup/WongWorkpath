@@ -394,7 +394,11 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                 <Eye size={14} />
               </button>
             </Tooltip>
-            {t.assigneeEmployeeIds.includes(currentUserId) && (t.status === 'todo' || t.status === 'in_progress' || t.status === 'blocked') && (
+            {/* "หัวข้อ" (any task with 1+ subtasks) is just a container — its own status is fully
+                derived from its subtasks (see project-tasks.ts's recomputeAncestorStatuses), so
+                there's nothing to genuinely "ส่งงาน"/"ตรวจงาน" on it directly; the real work lives
+                on its subtasks instead. */}
+            {subtaskCount === 0 && t.assigneeEmployeeIds.includes(currentUserId) && (t.status === 'todo' || t.status === 'in_progress' || t.status === 'blocked') && (
               <Tooltip content="ส่งงาน">
                 <button
                   type="button"
@@ -406,7 +410,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                 </button>
               </Tooltip>
             )}
-            {(t.reviewerEmployeeIds ?? []).includes(currentUserId) && t.status === 'review' && (
+            {subtaskCount === 0 && (t.reviewerEmployeeIds ?? []).includes(currentUserId) && t.status === 'review' && (
               <Tooltip content="ตรวจงาน">
                 <button
                   type="button"
@@ -479,6 +483,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
   }, [filteredTasks, employeeById, row.memberEmployeeIds]);
 
   const owners = row.ownerEmployeeIds.map((id) => employeeById.get(id)).filter((e): e is Employee => Boolean(e));
+  const projectMembers = (row.memberEmployeeIds ?? []).map((id) => employeeById.get(id)).filter((e): e is Employee => Boolean(e));
   const parentProject = row.parentProjectId ? projects.find((p) => p.id === row.parentProjectId) : undefined;
   const childProjects = projects.filter((p) => p.parentProjectId === row.id);
 
@@ -557,10 +562,14 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
           <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: TASK_STATUS_COLOR.blocked }} />ติดปัญหา {counts.blocked}</span>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 pt-3 border-t border-slate-50 text-xs">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4 pt-3 border-t border-slate-50 text-xs">
           <div>
             <p className="text-[#A0A0A0] mb-1">ผู้รับผิดชอบหลัก</p>
             <PeopleCell people={owners} />
+          </div>
+          <div>
+            <p className="text-[#A0A0A0] mb-1">ผู้รับผิดชอบร่วม</p>
+            {projectMembers.length > 0 ? <PeopleCell people={projectMembers} /> : <p className="font-medium text-[#272220]">ยังไม่มี</p>}
           </div>
           <div>
             <p className="text-[#A0A0A0] mb-1">แผนก</p>
@@ -680,6 +689,19 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          {/* Expanding the workspace covers the page header (and its own "เพิ่มงาน/นัดประชุม"
+              button) behind this fixed-position overlay — this is the same action reachable from
+              this toolbar instead, so it doesn't just disappear once expanded. */}
+          {isWorkspaceExpanded && (
+            <button
+              type="button"
+              onClick={openAddTask}
+              className="inline-flex items-center gap-1.5 bg-[#FF6537] hover:bg-[#e6572c] text-white text-xs font-bold px-3 h-10 rounded-xl cursor-pointer transition-colors shrink-0"
+            >
+              <Plus size={15} />
+              เพิ่มงาน/นัดประชุม
+            </button>
+          )}
           <Tooltip content={isWorkspaceExpanded ? 'ย่อพื้นที่ทำงาน (Esc)' : 'ขยายพื้นที่ทำงาน'} placement="bottom">
             <button
               type="button"
@@ -701,6 +723,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
       </div>
 
       {tab === 'overview' && (
+        <>
         <div className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] overflow-hidden">
           <h4 className="font-bold text-[#272220] px-5 pt-5 pb-3">งานทั้งหมดของโครงการ</h4>
           {filteredTasks.length === 0 ? (
@@ -732,6 +755,59 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
             </div>
           )}
         </div>
+
+        {/* Meetings shown alongside tasks here too — ภาพรวม is meant to be the one tab that
+            covers everything happening in the project, not just its task list. Kept to a compact
+            row-per-meeting list (rather than duplicating the การประชุม tab's full table with its
+            edit/cancel actions) since this tab's job is a quick summary; clicking a row jumps
+            straight to the full table for anyone who wants to act on it. */}
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] overflow-hidden">
+          <h4 className="font-bold text-[#272220] px-5 pt-5 pb-3">การประชุมของโครงการ</h4>
+          {projectMeetings.length === 0 ? (
+            <p className="text-sm text-[#A0A0A0] px-5 pb-5">ยังไม่มีการนัดประชุมในโครงการนี้</p>
+          ) : (
+            <div className="divide-y divide-[#F4F4F4]">
+              {projectMeetings.map((meeting) => {
+                const isCancelled = meeting.status === 'cancelled';
+                const linkedTask = meeting.taskId ? tasks.find((t) => t.id === meeting.taskId) : undefined;
+                return (
+                  <button
+                    key={meeting.id}
+                    type="button"
+                    onClick={() => setTab('meetings')}
+                    className={`w-full flex items-center justify-between gap-3 px-5 py-3 text-left hover:bg-slate-50 cursor-pointer ${isCancelled ? 'opacity-60' : ''}`}
+                  >
+                    <span className="flex items-center gap-2 min-w-0">
+                      <Users2 size={14} className="text-[#A0A0A0] shrink-0" />
+                      <span className={`truncate text-sm font-medium text-[#272220] ${isCancelled ? 'line-through' : ''}`}>{meeting.title}</span>
+                      {linkedTask && (
+                        <span className="shrink-0 text-[10px] font-medium text-[#6F6F6F] bg-slate-100 px-1.5 py-0.5 rounded-full truncate max-w-40">
+                          งาน: {linkedTask.title}
+                        </span>
+                      )}
+                    </span>
+                    <span className="flex items-center gap-3 shrink-0">
+                      <span className="text-xs text-[#6F6F6F] whitespace-nowrap flex items-center gap-1">
+                        <CalendarClock size={12} />
+                        {meeting.date} {meeting.startTime}
+                      </span>
+                      {isCancelled ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 text-red-600 text-[11px] font-medium">
+                          <Ban size={11} /> ยกเลิกแล้ว
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-medium">
+                          นัดหมายแล้ว
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        </>
       )}
 
       {tab === 'tasks' && (
@@ -813,7 +889,10 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                               <Eye size={14} />
                               ดูรายละเอียด
                             </button>
-                            {(t.status === 'todo' || t.status === 'in_progress' || t.status === 'blocked') && (
+                            {/* "หัวข้อ" (any task with 1+ subtasks) is a container, not real work —
+                                its status is fully derived from its subtasks, so there's nothing
+                                to "ส่งงาน" on it directly. */}
+                            {(subtasksByParent.get(t.id) ?? []).length === 0 && (t.status === 'todo' || t.status === 'in_progress' || t.status === 'blocked') && (
                               <button
                                 type="button"
                                 onClick={() => setSubmittingTask(t)}
@@ -1098,6 +1177,10 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
         onUpdateTask={onUpdateTask}
         onAddMeeting={onAddMeeting}
         onCreateFolder={onCreateFolder}
+        documents={documents}
+        onAddDocument={onAddDocument}
+        currentUserName={employeeById.get(currentUserId) ? displayName(employeeById.get(currentUserId)!) : 'ผู้ใช้งานปัจจุบัน'}
+        tasks={tasks}
         projectId={row.id}
         projectDocFolderId={row.docFolderId}
         projectStartDate={row.startDateISO}

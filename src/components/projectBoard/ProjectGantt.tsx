@@ -145,22 +145,24 @@ export default function ProjectGantt({ tasks, employees, projects }: ProjectGant
     return result;
   }, [tasks]);
 
+  // Every task is its own row now, whether or not it has a due date — a task with no date just
+  // gets no bar (see hasDates below), same as any day it doesn't otherwise touch, rather than
+  // being hidden from the chart entirely until someone gets around to scheduling it.
   const bars = useMemo(() => {
-    return orderedTasks
-      .map(({ task: t, depth }) => {
-        const end = parseThaiDate(t.dueDate);
-        if (!end) return null;
-        const parsedStart = parseThaiDate(t.startDate);
-        // Tasks with no recorded start date still get a visible bar — assume a 3-day span
-        // ending at the due date, rather than dropping them from the chart entirely.
-        const start = parsedStart && parsedStart <= end ? parsedStart : new Date(end.getTime() - 3 * DAY_MS);
-        return { task: t, start, end, depth };
-      })
-      .filter((b): b is { task: ProjectTaskItem; start: Date; end: Date; depth: number } => Boolean(b));
+    return orderedTasks.map(({ task: t, depth }) => {
+      const end = parseThaiDate(t.dueDate);
+      if (!end) return { task: t, start: null, end: null, depth };
+      const parsedStart = parseThaiDate(t.startDate);
+      // Tasks with no recorded start date still get a visible bar — assume a 3-day span
+      // ending at the due date, rather than collapsing it to a single-day sliver.
+      const start = parsedStart && parsedStart <= end ? parsedStart : new Date(end.getTime() - 3 * DAY_MS);
+      return { task: t, start, end, depth };
+    });
   }, [orderedTasks]);
 
   // Row index (not task order) is what the connector-line SVG below positions itself against —
-  // a task missing from `bars` (no due date) has no row and so gets no line drawn to/from it.
+  // a task with no due date still gets a row (and so a valid index) but no bar, so nothing tries
+  // to connect to/from an x position it doesn't have.
   const rowIndexById = useMemo(() => {
     const map = new Map<string, number>();
     bars.forEach((b, idx) => map.set(b.task.id, idx));
@@ -168,10 +170,19 @@ export default function ProjectGantt({ tasks, employees, projects }: ProjectGant
   }, [bars]);
 
   const range = useMemo(() => {
-    if (bars.length === 0) return null;
-    let min = bars[0].start;
-    let max = bars[0].end;
-    bars.forEach((b) => {
+    const dated = bars.filter((b): b is { task: ProjectTaskItem; start: Date; end: Date; depth: number } => b.start !== null && b.end !== null);
+    if (dated.length === 0) {
+      // Nobody has a date yet — still render a normal-looking axis (today, plus a few weeks
+      // ahead) so every task's row shows up with just no bar, instead of falling back to an
+      // empty state the moment real dates are missing.
+      const today = startOfDay(new Date());
+      const min = new Date(today.getTime() - 7 * DAY_MS);
+      const max = new Date(today.getTime() + 21 * DAY_MS);
+      return { min, max, totalDays: Math.max(Math.round((max.getTime() - min.getTime()) / DAY_MS), 1) };
+    }
+    let min = dated[0].start;
+    let max = dated[0].end;
+    dated.forEach((b) => {
       if (b.start < min) min = b.start;
       if (b.end > max) max = b.end;
     });
@@ -181,12 +192,12 @@ export default function ProjectGantt({ tasks, employees, projects }: ProjectGant
     return { min, max, totalDays };
   }, [bars]);
 
-  if (!range) {
+  if (bars.length === 0) {
     return (
       <div className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] p-5">
         <p className="text-sm text-[#A0A0A0] flex items-center gap-2">
           <CalendarRange size={16} />
-          ยังไม่มีงานที่มีกำหนดส่งสำหรับแสดง Timeline
+          ยังไม่มีงานในโครงการนี้
         </p>
       </div>
     );
@@ -213,11 +224,12 @@ export default function ProjectGantt({ tasks, employees, projects }: ProjectGant
   // orderedTasks' own note) simply gets no line, same as it already gets no special indentation.
   const connectors = bars
     .map((b) => {
-      if (!b.task.parentTaskId) return null;
+      if (!b.task.parentTaskId || !b.start) return null;
       const parentRow = rowIndexById.get(b.task.parentTaskId);
       const childRow = rowIndexById.get(b.task.id);
       if (parentRow === undefined || childRow === undefined) return null;
       const parentBar = bars[parentRow];
+      if (!parentBar.start) return null; // parent has no date of its own to anchor a line from
       const x1 = dayOffset(parentBar.start) * pxPerDay;
       const x2 = dayOffset(b.start) * pxPerDay;
       const y1 = parentRow * ROW_HEIGHT_PX + ROW_HEIGHT_PX / 2;
@@ -372,8 +384,9 @@ export default function ProjectGantt({ tasks, employees, projects }: ProjectGant
             {bars.map(({ task: t, start, end, depth }) => {
               const assignees = t.assigneeEmployeeIds.map((id) => employeeById.get(id)).filter((e): e is Employee => Boolean(e));
               const firstAssignee = assignees[0];
-              const leftPx = dayOffset(start) * pxPerDay;
-              const widthPx = Math.max(dayOffset(end) * pxPerDay - leftPx, pxPerDay * 0.6);
+              const hasDates = start !== null && end !== null;
+              const leftPx = hasDates ? dayOffset(start) * pxPerDay : 0;
+              const widthPx = hasDates ? Math.max(dayOffset(end) * pxPerDay - leftPx, pxPerDay * 0.6) : 0;
               const color = TASK_STATUS_COLOR[t.status];
 
               return (
@@ -413,17 +426,26 @@ export default function ProjectGantt({ tasks, employees, projects }: ProjectGant
                   </div>
 
                   <div className="relative min-h-14" style={{ width: totalWidth }}>
-                    <Tooltip content={`${t.title} · ${TASK_STATUS_LABEL[t.status]} · ${t.progress}%`}>
-                      <div
-                        className="absolute top-1/2 -translate-y-1/2 h-7 rounded-full overflow-hidden shadow-sm"
-                        style={{ left: leftPx, width: widthPx, backgroundColor: color }}
-                      >
-                        <div className="absolute inset-y-0 left-0 bg-white/25" style={{ width: `${t.progress}%` }} />
+                    {hasDates ? (
+                      <>
+                        <Tooltip content={`${t.title} · ${TASK_STATUS_LABEL[t.status]} · ${t.progress}%`}>
+                          <div
+                            className="absolute top-1/2 -translate-y-1/2 h-7 rounded-full overflow-hidden shadow-sm"
+                            style={{ left: leftPx, width: widthPx, backgroundColor: color }}
+                          >
+                            <div className="absolute inset-y-0 left-0 bg-white/25" style={{ width: `${t.progress}%` }} />
+                          </div>
+                        </Tooltip>
+                        <div className="absolute top-1/2 -translate-y-1/2" style={{ left: leftPx + widthPx + 6 }}>
+                          <AvatarStack people={assignees} />
+                        </div>
+                      </>
+                    ) : (
+                      <div className="absolute top-1/2 -translate-y-1/2 left-2 flex items-center gap-2">
+                        <span className="text-[11px] text-[#A0A0A0] italic">ยังไม่กำหนดวันที่</span>
+                        <AvatarStack people={assignees} />
                       </div>
-                    </Tooltip>
-                    <div className="absolute top-1/2 -translate-y-1/2" style={{ left: leftPx + widthPx + 6 }}>
-                      <AvatarStack people={assignees} />
-                    </div>
+                    )}
                   </div>
                 </div>
               );

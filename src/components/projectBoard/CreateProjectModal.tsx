@@ -51,7 +51,12 @@ function EmployeeOptionRow({ emp }: { emp: Employee }) {
       )}
       <span className="min-w-0">
         <span className="block truncate text-slate-800">{displayName(emp)}</span>
-        <span className="block truncate text-[11px] text-slate-400">{emp.role} · {emp.department}</span>
+        {/* ผู้บริหาร/หัวหน้าฝ่าย sit over a whole ฝ่าย and are exempt from needing a department (see
+            employees.ts's isDepartmentExempt) — falls back to showing their division instead of a
+            dangling "role · " with nothing after it. */}
+        <span className="block truncate text-[11px] text-slate-400">
+          {emp.role}{(emp.department || emp.division) ? ` · ${emp.department || emp.division}` : ''}
+        </span>
       </span>
     </span>
   );

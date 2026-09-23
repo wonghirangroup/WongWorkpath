@@ -108,6 +108,13 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
     () => projectTasks.filter((t) => t.assigneeEmployeeIds.includes(currentUserId)),
     [projectTasks, currentUserId]
   );
+  // "หัวข้อ" (any task with 1+ subtasks) is a container, not real work — its status is fully
+  // derived from its subtasks (see project-tasks.ts's recomputeAncestorStatuses), so there's
+  // nothing to genuinely "ส่งงาน" on it directly here either.
+  const parentTaskIdsWithSubtasks = useMemo(
+    () => new Set(projectTasks.filter((t) => t.parentTaskId).map((t) => t.parentTaskId as string)),
+    [projectTasks]
+  );
   const tasksToReview = useMemo(
     () => projectTasks.filter((t) => (t.reviewerEmployeeIds ?? []).includes(currentUserId) && t.status === 'review'),
     [projectTasks, currentUserId]
@@ -220,7 +227,7 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
                   {myTasks.map((task) => {
                     const project = projectById.get(task.projectId);
                     const reviewers = employees.filter((e) => (task.reviewerEmployeeIds ?? []).includes(e.id));
-                    const canSubmit = task.status === 'todo' || task.status === 'in_progress' || task.status === 'blocked';
+                    const canSubmit = !parentTaskIdsWithSubtasks.has(task.id) && (task.status === 'todo' || task.status === 'in_progress' || task.status === 'blocked');
                     return (
                       <tr key={task.id} className="border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50">
                         <td className="px-4 py-4 whitespace-nowrap">

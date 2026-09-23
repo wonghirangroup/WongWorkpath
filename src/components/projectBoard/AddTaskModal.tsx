@@ -1,20 +1,27 @@
 import { useState, useEffect, useMemo, FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
-import { X, Folder, ListChecks, Users2 } from 'lucide-react';
-import { Employee, Meeting } from '../../types';
+import { X, Folder, ListChecks, Users2, Layers, Paperclip, Link2, Trash2 } from 'lucide-react';
+import { Employee, LinkedDoc, Meeting } from '../../types';
 import { ProjectRow, ProjectTaskItem, ProjectTaskStatus } from './types';
 import { EmployeeMultiSelect, displayName, formatThaiDateShort, PRIORITY_OPTIONS, Priority } from './CreateProjectModal';
 import { TASK_STATUS_LABEL, TASK_STATUS_COLOR } from './statusMeta';
 import { ApiError, ChangeRequest } from '../../lib/api';
 import { isOwner, resolveValidIds } from '../../lib/ownership';
+import { readFileAsDataUrl, MAX_FILE_BYTES, formatFileSize, getItemVisual, suggestLinkName } from '../DocVault';
+import { nowTimestamp } from '../../lib/datetime';
 import Dropdown from '../Dropdown';
 import EmployeeAvatar from '../EmployeeAvatar';
 import ThaiDatePicker from '../ThaiDatePicker';
 import { useEscapeToClose } from '../../lib/useEscapeToClose';
 import { useConfirm } from '../../context/ConfirmContext';
 
-type ModalMode = 'task' | 'meeting';
+// 'topic' ("หัวข้อ") is not a separate stored entity — it's the exact same ProjectTaskItem as
+// 'task', just created through a differently-labeled tab for a task the user intends to hold
+// subtasks (e.g. "เบิกทุน NIA"). Its status then auto-derives from its subtasks once any exist
+// (see project-tasks.ts's recomputeAncestorStatuses) — nothing here needs to know which tab the
+// task was originally created from after that point.
+type ModalMode = 'task' | 'topic' | 'meeting';
 
 // A task's status now follows the actual work process instead of being freely pickable: no
 // assignee yet -> ยังไม่เริ่ม, an assignee set -> กำลังทำ, and รอตรวจ/เสร็จแล้ว only ever happen
@@ -34,6 +41,15 @@ interface AddTaskModalProps {
   onAddMeeting: (meeting: Omit<Meeting, 'id'>) => Promise<void>;
   onUpdateTask?: (id: string, updates: Partial<ProjectTaskItem>) => Promise<void>;
   onCreateFolder: (name: string, parentId: string | null, taskId: string | undefined, projectId: string) => Promise<string>;
+  // Needed to find a parent task's own folder (for the folder-nesting rule below) and to render
+  // "already attached" state consistently with the rest of the app — same documents array every
+  // other modal that touches Doc Vault already receives.
+  documents: LinkedDoc[];
+  onAddDocument: (doc: Omit<LinkedDoc, 'id'>) => Promise<LinkedDoc>;
+  currentUserName: string;
+  // The current project's own tasks (unfiltered) — powers the "ผูกกับงาน" picker shown in
+  // meeting mode, scoped to just this project like every other picker in this modal.
+  tasks?: ProjectTaskItem[];
   // '' means there's no fixed project context (e.g. opened from the Dashboard's quick-add, not
   // from inside a project) — the modal then shows its own required project picker and resolves
   // projectDocFolderId/projectStartDate/projectEndDate from whichever project gets picked, using
@@ -82,7 +98,7 @@ interface AddTaskModalProps {
 // branches of handleSubmit await the call and show an inline error instead of closing blind. The
 // "create a folder" option also writes to the shared document store via onCreateFolder, same as
 // CreateProjectModal's own folder step.
-export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, onUpdateTask, onCreateFolder, projectId, projectDocFolderId, projectStartDate, projectEndDate, projects, projectMemberIds, employees, currentUserId, isExecutive, editingTask, parentTask, changeRequests, onRequestChange }: AddTaskModalProps) {
+export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, onUpdateTask, onCreateFolder, documents, onAddDocument, currentUserName, tasks, projectId, projectDocFolderId, projectStartDate, projectEndDate, projects, projectMemberIds, employees, currentUserId, isExecutive, editingTask, parentTask, changeRequests, onRequestChange }: AddTaskModalProps) {
   const needsProjectPicker = !projectId;
   const [mode, setMode] = useState<ModalMode>('task');
   const [pickedProjectId, setPickedProjectId] = useState('');
@@ -106,6 +122,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
   const [meetingDate, setMeetingDate] = useState('');
   const [meetingStartTime, setMeetingStartTime] = useState('');
   const [meetingEndTime, setMeetingEndTime] = useState('');
+  const [meetingTaskId, setMeetingTaskId] = useState('');
   const [attendeeIds, setAttendeeIds] = useState<string[]>([]);
   const [location, setLocation] = useState('');
   const [locationLink, setLocationLink] = useState('');
@@ -114,12 +131,25 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
   const [formError, setFormError] = useState('');
   const [reason, setReason] = useState('');
 
+  // Files/links to attach at creation time (a description's supporting material) — same shape and
+  // upload flow as SubmitTaskModal's own attachment picker, just running at creation instead of at
+  // submission. Create-only, same as "สร้างโฟลเดอร์" above: re-offering this on every edit-save
+  // would re-attach the same picks with no way to tell they were already saved.
+  const [pickedFiles, setPickedFiles] = useState<globalThis.File[]>([]);
+  const [pickedLinks, setPickedLinks] = useState<{ name: string; url: string }[]>([]);
+  const [linkUrl, setLinkUrl] = useState('');
+  const [fileError, setFileError] = useState('');
+
   const isEditing = Boolean(editingTask);
   // Only relevant in edit mode — an unowned task (or one the current user is already an assignee
   // of) still saves directly; anyone else's edit files a change_request instead (see
   // ProjectDetail's "คำขอที่รอดำเนินการ" panel for the owner-facing approve/reject side). งานย่อย
   // is exempt from this gate entirely — only the main task needs approval, per the product decision.
   const canEditDirectly = Boolean(isExecutive) || !editingTask || Boolean(editingTask.parentTaskId) || isOwner(resolveValidIds(editingTask.assigneeEmployeeIds, employees), currentUserId);
+  // A "หัวข้อ" (or any task with 1+ subtasks) has its status fully derived server-side — see
+  // project-tasks.ts's recomputeAncestorStatuses — manual status/ติดปัญหา controls are hidden
+  // here rather than left to silently no-op against the server's own override.
+  const hasSubtasks = Boolean(editingTask && tasks?.some((t) => t.parentTaskId === editingTask.id));
   const pendingRequest = editingTask && !editingTask.parentTaskId
     ? changeRequests?.find((r) => r.entityType === 'project_task' && r.entityId === editingTask.id && r.status === 'pending')
     : undefined;
@@ -157,10 +187,15 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
     setMeetingDate('');
     setMeetingStartTime('');
     setMeetingEndTime('');
+    setMeetingTaskId('');
     setAttendeeIds([]);
     setLocation('');
     setLocationLink('');
     setMeetingLink('');
+    setPickedFiles([]);
+    setPickedLinks([]);
+    setLinkUrl('');
+    setFileError('');
     setFormError('');
     setReason('');
   }, [isOpen, editingTask]);
@@ -194,9 +229,18 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
   const selectableEmployees = (currentIds: string[]) =>
     projectMemberIdSet.size === 0 ? employees : employees.filter((e) => projectMemberIdSet.has(e.id) || currentIds.includes(e.id));
 
-  const effectiveProjectDocFolderId = needsProjectPicker ? pickedProject?.docFolderId : projectDocFolderId;
+  const projectRootDocFolderId = needsProjectPicker ? pickedProject?.docFolderId : projectDocFolderId;
+  // A subtask's own new folder (and any file/link attached without checking "สร้างโฟลเดอร์") nests
+  // inside its PARENT TASK's own folder, not the project root — whatever context a task was
+  // created from is where its stuff lives, same rule at every level of nesting. Falls back to the
+  // project root when the parent task happens to have no folder of its own yet.
+  const parentTaskFolder = parentTask ? documents.find((d) => d.kind === 'folder' && d.taskId === parentTask.id) : undefined;
+  const effectiveProjectDocFolderId = parentTask ? (parentTaskFolder?.id ?? projectRootDocFolderId) : projectRootDocFolderId;
   const effectiveProjectStartDate = needsProjectPicker ? pickedProject?.startDateISO : projectStartDate;
   const effectiveProjectEndDate = needsProjectPicker ? pickedProject?.endDateISO : projectEndDate;
+  // งาน/หัวข้อ within the current project, pickable as what a new meeting is about — excludes the
+  // meeting's own project-level option (projectId with no taskId is already the default/unset state).
+  const tasksForMeetingPicker = (tasks ?? []).filter((t) => t.projectId === effectiveProjectId);
 
   // A task's dates / a meeting's date must fall inside the project's own timeframe, when the
   // project has one set at all — an open-ended project (no start/end) imposes no constraint.
@@ -220,7 +264,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
   const reasonValid = canEditDirectly || reason.trim() !== '';
   const blockedReasonValid = !blocked || blockedReason.trim() !== '';
 
-  const isFormValid = effectiveProjectId !== '' && !pendingRequest && reasonValid && blockedReasonValid && (mode === 'task'
+  const isFormValid = effectiveProjectId !== '' && !pendingRequest && reasonValid && blockedReasonValid && (mode !== 'meeting'
     ? titleValid && taskDateOrderValid && taskStartInRange && taskDueInRange
     : titleValid && meetingDate.trim() !== '' && meetingStartTime.trim() !== '' && meetingTimeOrderValid && meetingDateInRange);
 
@@ -252,6 +296,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
       if (mode === 'meeting') {
         await onAddMeeting({
           projectId: effectiveProjectId,
+          taskId: meetingTaskId || undefined,
           title: title.trim(),
           description: description.trim() || undefined,
           date: meetingDate,
@@ -300,7 +345,53 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
           });
           // Folder creation is create-only — re-offering it on every edit-save would spawn a fresh
           // duplicate folder each time, since there's no "already created" flag to check against.
-          if (createFolder && folderName.trim()) await onCreateFolder(folderName.trim(), effectiveProjectDocFolderId ?? null, createdTask.id, createdTask.projectId);
+          let newFolderId: string | undefined;
+          if (createFolder && folderName.trim()) {
+            newFolderId = await onCreateFolder(folderName.trim(), effectiveProjectDocFolderId ?? null, createdTask.id, createdTask.projectId);
+          }
+          // Any file/link attached here goes inside this task's own brand-new folder when one was
+          // just created (it's specifically this task's own space); otherwise it falls back to
+          // whatever folder-nesting rule effectiveProjectDocFolderId already resolved above — the
+          // project's root, or the parent task's own folder when this is a subtask.
+          if (pickedFiles.length > 0 || pickedLinks.length > 0) {
+            const attachParentId = newFolderId ?? effectiveProjectDocFolderId ?? null;
+            const date = nowTimestamp();
+            for (const file of pickedFiles) {
+              const dataUrl = await readFileAsDataUrl(file);
+              await onAddDocument({
+                name: file.name,
+                kind: 'file',
+                parentId: attachParentId,
+                taskId: createdTask.id,
+                fileDataUrl: dataUrl,
+                fileMimeType: file.type || 'application/octet-stream',
+                fileSize: file.size,
+                scope: 'โครงการ',
+                projectId: createdTask.projectId,
+                creatorEmployeeId: currentUserId,
+                version: 1,
+                lastUpdated: date,
+                updatedBy: currentUserName,
+                history: [{ version: 1, updatedBy: currentUserName, date, note: 'แนบไฟล์ตอนสร้างงาน' }],
+              });
+            }
+            for (const link of pickedLinks) {
+              await onAddDocument({
+                name: link.name,
+                kind: 'link',
+                parentId: attachParentId,
+                taskId: createdTask.id,
+                url: link.url,
+                scope: 'โครงการ',
+                projectId: createdTask.projectId,
+                creatorEmployeeId: currentUserId,
+                version: 1,
+                lastUpdated: date,
+                updatedBy: currentUserName,
+                history: [{ version: 1, updatedBy: currentUserName, date, note: 'แนบลิงก์ตอนสร้างงาน' }],
+              });
+            }
+          }
         }
       }
       resetAndClose();
@@ -353,7 +444,15 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
             <div className="flex justify-between items-center px-6 pt-5 pb-2 shrink-0">
               <div>
                 <h3 className="text-sm font-bold text-slate-800">
-                  {isEditing ? (editingTask?.parentTaskId ? 'แก้ไขงานย่อย' : 'แก้ไขงาน') : parentTask ? 'เพิ่มงานย่อย' : mode === 'task' ? 'เพิ่มงานใหม่' : 'นัดประชุมใหม่'}
+                  {isEditing
+                    ? (editingTask?.parentTaskId ? 'แก้ไขงานย่อย' : 'แก้ไขงาน')
+                    : parentTask
+                    ? 'เพิ่มงานย่อย'
+                    : mode === 'task'
+                    ? 'เพิ่มงานใหม่'
+                    : mode === 'topic'
+                    ? 'เพิ่มหัวข้อใหม่'
+                    : 'นัดประชุมใหม่'}
                 </h3>
                 <p className="text-[11px] text-[#6F6F6F] mt-0.5">
                   {isEditing
@@ -362,7 +461,11 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                     ? `งานย่อยของ "${parentTask.title}"`
                     : needsProjectPicker
                     ? 'เลือกโครงการแล้วกรอกรายละเอียดงาน'
-                    : mode === 'task' ? 'กรอกรายละเอียดงานสำหรับโครงการนี้' : 'กรอกรายละเอียดการประชุมสำหรับโครงการนี้'}
+                    : mode === 'task'
+                    ? 'กรอกรายละเอียดงานสำหรับโครงการนี้'
+                    : mode === 'topic'
+                    ? 'สร้างหัวข้อไว้ก่อน แล้วค่อยเพิ่มงานย่อยจากหัวข้อนี้ทีหลัง'
+                    : 'กรอกรายละเอียดการประชุมสำหรับโครงการนี้'}
                 </p>
               </div>
               <button onClick={resetAndClose} className="text-slate-400 hover:text-slate-600 cursor-pointer" type="button">
@@ -383,6 +486,15 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
               </button>
               <button
                 type="button"
+                onClick={() => setMode('topic')}
+                className={`flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
+                  mode === 'topic' ? 'bg-[#FFF1EC] text-[#FF6537]' : 'text-[#6F6F6F] hover:bg-slate-50'
+                }`}
+              >
+                <Layers size={13} /> หัวข้อ
+              </button>
+              <button
+                type="button"
                 onClick={() => setMode('meeting')}
                 className={`flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
                   mode === 'meeting' ? 'bg-[#FFF1EC] text-[#FF6537]' : 'text-[#6F6F6F] hover:bg-slate-50'
@@ -398,12 +510,12 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
                 <div className="sm:col-span-2">
                   <label className="block text-[#272220] font-bold text-[11px] mb-1">
-                    {mode === 'task' ? 'ชื่องาน' : 'ชื่อการประชุม'} <span className="text-[#FF6537]">*</span>
+                    {mode === 'task' ? 'ชื่องาน' : mode === 'topic' ? 'ชื่อหัวข้อ' : 'ชื่อการประชุม'} <span className="text-[#FF6537]">*</span>
                   </label>
                   <input
                     type="text"
                     autoFocus
-                    placeholder={mode === 'task' ? 'เช่น ออกแบบหน้าร้านใหม่' : 'เช่น ประชุมทบทวนความคืบหน้าโครงการ'}
+                    placeholder={mode === 'task' ? 'เช่น ออกแบบหน้าร้านใหม่' : mode === 'topic' ? 'เช่น เบิกทุน NIA' : 'เช่น ประชุมทบทวนความคืบหน้าโครงการ'}
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
@@ -435,7 +547,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                   />
                 </div>
 
-                {mode === 'task' ? (
+                {mode !== 'meeting' ? (
                   <>
                     {creatorField}
 
@@ -483,11 +595,13 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                         <div>
                           <p className="text-[#272220] font-bold text-[11px] mb-1">สถานะงาน</p>
                           <p className="text-[10px] text-[#A0A0A0]">
-                            เปลี่ยนตามขั้นตอนอัตโนมัติ — ยังไม่เริ่ม/กำลังทำตามผู้รับผิดชอบ, รอตรวจ/เสร็จแล้วผ่านการ "ส่งงาน"/"ตรวจงาน"
+                            {hasSubtasks
+                              ? 'งานนี้มีงานย่อยแล้ว — สถานะคำนวณอัตโนมัติจากงานย่อยทั้งหมด (ดำเนินการอยู่จนกว่างานย่อยทุกงานจะเสร็จ) ไม่สามารถแก้ไขเองได้'
+                              : 'เปลี่ยนตามขั้นตอนอัตโนมัติ — ยังไม่เริ่ม/กำลังทำตามผู้รับผิดชอบ, รอตรวจ/เสร็จแล้วผ่านการ "ส่งงาน"/"ตรวจงาน"'}
                           </p>
                         </div>
                         {(() => {
-                          const previewStatus = computeTaskStatus(editingTask.status, assigneeIds, blocked);
+                          const previewStatus = hasSubtasks ? editingTask.status : computeTaskStatus(editingTask.status, assigneeIds, blocked);
                           const color = TASK_STATUS_COLOR[previewStatus];
                           return (
                             <span
@@ -501,7 +615,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                       </div>
                     )}
 
-                    {isEditing && editingTask?.status !== 'done' && (
+                    {isEditing && !hasSubtasks && editingTask?.status !== 'done' && (
                       <div className="sm:col-span-2">
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input
@@ -612,9 +726,133 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                       )}
                     </div>
                     )}
+
+                    {!isEditing && (
+                    <div className="sm:col-span-2 border-t border-slate-100 pt-3">
+                      <label className="block text-[#272220] font-bold text-[11px] mb-1">
+                        ไฟล์แนบ/ลิงก์ประกอบ (ไม่บังคับ) <span className="font-normal text-[#A0A0A0]">— ไม่เกิน {formatFileSize(MAX_FILE_BYTES)} ต่อไฟล์</span>
+                      </label>
+                      <div className="flex gap-2">
+                        <label className="flex-1 flex items-center gap-2 justify-center p-3 border border-dashed border-[#E5E5E5] rounded-lg cursor-pointer hover:bg-slate-50 text-xs text-[#6F6F6F]">
+                          <Paperclip size={14} />
+                          แนบไฟล์
+                          <input
+                            type="file"
+                            multiple
+                            className="hidden"
+                            onChange={(e) => {
+                              setFileError('');
+                              const fileList = e.target.files;
+                              e.target.value = '';
+                              if (!fileList) return;
+                              const oversized: string[] = [];
+                              const accepted: globalThis.File[] = [];
+                              Array.from(fileList).forEach((f) => {
+                                if (f.size > MAX_FILE_BYTES) oversized.push(f.name);
+                                else accepted.push(f);
+                              });
+                              if (oversized.length > 0) setFileError(`ไฟล์ใหญ่เกิน ${formatFileSize(MAX_FILE_BYTES)} ถูกข้าม: ${oversized.join(', ')}`);
+                              setPickedFiles((prev) => [...prev, ...accepted]);
+                            }}
+                          />
+                        </label>
+                      </div>
+                      {fileError && <p className="text-xs text-red-600 mt-1.5">{fileError}</p>}
+
+                      <div className="flex gap-2 mt-2">
+                        <input
+                          type="url"
+                          value={linkUrl}
+                          onChange={(e) => setLinkUrl(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key !== 'Enter') return;
+                            e.preventDefault();
+                            const url = linkUrl.trim();
+                            if (!url) return;
+                            setPickedLinks((prev) => [...prev, { name: suggestLinkName(url) || url, url }]);
+                            setLinkUrl('');
+                          }}
+                          placeholder="แปะลิงก์ที่นี่แล้วกด + เพื่อแนบ..."
+                          className="flex-1 min-w-0 p-2.5 text-xs border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const url = linkUrl.trim();
+                            if (!url) return;
+                            setPickedLinks((prev) => [...prev, { name: suggestLinkName(url) || url, url }]);
+                            setLinkUrl('');
+                          }}
+                          disabled={!linkUrl.trim()}
+                          className="w-10 h-10 shrink-0 rounded-lg border border-[#E5E5E5] text-[#6F6F6F] hover:bg-slate-50 flex items-center justify-center cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          <Link2 size={15} />
+                        </button>
+                      </div>
+
+                      {(pickedFiles.length > 0 || pickedLinks.length > 0) && (
+                        <div className="space-y-1.5 mt-2">
+                          {pickedFiles.map((f, idx) => {
+                            const { Icon, color } = getItemVisual({ kind: 'file', name: f.name, fileMimeType: f.type });
+                            return (
+                              <div key={`file-${idx}`} className="flex items-center gap-2.5 p-2.5 border border-[#FFD9C7] rounded-xl bg-[#FFF1EC]">
+                                <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center shrink-0">
+                                  <Icon size={16} className={color} />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-xs font-medium text-[#272220]">{f.name}</p>
+                                  <p className="text-[11px] text-[#A0A0A0]">{formatFileSize(f.size)}</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setPickedFiles((prev) => prev.filter((_, i) => i !== idx))}
+                                  className="text-slate-400 hover:text-red-600 cursor-pointer shrink-0"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            );
+                          })}
+                          {pickedLinks.map((link, idx) => {
+                            const { Icon, color } = getItemVisual({ kind: 'link', name: link.name });
+                            return (
+                              <div key={`link-${idx}`} className="flex items-center gap-2.5 p-2.5 border border-[#FFD9C7] rounded-xl bg-[#FFF1EC]">
+                                <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center shrink-0">
+                                  <Icon size={16} className={color} />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-xs font-medium text-[#272220]">{link.name}</p>
+                                  <p className="truncate text-[11px] text-[#A0A0A0]">{link.url}</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setPickedLinks((prev) => prev.filter((_, i) => i !== idx))}
+                                  className="text-slate-400 hover:text-red-600 cursor-pointer shrink-0"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                    )}
                   </>
                 ) : (
                   <>
+                    {tasksForMeetingPicker.length > 0 && (
+                      <div className="sm:col-span-2">
+                        <label className="block text-[#272220] font-bold text-[11px] mb-1">ผูกกับงาน (ไม่บังคับ)</label>
+                        <Dropdown
+                          value={meetingTaskId}
+                          onChange={setMeetingTaskId}
+                          placeholder="ไม่ผูกกับงานใดเป็นการเฉพาะ — ประชุมของทั้งโครงการ"
+                          options={tasksForMeetingPicker.map((t) => ({ value: t.id, label: t.title }))}
+                        />
+                      </div>
+                    )}
+
                     <div className="sm:col-span-2">
                       <label className="block text-[#272220] font-bold text-[11px] mb-1">
                         วัน-เวลานัดประชุม <span className="text-[#FF6537]">*</span>
@@ -729,7 +967,15 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                 >
                   {isEditing && !canEditDirectly
                     ? (isSubmitting ? 'กำลังส่งคำขอ...' : 'ส่งคำขอแก้ไข')
-                    : isSubmitting ? 'กำลังบันทึก...' : isEditing ? 'บันทึกการแก้ไข' : mode === 'task' ? 'เพิ่มงาน' : 'นัดประชุม'}
+                    : isSubmitting
+                    ? 'กำลังบันทึก...'
+                    : isEditing
+                    ? 'บันทึกการแก้ไข'
+                    : mode === 'task'
+                    ? 'เพิ่มงาน'
+                    : mode === 'topic'
+                    ? 'สร้างหัวข้อ'
+                    : 'นัดประชุม'}
                 </button>
               </div>
             </form>

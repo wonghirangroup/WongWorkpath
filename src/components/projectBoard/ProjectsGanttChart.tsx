@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { CalendarRange, ChevronLeft, ChevronRight } from 'lucide-react';
 import { ProjectRow, ProjectTaskItem } from './types';
 import { STATUS_DOT, STATUS_LABEL, TASK_STATUS_COLOR } from './statusMeta';
@@ -62,6 +62,80 @@ export default function ProjectsGanttChart({ projects, projectTasks, onSelectPro
     });
   }, [projects, projectTasks]);
 
+  // Sub-projects are moved to sit directly under their own parent project (only when that parent
+  // is itself in the current list) so the connector line drawn below reads as a natural
+  // parent-then-child pair top-to-bottom, same convention as the intra-project Gantt's
+  // task/subtask ordering. Projects only ever nest one level deep (resolveParentProjectId on the
+  // server refuses a sub-project-of-a-sub-project), so a single pass is enough here.
+  const orderedRows = useMemo(() => {
+    const rowById = new Map(rows.map((r) => [r.project.id, r]));
+    const childrenByParent = new Map<string, typeof rows>();
+    rows.forEach((r) => {
+      const parentId = r.project.parentProjectId;
+      if (parentId && rowById.has(parentId)) {
+        const list = childrenByParent.get(parentId) ?? [];
+        list.push(r);
+        childrenByParent.set(parentId, list);
+      }
+    });
+    const result: typeof rows = [];
+    rows.forEach((r) => {
+      const parentId = r.project.parentProjectId;
+      if (parentId && rowById.has(parentId)) return; // placed right under its parent below instead
+      result.push(r);
+      (childrenByParent.get(r.project.id) ?? []).forEach((child) => result.push(child));
+    });
+    return result;
+  }, [rows]);
+
+  // One elbow connector per sub-project whose parent project is also in view this year — drawn
+  // from the parent bar's left edge down to the sub-project's row, then across to the sub-project
+  // bar's left edge, same visual language as the intra-project Gantt's task/subtask lines. Bar
+  // positions here are laid out with CSS grid columns (month-wide, not day-wide pixels like the
+  // other Gantt), so rather than recomputing pixel math from scratch this measures each row's own
+  // rendered bar-area box directly — which also naturally keeps the line correct even though a
+  // row's height isn't fixed (it grows when a month has several task chips stacked under the bar).
+  const containerRef = useRef<HTMLDivElement>(null);
+  const barAreaRefs = useRef(new Map<string, HTMLDivElement>());
+  const [connectors, setConnectors] = useState<{ key: string; x1: number; y1: number; x2: number; y2: number }[]>([]);
+
+  useLayoutEffect(() => {
+    const recompute = () => {
+      const container = containerRef.current;
+      if (!container) {
+        setConnectors([]);
+        return;
+      }
+      const containerRect = container.getBoundingClientRect();
+      const yearStartKey = year * 12;
+      const isVisibleThisYear = (sk: number | null, ek: number | null) =>
+        sk !== null && ek !== null && sk <= yearStartKey + 11 && ek >= yearStartKey;
+      const next: { key: string; x1: number; y1: number; x2: number; y2: number }[] = [];
+      orderedRows.forEach(({ project: p, startMonthKey, endMonthKey }) => {
+        const parentId = p.parentProjectId;
+        if (!parentId || !isVisibleThisYear(startMonthKey, endMonthKey)) return;
+        const parentRowData = orderedRows.find((r) => r.project.id === parentId);
+        if (!parentRowData || !isVisibleThisYear(parentRowData.startMonthKey, parentRowData.endMonthKey)) return;
+        const parentEl = barAreaRefs.current.get(parentId);
+        const childEl = barAreaRefs.current.get(p.id);
+        if (!parentEl || !childEl) return;
+        const parentRect = parentEl.getBoundingClientRect();
+        const childRect = childEl.getBoundingClientRect();
+        const parentVisibleStart = Math.max(parentRowData.startMonthKey as number, yearStartKey);
+        const childVisibleStart = Math.max(startMonthKey as number, yearStartKey);
+        const x1 = parentRect.left - containerRect.left + ((parentVisibleStart - yearStartKey) / 12) * parentRect.width;
+        const x2 = childRect.left - containerRect.left + ((childVisibleStart - yearStartKey) / 12) * childRect.width;
+        const y1 = parentRect.top - containerRect.top + parentRect.height / 2;
+        const y2 = childRect.top - containerRect.top + childRect.height / 2;
+        next.push({ key: p.id, x1, y1, x2, y2 });
+      });
+      setConnectors(next);
+    };
+    recompute();
+    window.addEventListener('resize', recompute);
+    return () => window.removeEventListener('resize', recompute);
+  }, [orderedRows, year]);
+
   const formatShort = (d: Date) => `${d.getDate()} ${THAI_MONTHS_SHORT[d.getMonth()]} ${d.getFullYear() + 543}`;
 
   if (rows.length === 0) {
@@ -110,97 +184,117 @@ export default function ProjectsGanttChart({ projects, projectTasks, onSelectPro
             </div>
           </div>
 
-          <div className="divide-y divide-[#F9F9F9]">
-            {rows.map(({ project: p, startMonthKey, endMonthKey, tasksByMonth, isDerivedFromTasks, start, end }) => {
-              const color = STATUS_DOT[p.status];
-              const yearStartKey = year * 12;
-              const hasDates = startMonthKey !== null && endMonthKey !== null;
-              const visibleStart = hasDates ? Math.max(startMonthKey, yearStartKey) : 0;
-              const visibleEnd = hasDates ? Math.min(endMonthKey, yearStartKey + 11) : -1;
-              const hasBar = hasDates && visibleStart <= visibleEnd;
-              const continuesBefore = hasDates && startMonthKey < yearStartKey;
-              const continuesAfter = hasDates && endMonthKey > yearStartKey + 11;
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => onSelectProject(p.id)}
-                  className="w-full flex hover:bg-[#FAFAFA] cursor-pointer text-left"
-                >
-                  <div className="w-45 shrink-0 px-4 py-2.5 border-r border-[#F4F4F4] min-w-0">
-                    <p className="text-sm font-medium text-[#272220] truncate">{p.title}</p>
-                    <p className="text-[11px] text-[#A0A0A0] truncate">{p.code} · {STATUS_LABEL[p.status]}</p>
-                  </div>
-                  <div className="flex-1 relative min-h-16">
-                    <div className="absolute inset-0 grid grid-cols-12 pointer-events-none">
-                      {months.map((monthKey) => (
-                        <div key={monthKey} className="border-r border-[#F9F9F9] last:border-r-0" />
-                      ))}
+          <div ref={containerRef} className="relative">
+            <svg className="absolute inset-0 pointer-events-none" style={{ width: '100%', height: '100%' }}>
+              {connectors.map((c) => (
+                <path
+                  key={c.key}
+                  d={`M ${c.x1} ${c.y1} V ${c.y2} H ${c.x2}`}
+                  fill="none"
+                  stroke="#CBD5E1"
+                  strokeWidth={1.5}
+                  strokeDasharray="3 3"
+                />
+              ))}
+            </svg>
+            <div className="divide-y divide-[#F9F9F9]">
+              {orderedRows.map(({ project: p, startMonthKey, endMonthKey, tasksByMonth, isDerivedFromTasks, start, end }) => {
+                const color = STATUS_DOT[p.status];
+                const yearStartKey = year * 12;
+                const hasDates = startMonthKey !== null && endMonthKey !== null;
+                const visibleStart = hasDates ? Math.max(startMonthKey, yearStartKey) : 0;
+                const visibleEnd = hasDates ? Math.min(endMonthKey, yearStartKey + 11) : -1;
+                const hasBar = hasDates && visibleStart <= visibleEnd;
+                const continuesBefore = hasDates && startMonthKey < yearStartKey;
+                const continuesAfter = hasDates && endMonthKey > yearStartKey + 11;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => onSelectProject(p.id)}
+                    className="w-full flex hover:bg-[#FAFAFA] cursor-pointer text-left"
+                  >
+                    <div className="w-45 shrink-0 px-4 py-2.5 border-r border-[#F4F4F4] min-w-0">
+                      <p className="text-sm font-medium text-[#272220] truncate">{p.title}</p>
+                      <p className="text-[11px] text-[#A0A0A0] truncate">{p.code} · {STATUS_LABEL[p.status]}</p>
                     </div>
-                    <div className="relative grid grid-cols-12 gap-y-1 py-2">
-                      {hasBar && (
-                        <Tooltip
-                          content={
-                            isDerivedFromTasks
-                              ? `${p.title} · ยังไม่กำหนดวันที่โครงการ — ช่วงนี้มาจากกำหนดส่งงาน (${formatShort(start)} – ${formatShort(end)})`
-                              : `${p.title} · ${p.startDate ?? '—'} – ${p.endDate ?? '—'}`
-                          }
-                        >
-                          <div
-                            className={`h-3 self-center ${continuesBefore ? 'rounded-l-none' : 'ml-1 rounded-l-full'} ${
-                              continuesAfter ? 'rounded-r-none' : 'mr-1 rounded-r-full'
-                            }`}
-                            style={
+                    <div
+                      ref={(el) => {
+                        if (el) barAreaRefs.current.set(p.id, el);
+                        else barAreaRefs.current.delete(p.id);
+                      }}
+                      className="flex-1 relative min-h-16"
+                    >
+                      <div className="absolute inset-0 grid grid-cols-12 pointer-events-none">
+                        {months.map((monthKey) => (
+                          <div key={monthKey} className="border-r border-[#F9F9F9] last:border-r-0" />
+                        ))}
+                      </div>
+                      <div className="relative grid grid-cols-12 gap-y-1 py-2">
+                        {hasBar && (
+                          <Tooltip
+                            content={
                               isDerivedFromTasks
-                                // Dashed outline instead of a solid fill — signals "this range came
-                                // from task due dates, not a date the project itself has set" at a
-                                // glance, same distinction the tooltip spells out.
-                                ? {
-                                    gridRow: 1,
-                                    gridColumn: `${visibleStart - yearStartKey + 1} / ${visibleEnd - yearStartKey + 2}`,
-                                    backgroundColor: `${color}1A`,
-                                    border: `1.5px dashed ${color}`,
-                                  }
-                                : {
-                                    gridRow: 1,
-                                    gridColumn: `${visibleStart - yearStartKey + 1} / ${visibleEnd - yearStartKey + 2}`,
-                                    backgroundColor: color,
-                                  }
+                                ? `${p.title} · ยังไม่กำหนดวันที่โครงการ — ช่วงนี้มาจากกำหนดส่งงาน (${formatShort(start)} – ${formatShort(end)})`
+                                : `${p.title} · ${p.startDate ?? '—'} – ${p.endDate ?? '—'}`
                             }
-                          />
-                        </Tooltip>
-                      )}
-                      {!hasDates && (
-                        <div className="flex items-center h-3 self-center" style={{ gridRow: 1, gridColumn: '1 / 4' }}>
-                          <span className="text-[10px] text-[#A0A0A0] italic ml-1">ยังไม่กำหนดวันที่</span>
-                        </div>
-                      )}
-                      {months.map((monthKey, idx) => {
-                        const monthTasks = tasksByMonth.get(monthKey) ?? [];
-                        if (monthTasks.length === 0) return null;
-                        return (
-                          <div key={monthKey} className="px-1 flex flex-col gap-0.5 min-w-0" style={{ gridRow: 2, gridColumn: idx + 1 }}>
-                            {monthTasks.slice(0, 2).map((t) => (
-                              <Tooltip key={t.id} content={`${t.title} · กำหนดส่ง ${t.dueDate}`}>
-                                <div
-                                  className="text-[9px] px-1 py-0.5 rounded truncate font-medium"
-                                  style={{ backgroundColor: `${TASK_STATUS_COLOR[t.status]}1A`, color: TASK_STATUS_COLOR[t.status] }}
-                                >
-                                  {new Date(`${t.dueDateISO}T00:00:00`).getDate()} — {t.title}
-                                </div>
-                              </Tooltip>
-                            ))}
-                            {monthTasks.length > 2 && (
-                              <div className="text-[8px] text-center text-[#A0A0A0] font-bold">+{monthTasks.length - 2} งาน</div>
-                            )}
+                          >
+                            <div
+                              className={`h-3 self-center ${continuesBefore ? 'rounded-l-none' : 'ml-1 rounded-l-full'} ${
+                                continuesAfter ? 'rounded-r-none' : 'mr-1 rounded-r-full'
+                              }`}
+                              style={
+                                isDerivedFromTasks
+                                  // Dashed outline instead of a solid fill — signals "this range came
+                                  // from task due dates, not a date the project itself has set" at a
+                                  // glance, same distinction the tooltip spells out.
+                                  ? {
+                                      gridRow: 1,
+                                      gridColumn: `${visibleStart - yearStartKey + 1} / ${visibleEnd - yearStartKey + 2}`,
+                                      backgroundColor: `${color}1A`,
+                                      border: `1.5px dashed ${color}`,
+                                    }
+                                  : {
+                                      gridRow: 1,
+                                      gridColumn: `${visibleStart - yearStartKey + 1} / ${visibleEnd - yearStartKey + 2}`,
+                                      backgroundColor: color,
+                                    }
+                              }
+                            />
+                          </Tooltip>
+                        )}
+                        {!hasDates && (
+                          <div className="flex items-center h-3 self-center" style={{ gridRow: 1, gridColumn: '1 / 4' }}>
+                            <span className="text-[10px] text-[#A0A0A0] italic ml-1">ยังไม่กำหนดวันที่</span>
                           </div>
-                        );
-                      })}
+                        )}
+                        {months.map((monthKey, idx) => {
+                          const monthTasks = tasksByMonth.get(monthKey) ?? [];
+                          if (monthTasks.length === 0) return null;
+                          return (
+                            <div key={monthKey} className="px-1 flex flex-col gap-0.5 min-w-0" style={{ gridRow: 2, gridColumn: idx + 1 }}>
+                              {monthTasks.slice(0, 2).map((t) => (
+                                <Tooltip key={t.id} content={`${t.title} · กำหนดส่ง ${t.dueDate}`}>
+                                  <div
+                                    className="text-[9px] px-1 py-0.5 rounded truncate font-medium"
+                                    style={{ backgroundColor: `${TASK_STATUS_COLOR[t.status]}1A`, color: TASK_STATUS_COLOR[t.status] }}
+                                  >
+                                    {new Date(`${t.dueDateISO}T00:00:00`).getDate()} — {t.title}
+                                  </div>
+                                </Tooltip>
+                              ))}
+                              {monthTasks.length > 2 && (
+                                <div className="text-[8px] text-center text-[#A0A0A0] font-bold">+{monthTasks.length - 2} งาน</div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                </button>
-              );
-            })}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>

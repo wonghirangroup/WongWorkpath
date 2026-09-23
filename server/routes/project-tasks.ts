@@ -83,6 +83,28 @@ function toProjectTask(r: ProjectTaskRowDb) {
 
 const SELECT_FIELDS = `id, project_id, title, description, status, priority, assignee_employee_ids, reviewer_employee_ids, creator_employee_id, start_date, due_date, progress, checklist, submission_note, submission_file_ids, review_note, blocked_reason, parent_task_id`;
 
+// A task ("หัวข้อ" is just this same task type, created through a differently-labeled tab — see
+// AddTaskModal.tsx) with 1+ subtasks has its own status fully derived from them, never manually
+// set: 'in_progress' the moment it has any subtask that isn't 'done' — including the instant it
+// gains its very first one — and 'done' only once every one of its subtasks is. Called after any
+// create/update/delete that could change what a parent's children look like; walks upward through
+// as many levels of nesting as exist (a topic's own parent could itself be someone else's subtask),
+// stopping the moment a level's derived status doesn't actually need to change, since its own
+// parent's status only depends on whether ITS children just changed.
+async function recomputeAncestorStatuses(startParentId: string): Promise<void> {
+  let pid: string | null = startParentId;
+  while (pid) {
+    const [children] = await pool.query<RowDataPacket[]>('SELECT status FROM project_task WHERE parent_task_id = ?', [pid]);
+    if (children.length === 0) break; // no subtasks (any longer) — leave its status exactly as it already is, freely editable again
+    const allDone = children.every((c) => c.status === 'done');
+    const nextStatus = allDone ? 'done' : 'in_progress';
+    const [[parentRow]] = await pool.query<RowDataPacket[]>('SELECT status, parent_task_id FROM project_task WHERE id = ?', [pid]);
+    if (!parentRow || parentRow.status === nextStatus) break;
+    await pool.query('UPDATE project_task SET status = ?, updated_at = ? WHERE id = ?', [nextStatus, nowBangkokDateTime(), pid]);
+    pid = parentRow.parent_task_id;
+  }
+}
+
 projectTasksRouter.get('/', async (_req, res) => {
   try {
     const [rows] = await pool.query<ProjectTaskRowDb[]>(
@@ -133,6 +155,10 @@ projectTasksRouter.post('/', async (req, res) => {
     // triggered side effect of an already-unrestricted action (creating a task), not a user edit.
     await pool.query(`UPDATE project SET status = 'in_progress', updated_at = ? WHERE id = ? AND status = 'draft'`, [now, t.projectId]);
 
+    // A brand-new subtask makes its parent "have subtasks" for the first time (or just adds one
+    // more) — recompute right away rather than waiting for some later edit to notice.
+    if (parentTaskId) await recomputeAncestorStatuses(parentTaskId);
+
     const [[row]] = await pool.query<ProjectTaskRowDb[]>(`SELECT ${SELECT_FIELDS} FROM project_task WHERE id = ?`, [id]);
     res.status(201).json(toProjectTask(row));
   } catch (err) {
@@ -147,9 +173,17 @@ export async function applyTaskFields(id: string, t: any) {
   const fields: string[] = [];
   const values: unknown[] = [];
 
+  // A task with 1+ subtasks has a fully derived status (see recomputeAncestorStatuses) — a manual
+  // status field on it is silently ignored rather than rejected, same "just don't touch that
+  // column" treatment every other absent/inapplicable field here already gets.
+  const [[childCountRow]] = await pool.query<RowDataPacket[]>(
+    'SELECT COUNT(*) AS cnt FROM project_task WHERE parent_task_id = ?', [id]
+  );
+  const hasSubtasks = Number(childCountRow?.cnt ?? 0) > 0;
+
   if (typeof t.title === 'string' && t.title.trim()) { fields.push('title = ?'); values.push(t.title.trim()); }
   if ('description' in t) { fields.push('description = ?'); values.push((t.description as string | undefined)?.trim() || null); }
-  if (typeof t.status === 'string' && STATUSES.includes(t.status)) {
+  if (!hasSubtasks && typeof t.status === 'string' && STATUSES.includes(t.status)) {
     fields.push('status = ?');
     values.push(t.status);
     // A reason only makes sense while the task is actually blocked — clear any stale one the
@@ -193,6 +227,12 @@ export async function applyTaskFields(id: string, t: any) {
   await pool.query(`UPDATE project_task SET ${fields.join(', ')} WHERE id = ?`, [...values, id]);
 
   const [[row]] = await pool.query<ProjectTaskRowDb[]>(`SELECT ${SELECT_FIELDS} FROM project_task WHERE id = ?`, [id]);
+
+  // This task's own status may have just changed — recompute every ancestor up the chain now
+  // that one of a parent's children may look different. A no-op (single lookup) when this task
+  // has no parent, or when hasSubtasks above already meant status couldn't have changed anyway.
+  if (row?.parent_task_id) await recomputeAncestorStatuses(row.parent_task_id);
+
   return row ? toProjectTask(row) : null;
 }
 
@@ -238,6 +278,10 @@ projectTasksRouter.delete('/:id', async (req, res) => {
     }
 
     await pool.query('DELETE FROM project_task WHERE id = ?', [req.params.id]);
+    // A deleted subtask may have been the deciding one keeping its parent 'in_progress' (or the
+    // last one at all, in which case the parent's status simply falls back to being freely
+    // editable again — see recomputeAncestorStatuses' own early-out for zero remaining children).
+    if (existing.parent_task_id) await recomputeAncestorStatuses(existing.parent_task_id);
     res.status(204).end();
   } catch (err) {
     console.error('DELETE /api/project-tasks/:id failed:', err);

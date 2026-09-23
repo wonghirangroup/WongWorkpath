@@ -112,6 +112,8 @@ export interface AuditLog {
 export interface Meeting {
   id: string;
   projectId?: string;
+  taskId?: string; // ผูกกับงานหนึ่งใน projectId นี้ (ไม่บังคับ) — ตั้งได้จากแท็บ "การประชุม" ใน AddTaskModal
+  // เมื่อเปิดจากบริบทของงานหนึ่งอยู่แล้ว ใช้แยก "ประชุมเกี่ยวกับงานนี้โดยเฉพาะ" จาก "ประชุมของทั้งโครงการ"
   department?: string; // แผนกที่จัดประชุม (ไม่บังคับ) — ใช้ช่วยกรองผู้เข้าร่วมและเป็น tag บนปฏิทิน
   title: string;
   description?: string;

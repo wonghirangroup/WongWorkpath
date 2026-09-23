@@ -16,6 +16,32 @@ import { nowTimestamp } from '../lib/datetime';
 import type { ProjectRow, ProjectTaskItem, CustomProjectStatus, CustomProjectType } from '../components/projectBoard/types';
 import { registerCustomStatusLabels, registerCustomTypeLabels } from '../components/projectBoard/statusMeta';
 
+// Client-side mirror of the server's own recomputeAncestorStatuses (server/routes/project-tasks.ts)
+// — a task with 1+ subtasks ("หัวข้อ" is just this same task type under a different creation-time
+// label) has its status fully derived from them: 'in_progress' the moment it has any subtask that
+// isn't 'done', 'done' only once every one of them is. Mirrored here purely so the UI reflects a
+// just-created/just-changed/just-deleted subtask's effect on its parent(s) instantly instead of
+// waiting for a full reload to notice what the server already recomputed — the server write is
+// still the actual source of truth. Walks upward, stopping the moment a level's derived status
+// doesn't actually need to change (a task with zero subtasks — e.g. its last one was just deleted
+// — is left exactly as it is, freely editable again).
+function recomputeAncestorTaskStatuses(list: ProjectTaskItem[], startParentId: string): ProjectTaskItem[] {
+  let current = list;
+  let parentId: string | undefined = startParentId;
+  while (parentId) {
+    const siblings = current.filter((t) => t.parentTaskId === parentId);
+    if (siblings.length === 0) break;
+    const allDone = siblings.every((t) => t.status === 'done');
+    const nextStatus: ProjectTaskItem['status'] = allDone ? 'done' : 'in_progress';
+    const parent = current.find((t) => t.id === parentId);
+    if (!parent || parent.status === nextStatus) break;
+    const resolvedParentId: string = parentId;
+    current = current.map((t) => (t.id === resolvedParentId ? { ...t, status: nextStatus } : t));
+    parentId = parent.parentTaskId;
+  }
+  return current;
+}
+
 interface AppDataContextValue {
   // Auth
   currentUser: Employee | null;
@@ -766,7 +792,10 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   const handleAddProjectTask = async (task: Omit<ProjectTaskItem, 'id'>) => {
     const created = await createProjectTask(task);
-    setProjectTasks((prev) => [created, ...prev]);
+    setProjectTasks((prev) => {
+      const next = [created, ...prev];
+      return created.parentTaskId ? recomputeAncestorTaskStatuses(next, created.parentTaskId) : next;
+    });
 
     // Mirrors the server's own auto-promotion (see POST /api/project-tasks) — a 'draft' project
     // isn't a draft anymore once it has a real task, so reflect that locally right away instead
@@ -799,7 +828,10 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const handleUpdateProjectTask = async (id: string, updates: Partial<ProjectTaskItem>) => {
     const before = projectTasks.find((t) => t.id === id);
     const updated = await updateProjectTaskRemote(id, updates, currentUser?.id ?? '');
-    setProjectTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
+    setProjectTasks((prev) => {
+      const next = prev.map((t) => (t.id === id ? updated : t));
+      return updated.parentTaskId ? recomputeAncestorTaskStatuses(next, updated.parentTaskId) : next;
+    });
 
     const projectTitle = projects.find((p) => p.id === updated.projectId)?.title ?? 'โครงการ';
     const notifyEach = (ids: string[] | undefined, payload: Omit<CreateNotificationPayload, 'targetEmployeeId'>) => {
@@ -859,11 +891,15 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   };
 
   const handleDeleteProjectTask = async (id: string) => {
+    const before = projectTasks.find((t) => t.id === id);
     await deleteProjectTaskRemote(id, currentUser?.id ?? '');
     // Deleting a task with subtasks cascades server-side (ON DELETE CASCADE) — drop them from
     // local state too, or they'd keep showing (pointing at a now-nonexistent parent) until the
     // next full reload.
-    setProjectTasks((prev) => prev.filter((t) => t.id !== id && t.parentTaskId !== id));
+    setProjectTasks((prev) => {
+      const next = prev.filter((t) => t.id !== id && t.parentTaskId !== id);
+      return before?.parentTaskId ? recomputeAncestorTaskStatuses(next, before.parentTaskId) : next;
+    });
   };
 
   // Filed whenever the current user isn't one of an entity's owners (project.ownerEmployeeIds, or
