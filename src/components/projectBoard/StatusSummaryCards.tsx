@@ -1,4 +1,5 @@
-import { STATUS_LABEL, STATUS_DOT, STATUS_ICON } from './statusMeta';
+import { STATUS_LABEL, STATUS_DOT, STATUS_ICON, STATUS_DESCRIPTION } from './statusMeta';
+import Tooltip from '../Tooltip';
 
 interface StatusSummaryCardsProps {
   counts: Record<string, number>;
@@ -20,10 +21,12 @@ export default function StatusSummaryCards({ counts, selectedIds }: StatusSummar
             className="bg-white p-5 rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] flex items-center justify-between gap-3 shrink-0 w-60 snap-start sm:w-auto"
           >
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5 mb-2">
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                <span className="text-sm text-[#6F6F6F] font-medium truncate">{STATUS_LABEL[status]}</span>
-              </div>
+              <Tooltip content={STATUS_DESCRIPTION[status]}>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                  <span className="text-sm text-[#6F6F6F] font-medium truncate">{STATUS_LABEL[status]}</span>
+                </div>
+              </Tooltip>
               <h3 className="text-2xl font-bold text-[#272220]">{counts[status] ?? 0}</h3>
             </div>
             <div className="shrink-0" style={{ color }}>

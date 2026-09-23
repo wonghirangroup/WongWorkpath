@@ -19,6 +19,18 @@ const BASE_STATUS_LABEL: Record<ProjectStatus, string> = {
   idea: 'ไอเดีย',
 };
 
+// Shown as a hover tooltip on each status summary card (see StatusSummaryCards.tsx) — a plain
+// label alone ("พัก", "ร่าง") doesn't say what actually qualifies a project for it.
+const BASE_STATUS_DESCRIPTION: Record<ProjectStatus, string> = {
+  draft: 'ยังไม่เริ่มดำเนินการ อยู่ระหว่างร่างแผน',
+  pending_review: 'ส่งแผนแล้ว รอตรวจสอบ/อนุมัติก่อนเริ่มงาน',
+  in_progress: 'กำลังดำเนินงานอยู่ในขณะนี้',
+  on_hold: 'หยุดพักไว้ชั่วคราว ยังไม่ได้ยกเลิก',
+  completed: 'ดำเนินการเสร็จสมบูรณ์แล้ว',
+  cancelled: 'ถูกยกเลิก ไม่ดำเนินการต่อ',
+  idea: 'เป็นแนวคิดเบื้องต้น ยังไม่ได้เริ่มวางแผนจริง',
+};
+
 // User-specified brand colors — used identically everywhere a status shows color: the small
 // dot, the summary-card watermark icon, and (per explicit request) the pill/tag text too. Kept
 // as one lookup so all three can never drift apart. Note this trades away some WCAG AA contrast
@@ -93,6 +105,13 @@ function isBuiltIn(status: string): status is ProjectStatus {
 
 export const STATUS_LABEL: Record<string, string> = new Proxy(BASE_STATUS_LABEL, {
   get: (target, prop: string) => (isBuiltIn(prop) ? target[prop] : customStatusLabels.get(prop) ?? prop),
+});
+
+// A user-created custom status has no fixed meaning to describe — undefined here just means no
+// tooltip shows for it (Tooltip already renders the children alone when content is undefined),
+// not a broken lookup.
+export const STATUS_DESCRIPTION: Record<string, string | undefined> = new Proxy(BASE_STATUS_DESCRIPTION, {
+  get: (target, prop: string) => (isBuiltIn(prop) ? target[prop] : undefined),
 });
 
 export const STATUS_DOT: Record<string, string> = new Proxy(BASE_STATUS_DOT, {

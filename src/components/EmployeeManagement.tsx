@@ -508,7 +508,9 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                 type="button"
                 onClick={() => setOrgEditMode((v) => !v)}
                 className={`flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
-                  orgEditMode ? 'bg-[#FF6537] text-white' : 'bg-[#F4F4F5] text-[#6F6F6F] hover:bg-slate-200'
+                  orgEditMode
+                    ? 'bg-[#FF6537] text-white'
+                    : 'bg-white text-[#272220] border border-[#E5E5E5] hover:bg-slate-50'
                 }`}
               >
                 <Pencil size={13} /> {orgEditMode ? 'เสร็จสิ้นการแก้ไข' : 'แก้ไขโครงสร้าง'}
@@ -618,11 +620,18 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                   {emp.nickname && emp.nickname !== emp.name && (
                     <p className="text-[11px] text-slate-400 truncate">{emp.name}</p>
                   )}
-                  {emp.department && (
-                    <span className={`inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(emp.department)}`}>
-                      {emp.department}
-                    </span>
-                  )}
+                  <div className="flex flex-wrap items-center gap-1">
+                    {emp.division && (
+                      <span className={`inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(emp.division)}`}>
+                        {emp.division}
+                      </span>
+                    )}
+                    {emp.department && (
+                      <span className={`inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(emp.department)}`}>
+                        {emp.department}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <EmployeeCardMenu
                   onView={() => openProfile(emp, 'view')}
