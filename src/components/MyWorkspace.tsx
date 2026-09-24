@@ -6,7 +6,6 @@ import {
   GanttChartSquare,
   Eye,
   Send,
-  CheckCircle2,
   Calendar as CalendarIcon,
   ShieldCheck,
 } from 'lucide-react';
@@ -51,7 +50,7 @@ function TaskStatusPill({ status, blockedReason }: { status: ProjectTaskStatus; 
 // Shows the first person + "+N" when there's more than one — a task can now have several
 // assignees/reviewers, and a table cell doesn't have room to stack every avatar+name pair.
 function PersonCell({ employees }: { employees: Employee[] }) {
-  if (employees.length === 0) return <span className="text-[#A0A0A0]">ยังไม่มี</span>;
+  if (employees.length === 0) return <span className="text-[#767676]">ยังไม่มี</span>;
   const [first, ...rest] = employees;
   const name = displayName(first);
   return (
@@ -60,7 +59,7 @@ function PersonCell({ employees }: { employees: Employee[] }) {
         <img src={first.avatar} alt="" className="w-6 h-6 rounded-full object-cover shrink-0" />
       ) : (
         <span
-          className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0"
+          className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[11px] font-bold shrink-0"
           style={{ backgroundColor: getAvatarColor(name) }}
         >
           {name.trim().charAt(0).toUpperCase()}
@@ -234,7 +233,7 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
                           <button
                             type="button"
                             onClick={() => project && onSelectProject(project.id)}
-                            className="text-[#FF6537] font-medium hover:underline cursor-pointer disabled:no-underline disabled:text-[#A0A0A0] disabled:cursor-default"
+                            className="text-[#FF6537] font-medium hover:underline cursor-pointer disabled:no-underline disabled:text-[#767676] disabled:cursor-default"
                             disabled={!project}
                           >
                             {project?.title ?? 'ไม่ทราบโครงการ'}
@@ -243,7 +242,7 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
                         <td className="px-4 py-4 font-medium text-[#272220] max-w-60">
                           <p className="truncate">{task.title}</p>
                           {task.parentTaskId && (
-                            <p className="text-[10px] font-normal text-[#A0A0A0] truncate mt-0.5">
+                            <p className="text-[11px] font-normal text-[#767676] truncate mt-0.5">
                               งานย่อยของ: {projectTasks.find((t) => t.id === task.parentTaskId)?.title ?? 'ไม่ทราบงาน'}
                             </p>
                           )}
@@ -252,7 +251,7 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
                           <TaskStatusPill status={task.status} blockedReason={task.blockedReason} />
                           {task.status === 'in_progress' && task.reviewNote && (
                             <Tooltip content={task.reviewNote}>
-                              <p className="text-[10px] text-red-600 mt-1 max-w-40 truncate">ตีกลับ: {task.reviewNote}</p>
+                              <p className="text-[11px] text-red-600 mt-1 max-w-40 truncate">ตีกลับ: {task.reviewNote}</p>
                             </Tooltip>
                           )}
                         </td>
@@ -263,7 +262,7 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
                             <button
                               type="button"
                               onClick={() => setViewingTask(task)}
-                              className="inline-flex items-center gap-1.5 text-[#A0A0A0] hover:text-[#FF6537] text-xs font-medium cursor-pointer transition-colors"
+                              className="inline-flex items-center gap-1.5 text-[#767676] hover:text-[#FF6537] text-xs font-medium cursor-pointer transition-colors"
                             >
                               <Eye size={13} /> ดู
                             </button>
@@ -314,7 +313,7 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
                           <button
                             type="button"
                             onClick={() => project && onSelectProject(project.id)}
-                            className="text-[#FF6537] font-medium hover:underline cursor-pointer disabled:no-underline disabled:text-[#A0A0A0] disabled:cursor-default"
+                            className="text-[#FF6537] font-medium hover:underline cursor-pointer disabled:no-underline disabled:text-[#767676] disabled:cursor-default"
                             disabled={!project}
                           >
                             {project?.title ?? 'ไม่ทราบโครงการ'}
@@ -427,7 +426,7 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
                           <button
                             type="button"
                             onClick={() => onSelectProject(project.id)}
-                            className="inline-flex items-center gap-1.5 text-[#A0A0A0] hover:text-[#FF6537] text-xs font-medium cursor-pointer transition-colors"
+                            className="inline-flex items-center gap-1.5 text-[#767676] hover:text-[#FF6537] text-xs font-medium cursor-pointer transition-colors"
                           >
                             <Eye size={13} /> ดูรายละเอียด
                           </button>

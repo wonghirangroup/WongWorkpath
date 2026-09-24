@@ -2,8 +2,9 @@ import { Router } from 'express';
 import type { RowDataPacket } from 'mysql2';
 import { pool } from '../db.ts';
 import { nowBangkokDateTime } from '../lib/datetime.ts';
-import { applyProjectFields } from './projects.ts';
-import { applyTaskFields } from './project-tasks.ts';
+import { newId } from '../lib/ids.ts';
+import { applyProjectFields, deleteProjectCascade } from './projects.ts';
+import { applyTaskFields, deleteTaskCascade } from './project-tasks.ts';
 import { applyEmployeeFields } from './employees.ts';
 import { isOwner, isExecutiveActor, isEmployeeManagerActor, resolveValidOwnerIds } from '../lib/ownership.ts';
 
@@ -71,6 +72,8 @@ changeRequestsRouter.get('/', async (req, res) => {
 
 changeRequestsRouter.post('/', async (req, res) => {
   const b = req.body ?? {};
+  // The requester is whoever is logged in, whatever the client says.
+  b.requestedBy = req.actorId;
   if (!ENTITY_TYPES.includes(b.entityType) || typeof b.entityId !== 'string' || !b.entityId) {
     return res.status(400).json({ message: 'ไม่พบรายการที่ต้องการขอแก้ไข/ลบ' });
   }
@@ -97,7 +100,7 @@ changeRequestsRouter.post('/', async (req, res) => {
       return res.status(409).json({ message: 'มีคำขอรออนุมัติอยู่แล้วสำหรับรายการนี้' });
     }
 
-    const id = `CHANGEREQ_${Date.now()}`;
+    const id = newId('CHANGEREQ');
     const now = nowBangkokDateTime();
     await pool.query(
       `INSERT INTO change_request
@@ -127,9 +130,8 @@ changeRequestsRouter.put('/:id/decide', async (req, res) => {
   if (b.decision !== 'approve' && b.decision !== 'reject') {
     return res.status(400).json({ message: 'ต้องระบุผลการพิจารณา' });
   }
-  if (typeof b.decidedBy !== 'string' || !b.decidedBy) {
-    return res.status(400).json({ message: 'ต้องระบุผู้พิจารณา' });
-  }
+  // The decider is whoever is logged in — the client no longer needs to (and can't) say who.
+  b.decidedBy = req.actorId;
 
   try {
     const [[existing]] = await pool.query<ChangeRequestRowDb[]>(`SELECT ${SELECT_FIELDS} FROM change_request WHERE id = ?`, [req.params.id]);
@@ -184,9 +186,9 @@ changeRequestsRouter.put('/:id/decide', async (req, res) => {
           return res.status(400).json({ message: 'ประเภทคำขอไม่ถูกต้อง' });
         }
         if (existing.entity_type === 'project') {
-          await pool.query('DELETE FROM project WHERE id = ?', [existing.entity_id]);
+          await deleteProjectCascade(existing.entity_id);
         } else {
-          await pool.query('DELETE FROM project_task WHERE id = ?', [existing.entity_id]);
+          await deleteTaskCascade(existing.entity_id);
         }
       }
     }

@@ -10,7 +10,7 @@ import { ApiError } from '../../lib/api';
 import { isOwner, isResponsibleForProject, resolveValidIds } from '../../lib/ownership';
 import { buildCsv, downloadCsv } from '../../lib/csv';
 import { useEscapeToClose } from '../../lib/useEscapeToClose';
-import { ProjectRow, ProjectStatus } from './types';
+import { ProjectRow } from './types';
 import { STATUS_LABEL, PROJECT_PRIORITY_META, PROJECT_TYPE_META, PROJECT_STATUS_OPTIONS } from './statusMeta';
 import { displayName } from './CreateProjectModal';
 import StatusSummaryCards from './StatusSummaryCards';
@@ -117,6 +117,7 @@ function PaginationControls({
       <button
         onClick={onPrev}
         disabled={currentPage === 1}
+        aria-label="หน้าก่อนหน้า"
         className="w-9 h-9 lg:w-8 lg:h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-[#FF6537] hover:bg-orange-50 disabled:text-slate-300 disabled:hover:bg-white disabled:cursor-not-allowed cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1"
       >
         <ChevronLeft size={16} />
@@ -125,6 +126,8 @@ function PaginationControls({
         <button
           key={pageNum}
           onClick={() => onPage(pageNum)}
+          aria-label={`ไปหน้า ${pageNum}`}
+          aria-current={pageNum === currentPage ? 'page' : undefined}
           className={`w-9 h-9 lg:w-8 lg:h-8 rounded-lg text-sm font-bold cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1 ${
             pageNum === currentPage
               ? 'bg-[#FF6537] text-white shadow-sm'
@@ -137,6 +140,7 @@ function PaginationControls({
       <button
         onClick={onNext}
         disabled={currentPage === totalPages}
+        aria-label="หน้าถัดไป"
         className="w-9 h-9 lg:w-8 lg:h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-[#FF6537] hover:bg-orange-50 disabled:text-slate-300 disabled:hover:bg-white disabled:cursor-not-allowed cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1"
       >
         <ChevronRight size={16} />
@@ -626,7 +630,7 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
                 transition={{ duration: 0.2 }}
-                className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4"
+                role="dialog" aria-modal="true" aria-label="ลบโครงการ" className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4"
               >
                 <div className="flex justify-between items-center pb-2 border-b border-slate-100">
                   <h3 className="text-sm font-bold text-slate-800">ลบโครงการ</h3>

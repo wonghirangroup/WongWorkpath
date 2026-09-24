@@ -108,7 +108,7 @@ export default function ProjectTable({ rows, employees, onViewDetail, canDelete,
                 </td>
                 <td className="px-4 py-4 text-[#6F6F6F]">{index + 1}</td>
                 <td className="px-4 py-4 text-[#6F6F6F] whitespace-nowrap">{row.code}</td>
-                <td className="px-4 py-4 font-medium text-[#272220]">
+                <td className="px-4 py-4 font-medium text-[#272220] whitespace-nowrap">
                   <button
                     type="button"
                     onClick={() => onViewDetail(row)}
@@ -187,7 +187,7 @@ export default function ProjectTable({ rows, employees, onViewDetail, canDelete,
                     <button
                       type="button"
                       onClick={() => onViewDetail(row)}
-                      className="inline-flex items-center gap-1.5 text-[#A0A0A0] hover:text-[#FF6537] active:text-[#e2582f] text-xs font-medium cursor-pointer whitespace-nowrap transition-colors"
+                      className="inline-flex items-center gap-1.5 text-[#767676] hover:text-[#FF6537] active:text-[#e2582f] text-xs font-medium cursor-pointer whitespace-nowrap transition-colors"
                     >
                       <Eye size={14} />
                       ดูรายละเอียด
@@ -197,7 +197,7 @@ export default function ProjectTable({ rows, employees, onViewDetail, canDelete,
                         <button
                           type="button"
                           onClick={() => onDelete(row)}
-                          className="text-[#A0A0A0] hover:text-red-600 active:text-red-700 cursor-pointer transition-colors"
+                          className="text-[#767676] hover:text-red-600 active:text-red-700 cursor-pointer transition-colors"
                         >
                           <Trash2 size={14} />
                         </button>

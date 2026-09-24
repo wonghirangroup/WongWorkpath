@@ -1,17 +1,22 @@
+import { lazy } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AppDataProvider, useAppData } from './context/AppDataContext';
 import { ConfirmProvider } from './context/ConfirmContext';
 import { canAccessNavItem } from './lib/permissions';
 import AppLayout from './components/layout/AppLayout';
 import LoginPage from './pages/LoginPage';
-import DashboardPage from './pages/DashboardPage';
-import TasksPage from './pages/TasksPage';
-import GanttPage from './pages/GanttPage';
-import CalendarPage from './pages/CalendarPage';
-import DocsPage from './pages/DocsPage';
-import VaultPage from './pages/VaultPage';
-import EmployeesPage from './pages/EmployeesPage';
-import SettingsPage from './pages/SettingsPage';
+
+// Each page is its own chunk, fetched the first time it's opened — the login screen and the first
+// page after it no longer have to download the Gantt, Drive, vault and every other module up front.
+// (AppLayout wraps the routed page in a Suspense boundary for the brief loading state.)
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const TasksPage = lazy(() => import('./pages/TasksPage'));
+const GanttPage = lazy(() => import('./pages/GanttPage'));
+const CalendarPage = lazy(() => import('./pages/CalendarPage'));
+const DocsPage = lazy(() => import('./pages/DocsPage'));
+const VaultPage = lazy(() => import('./pages/VaultPage'));
+const EmployeesPage = lazy(() => import('./pages/EmployeesPage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 
 function ProtectedLayoutRoute() {
   const { currentUser } = useAppData();

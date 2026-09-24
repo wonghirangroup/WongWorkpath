@@ -10,6 +10,9 @@ import { NAV_ITEMS } from './layout/Sidebar';
 // A plain admin can only ever hand out the "employee" level — admin/superadmin/ผู้บริหาร accounts
 // can only be created or changed by a Super Admin or ผู้บริหาร (mirrors canEditOrDeleteTarget's
 // "admin can't touch admin-like accounts" rule, extended to account-type assignment itself).
+// The ผู้บริหาร title is capped at 2 people (enforced server-side, which tells the user to demote
+// one first when a third is attempted) — both Super Admin and an existing ผู้บริหาร can give and
+// take it back.
 export function assignableAccountTypes(actingUser: Employee | undefined): AccountType[] {
   if (actingUser?.accountType === 'superadmin' || actingUser?.accountType === 'executive') {
     return [...ACCOUNT_TYPES];

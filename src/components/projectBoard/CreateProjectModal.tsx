@@ -279,7 +279,7 @@ function SummarySection({ title, dotColor, onEdit, children }: { title: string; 
 function SummaryTextBlock({ label, text }: { label: string; text: string }) {
   return (
     <div className="flex flex-col flex-1 min-h-28 lg:min-h-16 gap-1">
-      <span className="text-xs text-[#A0A0A0]">{label}</span>
+      <span className="text-xs text-[#767676]">{label}</span>
       <div className="relative flex-1 min-h-0">
         <p className="absolute inset-0 overflow-y-auto text-xs font-medium leading-normal text-[#272220] whitespace-pre-wrap wrap-break-word">
           {text.trim() ? text : <span className="font-semibold">ไม่ระบุ</span>}
@@ -292,7 +292,7 @@ function SummaryTextBlock({ label, text }: { label: string; text: string }) {
 function SummaryRow({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-3 text-xs">
-      <span className="text-[#A0A0A0] shrink-0">{label}</span>
+      <span className="text-[#767676] shrink-0">{label}</span>
       <span className="text-[#272220] font-semibold text-right min-w-0">{value}</span>
     </div>
   );
@@ -542,13 +542,13 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ type: 'spring', stiffness: 300, damping: 24, mass: 0.9 }}
-            className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-lg lg:max-w-5xl mx-4 max-h-[94vh] overflow-hidden flex flex-col"
+            role="dialog" aria-modal="true" aria-label="สร้างโครงการใหม่" className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-lg lg:max-w-5xl mx-4 max-h-[94vh] overflow-hidden flex flex-col"
           >
             <div className="flex justify-between items-center px-5 pt-5 pb-2 shrink-0">
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-bold text-slate-800">สร้างโครงการใหม่</h3>
-                  <span className="text-[10px] font-bold text-[#FF6537] bg-[#FFF1EC] px-2 py-0.5 rounded-full">
+                  <span className="text-[11px] font-bold text-[#FF6537] bg-[#FFF1EC] px-2 py-0.5 rounded-full">
                     {getNextCodePreview(abbreviation.trim().toUpperCase(), isCustomTypeSelected ? (customTypeAbbrev.trim().toUpperCase() || null) : type)}
                   </span>
                 </div>
@@ -650,7 +650,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                           onChange={(e) => setCustomTypeName(e.target.value)}
                           className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
                         />
-                        <p className="text-[10px] text-[#A0A0A0] mt-1">
+                        <p className="text-[11px] text-[#767676] mt-1">
                           ประเภทและตัวย่อนี้จะถูกบันทึกไว้ให้เลือกใช้กับโครงการอื่นได้ในครั้งถัดไป
                         </p>
                       </div>
@@ -661,7 +661,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                           โครงการหลัก <span className="text-[#FF6537]">*</span>
                         </label>
                         {topLevelProjects.length === 0 ? (
-                          <p className="text-xs text-[#A0A0A0] bg-slate-50 border border-[#E5E5E5] rounded-lg px-3 py-2.5">
+                          <p className="text-xs text-[#767676] bg-slate-50 border border-[#E5E5E5] rounded-lg px-3 py-2.5">
                             ยังไม่มีโครงการประเภท "โครงการ (P)" ในระบบให้เลือกเป็นโครงการหลัก
                           </p>
                         ) : (
@@ -672,7 +672,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                             options={topLevelProjects.map((p) => ({ value: p.id, label: `${p.title} (${p.code})` }))}
                           />
                         )}
-                        <p className="text-[10px] text-[#A0A0A0] mt-1">โครงการย่อยต้องผูกกับโครงการหลักที่เป็นประเภท "โครงการ (P)" เท่านั้น</p>
+                        <p className="text-[11px] text-[#767676] mt-1">โครงการย่อยต้องผูกกับโครงการหลักที่เป็นประเภท "โครงการ (P)" เท่านั้น</p>
                       </div>
                     )}
                     <div>
@@ -680,7 +680,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                         <label className="block text-[#272220] font-bold text-[11px]">
                           ตัวย่อชื่อโครงการ <span className="text-[#FF6537]">*</span>
                         </label>
-                        <span className="text-[10px] text-[#6F6F6F]">ตั้งจากชื่อให้อัตโนมัติถ้าเป็นภาษาอังกฤษ ไม่งั้นพิมพ์เอง</span>
+                        <span className="text-[11px] text-[#6F6F6F]">ตั้งจากชื่อให้อัตโนมัติถ้าเป็นภาษาอังกฤษ ไม่งั้นพิมพ์เอง</span>
                       </div>
                       <input
                         type="text"
@@ -695,7 +695,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                         }}
                         className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
                       />
-                      <p className="text-[10px] text-[#A0A0A0] mt-1">ใช้ประกอบรหัสโครงการ (เช่น GS-69-P-001) — จำเป็นต้องกรอก</p>
+                      <p className="text-[11px] text-[#767676] mt-1">ใช้ประกอบรหัสโครงการ (เช่น GS-69-P-001) — จำเป็นต้องกรอก</p>
                     </div>
                     </div>
                     {/* Right column is just the description, stretched to the same height as the
@@ -724,7 +724,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                       <div>
                         <div className="flex items-baseline justify-between mb-1">
                           <label className="block text-[#272220] font-bold text-[11px]">ผู้รับผิดชอบหลัก</label>
-                          <span className="text-[10px] text-[#6F6F6F]">เลือกได้หลายคน สิทธิ์เท่ากันทุกคน</span>
+                          <span className="text-[11px] text-[#6F6F6F]">เลือกได้หลายคน สิทธิ์เท่ากันทุกคน</span>
                         </div>
                         <EmployeeMultiSelect
                           employees={employees.filter((emp) => !assigneeIds.includes(emp.id))}
@@ -737,7 +737,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                       <div>
                         <div className="flex items-baseline justify-between mb-1">
                           <label className="block text-[#272220] font-bold text-[11px]">ระดับความสำคัญ</label>
-                          <span className="text-[10px] text-[#A0A0A0]">1 = สำคัญที่สุด, 5 = สำคัญน้อยที่สุด</span>
+                          <span className="text-[11px] text-[#767676]">1 = สำคัญที่สุด, 5 = สำคัญน้อยที่สุด</span>
                         </div>
                         <div className="flex gap-2">
                           {PRIORITY_OPTIONS.map((p) => (
@@ -818,7 +818,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                         <div>
                           <label className="block text-[#272220] font-bold text-[11px] mb-1">งบประมาณ (บาท)</label>
                           <div className="relative">
-                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-[#B0B0B0]">฿</span>
+                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-[#767676]">฿</span>
                             <input
                               type="text"
                               inputMode="numeric"
@@ -900,7 +900,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                                 ) : (
                                   <Tooltip key={emp.id} content={displayName(emp)}>
                                     <span
-                                      className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-bold ring-2 ring-white ${idx > 0 ? '-ml-2' : ''}`}
+                                      className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-[11px] font-bold ring-2 ring-white ${idx > 0 ? '-ml-2' : ''}`}
                                       style={{ backgroundColor: getAvatarColor(displayName(emp)) }}
                                     >
                                       {displayName(emp).trim().charAt(0).toUpperCase()}
@@ -957,7 +957,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                                 ) : (
                                   <Tooltip key={emp.id} content={displayName(emp)}>
                                     <span
-                                      className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-bold ring-2 ring-white ${idx > 0 ? '-ml-2' : ''}`}
+                                      className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-[11px] font-bold ring-2 ring-white ${idx > 0 ? '-ml-2' : ''}`}
                                       style={{ backgroundColor: getAvatarColor(displayName(emp)) }}
                                     >
                                       {displayName(emp).trim().charAt(0).toUpperCase()}

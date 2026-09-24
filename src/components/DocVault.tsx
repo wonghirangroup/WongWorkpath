@@ -1293,7 +1293,7 @@ export default function DocVault({
                   const creation = doc.history[0];
                   const creatorName = creation?.updatedBy ?? doc.updatedBy;
                   const createdDate = creation?.date ?? doc.lastUpdated;
-                  const { Icon, color, fill, isPdf, isImage } = getItemVisual(doc);
+                  const { Icon, color, fill } = getItemVisual(doc);
                   const ownership = getOwnership(doc);
 
                   return (
@@ -1330,7 +1330,7 @@ export default function DocVault({
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <p className="text-[13px] font-bold text-slate-900 leading-tight whitespace-nowrap">{doc.name}</p>
                               {doc.scope === 'โครงการ' && (
-                                <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none shrink-0 ${getProjectTagClass(projectById.get(doc.projectId ?? '')?.title)}`}>
+                                <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded-full leading-none shrink-0 ${getProjectTagClass(projectById.get(doc.projectId ?? '')?.title)}`}>
                                   {projectById.get(doc.projectId ?? '')?.title || 'โครงการ'}
                                 </span>
                               )}
@@ -1340,7 +1340,7 @@ export default function DocVault({
                                 type="button"
                                 onClick={(e) => { e.stopPropagation(); goToProject(ownership.project.id); }}
                                 onDoubleClick={(e) => e.stopPropagation()}
-                                className="text-[10px] text-[#A0A0A0] hover:text-[#FF6537] hover:underline leading-tight truncate max-w-65 text-left cursor-pointer"
+                                className="text-[11px] text-[#767676] hover:text-[#FF6537] hover:underline leading-tight truncate max-w-65 text-left cursor-pointer"
                               >
                                 {getOwnershipLabel(doc, ownership, true)}
                               </button>
@@ -1457,7 +1457,7 @@ export default function DocVault({
                         <Icon size={56} className={color} fill={fill ? 'currentColor' : 'none'} strokeWidth={fill ? 1 : 1.25} />
                         <h4 className="text-[15px] font-bold text-[#272220] truncate max-w-full w-full">{doc.name}</h4>
                         {doc.scope === 'โครงการ' && (
-                          <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getProjectTagClass(projectById.get(doc.projectId ?? '')?.title)}`}>
+                          <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getProjectTagClass(projectById.get(doc.projectId ?? '')?.title)}`}>
                             {projectById.get(doc.projectId ?? '')?.title || 'โครงการ'}
                           </span>
                         )}
@@ -1466,7 +1466,7 @@ export default function DocVault({
                             type="button"
                             onClick={(e) => { e.stopPropagation(); goToProject(ownership.project.id); }}
                             onDoubleClick={(e) => e.stopPropagation()}
-                            className="text-[10px] text-[#A0A0A0] hover:text-[#FF6537] hover:underline truncate max-w-full px-2 cursor-pointer"
+                            className="text-[11px] text-[#767676] hover:text-[#FF6537] hover:underline truncate max-w-full px-2 cursor-pointer"
                           >
                             {getOwnershipLabel(doc, ownership, false)}
                           </button>
@@ -1481,7 +1481,7 @@ export default function DocVault({
                             <Icon size={18} className={`${color} shrink-0`} fill={fill ? 'currentColor' : 'none'} strokeWidth={fill ? 1.5 : 1.75} />
                             <h4 className="text-[15px] font-bold text-[#272220] truncate">{doc.name}</h4>
                             {doc.scope === 'โครงการ' && (
-                              <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none shrink-0 ${getProjectTagClass(projectById.get(doc.projectId ?? '')?.title)}`}>
+                              <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded-full leading-none shrink-0 ${getProjectTagClass(projectById.get(doc.projectId ?? '')?.title)}`}>
                                 {projectById.get(doc.projectId ?? '')?.title || 'โครงการ'}
                               </span>
                             )}
@@ -1491,7 +1491,7 @@ export default function DocVault({
                               type="button"
                               onClick={(e) => { e.stopPropagation(); goToProject(ownership.project.id); }}
                               onDoubleClick={(e) => e.stopPropagation()}
-                              className="text-[10px] text-[#A0A0A0] hover:text-[#FF6537] hover:underline truncate pl-6 text-left cursor-pointer"
+                              className="text-[11px] text-[#767676] hover:text-[#FF6537] hover:underline truncate pl-6 text-left cursor-pointer"
                             >
                               {getOwnershipLabel(doc, ownership, false)}
                             </button>
@@ -1580,7 +1580,7 @@ export default function DocVault({
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
                 transition={{ duration: 0.2 }}
-                className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[85vh] overflow-y-auto p-5 space-y-4"
+                role="dialog" aria-modal="true" aria-label="สร้างหรือแก้ไขโฟลเดอร์" className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[85vh] overflow-y-auto p-5 space-y-4"
               >
                 <div className="flex justify-between items-center pb-2 border-b border-slate-100">
                   <h3 className="text-sm font-bold text-slate-800">
@@ -1637,7 +1637,7 @@ export default function DocVault({
                     ) : (
                       <div className="flex items-center gap-1.5 text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-2">
                         <span>สิทธิ์:</span>
-                        <span className={`font-semibold px-1.5 py-0.5 rounded-full text-[10px] ${currentFolder?.scope === 'โครงการ' ? getProjectTagClass(projectById.get(currentFolder?.projectId ?? '')?.title) : 'text-slate-600 bg-slate-200'}`}>
+                        <span className={`font-semibold px-1.5 py-0.5 rounded-full text-[11px] ${currentFolder?.scope === 'โครงการ' ? getProjectTagClass(projectById.get(currentFolder?.projectId ?? '')?.title) : 'text-slate-600 bg-slate-200'}`}>
                           {currentFolder?.scope === 'โครงการ' ? (projectById.get(currentFolder?.projectId ?? '')?.title || 'โครงการ') : 'ส่วนตัว'}
                         </span>
                         <span className="text-slate-400">(สืบทอดจากโฟลเดอร์นี้)</span>
@@ -1714,7 +1714,7 @@ export default function DocVault({
                     ) : (
                       <div className="flex items-center gap-1.5 text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-2">
                         <span>สิทธิ์:</span>
-                        <span className={`font-semibold px-1.5 py-0.5 rounded-full text-[10px] ${currentFolder?.scope === 'โครงการ' ? getProjectTagClass(projectById.get(currentFolder?.projectId ?? '')?.title) : 'text-slate-600 bg-slate-200'}`}>
+                        <span className={`font-semibold px-1.5 py-0.5 rounded-full text-[11px] ${currentFolder?.scope === 'โครงการ' ? getProjectTagClass(projectById.get(currentFolder?.projectId ?? '')?.title) : 'text-slate-600 bg-slate-200'}`}>
                           {currentFolder?.scope === 'โครงการ' ? (projectById.get(currentFolder?.projectId ?? '')?.title || 'โครงการ') : 'ส่วนตัว'}
                         </span>
                         <span className="text-slate-400">(สืบทอดจากโฟลเดอร์นี้)</span>
@@ -1792,7 +1792,7 @@ export default function DocVault({
                     ) : (
                       <div className="flex items-center gap-1.5 text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-2">
                         <span>สิทธิ์:</span>
-                        <span className={`font-semibold px-1.5 py-0.5 rounded-full text-[10px] ${currentFolder?.scope === 'โครงการ' ? getProjectTagClass(projectById.get(currentFolder?.projectId ?? '')?.title) : 'text-slate-600 bg-slate-200'}`}>
+                        <span className={`font-semibold px-1.5 py-0.5 rounded-full text-[11px] ${currentFolder?.scope === 'โครงการ' ? getProjectTagClass(projectById.get(currentFolder?.projectId ?? '')?.title) : 'text-slate-600 bg-slate-200'}`}>
                           {currentFolder?.scope === 'โครงการ' ? (projectById.get(currentFolder?.projectId ?? '')?.title || 'โครงการ') : 'ส่วนตัว'}
                         </span>
                         <span className="text-slate-400">(สืบทอดจากโฟลเดอร์นี้)</span>
@@ -1835,7 +1835,7 @@ export default function DocVault({
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
                 transition={{ duration: 0.2 }}
-                className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-5 space-y-4"
+                role="dialog" aria-modal="true" aria-label="เพิ่มหรือแก้ไขไฟล์และลิงก์" className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-5 space-y-4"
               >
                 <div className="flex justify-between items-center pb-2 border-b border-slate-100">
                   <h3 className="text-sm font-bold text-slate-800">
@@ -2095,7 +2095,7 @@ export default function DocVault({
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
                 transition={{ duration: 0.2 }}
-                className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4"
+                role="dialog" aria-modal="true" aria-label="ลบรายการนี้?" className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4"
               >
                 <h3 className="text-base font-bold text-slate-900">ลบรายการนี้?</h3>
                 <p className="text-sm text-slate-500">
@@ -2141,7 +2141,7 @@ export default function DocVault({
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
                 transition={{ duration: 0.2 }}
-                className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4"
+                role="dialog" aria-modal="true" aria-label="ลบรายการที่เลือก" className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4"
               >
                 <h3 className="text-base font-bold text-slate-900">ลบ {selectedIds.size} รายการที่เลือก?</h3>
                 <p className="text-sm text-slate-500">

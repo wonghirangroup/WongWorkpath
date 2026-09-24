@@ -22,7 +22,21 @@ export function nowBangkokDateTime(): string {
   return bangkokDateTimeFrom(new Date());
 }
 
-const THAI_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+// Whole days from today (Bangkok calendar day) to a "YYYY-MM-DD" date — negative once it's past.
+// "Today" is taken in Asia/Bangkok, not the Node process's own zone: Render runs in UTC, so between
+// 00:00 and 07:00 Thai time the server's date was still yesterday and every deadline read a day
+// further away than it really was.
+export function daysUntilBangkokDate(dateOnly: string | null): number | undefined {
+  if (!dateOnly) return undefined;
+  const target = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateOnly);
+  if (!target) return undefined;
+  const today = nowBangkokDateTime().slice(0, 10).split('-').map(Number);
+  const targetUtc = Date.UTC(Number(target[1]), Number(target[2]) - 1, Number(target[3]));
+  const todayUtc = Date.UTC(today[0], today[1] - 1, today[2]);
+  return Math.round((targetUtc - todayUtc) / 86_400_000);
+}
+
+const THAI_MONTHS_SHORT =['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 
 // Mirrors the client's own formatThaiDateShort (projectBoard/CreateProjectModal.tsx) exactly, so
 // a project's start/end/created dates keep displaying identically whether they came from the

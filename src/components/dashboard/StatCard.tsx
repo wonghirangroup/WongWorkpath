@@ -12,7 +12,7 @@ interface StatCardProps {
 // Matches the Project Board's StatusSummaryCards treatment (plain, solid-colored icon — no
 // tinted background square) rather than the icon-badge style used inside this page's own content
 // cards, so the top stat row reads consistently with the equivalent stat-card row on other pages.
-export default function StatCard({ icon, iconColor, label, value, detail, detailClassName = 'text-[#A0A0A0]' }: StatCardProps) {
+export default function StatCard({ icon, iconColor, label, value, detail, detailClassName = 'text-[#767676]' }: StatCardProps) {
   return (
     <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] flex items-center justify-between gap-3">
       <div className="min-w-0">

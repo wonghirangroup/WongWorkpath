@@ -611,7 +611,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                   <h4 className="text-[15px] font-bold text-[#272220] truncate flex items-center gap-1.5">
                     <span className="truncate">{emp.nickname || emp.name}</span>
                     {emp.accountType !== 'employee' && (
-                      <span className="shrink-0 inline-flex items-center gap-1 text-[9px] font-bold uppercase px-2 py-0.5 rounded-full leading-none text-[#FF6537] bg-black border border-[#FF6537]">
+                      <span className="shrink-0 inline-flex items-center gap-1 text-[11px] font-bold uppercase px-2 py-0.5 rounded-full leading-none text-[#FF6537] bg-black border border-[#FF6537]">
                         <Crown size={9} className="fill-current" />
                         {ACCOUNT_TYPE_LABELS[emp.accountType]}
                       </span>
@@ -620,18 +620,6 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                   {emp.nickname && emp.nickname !== emp.name && (
                     <p className="text-[11px] text-slate-400 truncate">{emp.name}</p>
                   )}
-                  <div className="flex flex-wrap items-center gap-1">
-                    {emp.division && (
-                      <span className={`inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(emp.division)}`}>
-                        {emp.division}
-                      </span>
-                    )}
-                    {emp.department && (
-                      <span className={`inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(emp.department)}`}>
-                        {emp.department}
-                      </span>
-                    )}
-                  </div>
                 </div>
                 <EmployeeCardMenu
                   onView={() => openProfile(emp, 'view')}
@@ -641,6 +629,28 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                   editDisabled={isEditLockedForAdmin(emp)}
                 />
               </div>
+
+              {/* ฝ่าย / แผนก tags get the card's full width (not the narrow column beside the avatar and
+                  the action icons), so each name fits on one line; anything still too long is cut with
+                  "…" and shown in full on hover. */}
+              {(emp.division || emp.department) && (
+                <div className="flex flex-wrap items-center gap-1">
+                  {emp.division && (
+                    <Tooltip content={emp.division}>
+                      <span className={`inline-block max-w-full truncate text-[11px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(emp.division)}`}>
+                        {emp.division}
+                      </span>
+                    </Tooltip>
+                  )}
+                  {emp.department && (
+                    <Tooltip content={emp.department}>
+                      <span className={`inline-block max-w-full truncate text-[11px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(emp.department)}`}>
+                        {emp.department}
+                      </span>
+                    </Tooltip>
+                  )}
+                </div>
+              )}
 
               <div className="pt-2 border-t border-[#EDEEEF] space-y-1.5">
                 <div className="flex items-center gap-1.5 text-[12px] text-[#6F6F6F] min-w-0">
@@ -708,7 +718,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                         <p className="text-[13px] font-bold text-slate-900 leading-tight flex items-center gap-1.5">
                           <span className="truncate">{emp.nickname || emp.name}</span>
                           {emp.accountType !== 'employee' && (
-                            <span className="shrink-0 inline-flex items-center gap-1 text-[9px] font-bold uppercase px-2 py-0.5 rounded-full leading-none text-[#FF6537] bg-black border border-[#FF6537]">
+                            <span className="shrink-0 inline-flex items-center gap-1 text-[11px] font-bold uppercase px-2 py-0.5 rounded-full leading-none text-[#FF6537] bg-black border border-[#FF6537]">
                               <Crown size={9} className="fill-current" />
                               {ACCOUNT_TYPE_LABELS[emp.accountType]}
                             </span>
@@ -725,20 +735,20 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                   <td className="px-4 py-3 whitespace-nowrap text-[12px] font-normal text-[#6F6F6F]">{emp.email}</td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     {emp.division ? (
-                      <span className={`inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(emp.division)}`}>
+                      <span className={`inline-block text-[11px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(emp.division)}`}>
                         {emp.division}
                       </span>
                     ) : (
-                      <span className="text-[#A0A0A0]">—</span>
+                      <span className="text-[#767676]">—</span>
                     )}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     {emp.department ? (
-                      <span className={`inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(emp.department)}`}>
+                      <span className={`inline-block text-[11px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(emp.department)}`}>
                         {emp.department}
                       </span>
                     ) : (
-                      <span className="text-[#A0A0A0]">—</span>
+                      <span className="text-[#767676]">—</span>
                     )}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
@@ -765,7 +775,6 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
           filterDivision={orgFilterDivision}
           onFilterDivisionChange={setOrgFilterDivision}
           editMode={orgEditMode}
-          onEditModeChange={setOrgEditMode}
           onAddDivision={handleAddDivision}
           onRenameDivision={handleRenameDivision}
           onDeleteDivision={handleDeleteDivision}
@@ -813,7 +822,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                               <img src={actor.avatar} alt="" className="w-6 h-6 rounded-full object-cover shrink-0 bg-slate-50 border border-slate-100" />
                             ) : (
                               <div
-                                className="w-6 h-6 rounded-full flex items-center justify-center text-white font-bold text-[10px] shrink-0"
+                                className="w-6 h-6 rounded-full flex items-center justify-center text-white font-bold text-[11px] shrink-0"
                                 style={{ backgroundColor: getAvatarColor(log.user) }}
                               >
                                 {log.user.trim().charAt(0).toUpperCase()}
@@ -856,7 +865,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
                 transition={{ duration: 0.2 }}
-                className="relative bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6 space-y-4"
+                role="dialog" aria-modal="true" aria-label="เพิ่มพนักงานใหม่" className="relative bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6 space-y-4"
               >
                 <div className="flex justify-between items-center pb-2 border-b border-slate-100">
                   <h3 className="text-sm font-bold text-slate-800">เพิ่มพนักงานใหม่</h3>
@@ -993,7 +1002,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                         options={assignableAccountTypes(actingUser).map((t) => ({ value: t, label: ACCOUNT_TYPE_LABELS[t] }))}
                       />
                       {(newAccountType === 'admin' || newAccountType === 'superadmin') && (
-                        <p className="mt-1 text-[10px] text-slate-400">เปลี่ยน Username ของบัญชีนี้ในภายหลังไม่ได้</p>
+                        <p className="mt-1 text-[11px] text-slate-400">เปลี่ยน Username ของบัญชีนี้ในภายหลังไม่ได้</p>
                       )}
                     </div>
 
@@ -1103,7 +1112,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
                 transition={{ duration: 0.2 }}
-                className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4"
+                role="dialog" aria-modal="true" aria-label="ลบบัญชีพนักงาน" className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4"
               >
                 <div className="flex justify-between items-center pb-2 border-b border-slate-100">
                   <h3 className="text-sm font-bold text-slate-800">ลบบัญชีพนักงาน</h3>

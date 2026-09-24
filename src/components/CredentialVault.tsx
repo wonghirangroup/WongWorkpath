@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useId, useMemo, KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
-import { CredentialItem, AuditLog } from '../types';
+import { CredentialItem } from '../types';
 import { nowTimestamp } from '../lib/datetime';
 import { getAvatarColor } from '../lib/avatarColor';
 import { getDepartmentTagClass } from '../lib/departmentColors';
@@ -196,7 +196,6 @@ interface CredentialProjectOption {
 
 interface CredentialVaultProps {
   credentials: CredentialItem[];
-  auditLogs: AuditLog[];
   currentUserName: string;
   currentUserDepartment?: string;
   // Every project visible to this account (already scoped by ProjectBoard's own "ของฉัน/ทั้งหมด"
@@ -210,7 +209,6 @@ interface CredentialVaultProps {
 
 export default function CredentialVault({
   credentials,
-  auditLogs,
   currentUserName,
   currentUserDepartment,
   projects,
@@ -807,6 +805,7 @@ export default function CredentialVault({
                 <button
                   onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
+                  aria-label="หน้าก่อนหน้า"
                   className="w-9 h-9 lg:w-8 lg:h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-[#FF6537] hover:bg-orange-50 disabled:text-slate-300 disabled:hover:bg-white disabled:cursor-not-allowed cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1"
                 >
                   <ChevronLeft size={16} />
@@ -815,6 +814,8 @@ export default function CredentialVault({
                   <button
                     key={pageNum}
                     onClick={() => setCurrentPage(pageNum)}
+                    aria-label={`ไปหน้า ${pageNum}`}
+                    aria-current={pageNum === currentPage ? 'page' : undefined}
                     className={`w-9 h-9 lg:w-8 lg:h-8 rounded-lg text-sm font-bold cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1 ${
                       pageNum === currentPage
                         ? 'bg-[#FF6537] text-white shadow-sm'
@@ -827,6 +828,7 @@ export default function CredentialVault({
                 <button
                   onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                   disabled={currentPage === totalPages}
+                  aria-label="หน้าถัดไป"
                   className="w-9 h-9 lg:w-8 lg:h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-[#FF6537] hover:bg-orange-50 disabled:text-slate-300 disabled:hover:bg-white disabled:cursor-not-allowed cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1"
                 >
                   <ChevronRight size={16} />
@@ -861,7 +863,7 @@ export default function CredentialVault({
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.95 }}
                   transition={{ type: 'spring', stiffness: 300, damping: 24, mass: 0.9 }}
-                  className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-md mx-4 max-h-[85vh] overflow-hidden flex flex-col"
+                  role="dialog" aria-modal="true" aria-label="ฟอร์มรหัสผ่าน" className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-md mx-4 max-h-[85vh] overflow-hidden flex flex-col"
                 >
                   {/* Content fades in slightly after the box, so text doesn't smear mid-scale */}
                   <motion.div
@@ -993,7 +995,7 @@ export default function CredentialVault({
                     <div className="flex items-center gap-1.5 text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-2">
                       <span>ทีม:</span>
                       {currentUserDepartment ? (
-                        <span className={`font-semibold px-1.5 py-0.5 rounded-full text-[10px] ${getDepartmentTagClass(currentUserDepartment)}`}>
+                        <span className={`font-semibold px-1.5 py-0.5 rounded-full text-[11px] ${getDepartmentTagClass(currentUserDepartment)}`}>
                           {currentUserDepartment}
                         </span>
                       ) : (
@@ -1133,11 +1135,11 @@ export default function CredentialVault({
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap">
                             {item.scope === 'ทีม' && item.team ? (
-                              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(item.team)}`}>
+                              <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(item.team)}`}>
                                 {item.team}
                               </span>
                             ) : item.scope === 'โครงการ' && item.projectId ? (
-                              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full leading-none bg-[#FFF1EC] text-[#FF6537]">
+                              <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-full leading-none bg-[#FFF1EC] text-[#FF6537]">
                                 {projectById.get(item.projectId)?.title ?? 'ไม่ทราบโครงการ'}
                               </span>
                             ) : (
@@ -1250,12 +1252,12 @@ export default function CredentialVault({
                           <h4 className="text-base font-bold text-slate-900 leading-tight flex items-center gap-1.5">
                             {item.label}
                             {item.scope === 'ทีม' && item.team && (
-                              <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(item.team)}`}>
+                              <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(item.team)}`}>
                                 {item.team}
                               </span>
                             )}
                             {item.scope === 'โครงการ' && item.projectId && (
-                              <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none bg-[#FFF1EC] text-[#FF6537]">
+                              <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-full leading-none bg-[#FFF1EC] text-[#FF6537]">
                                 {projectById.get(item.projectId)?.title ?? 'ไม่ทราบโครงการ'}
                               </span>
                             )}
@@ -1421,7 +1423,7 @@ export default function CredentialVault({
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
               transition={{ type: 'spring', stiffness: 300, damping: 24, mass: 0.9 }}
-              className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-5 space-y-4">
+              role="dialog" aria-modal="true" aria-label="ยืนยันการลบรหัสผ่าน" className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-5 space-y-4">
             <div className="flex justify-between items-center pb-2 border-b border-slate-100">
               <h3 className="text-sm font-bold text-slate-800">ลบรายการนี้?</h3>
               <button

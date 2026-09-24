@@ -1,10 +1,10 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { Clock, ListChecks, Users2, Plus, Eye, CalendarClock, Pencil, Trash2, X, Maximize2, Minimize2, Ban, Send, ClipboardCheck, ChevronDown, ChevronRight, CornerDownRight } from 'lucide-react';
+import { Clock, ListChecks, Users2, Plus, Eye, CalendarClock, Pencil, Trash2, Maximize2, Minimize2, Ban, Send, ClipboardCheck, ChevronDown, ChevronRight, CornerDownRight } from 'lucide-react';
 import { Employee, Meeting, LinkedDoc } from '../../types';
 import { ProjectRow, ProjectTaskItem, ProjectTaskStatus, CustomProjectStatus, CustomProjectType } from './types';
 import { STATUS_DOT, TASK_STATUS_LABEL, TASK_STATUS_COLOR, PROJECT_PRIORITY_META } from './statusMeta';
-import { displayName, PRIORITY_OPTIONS, EmployeeMultiSelect } from './CreateProjectModal';
+import { displayName, formatThaiDateShort, PRIORITY_OPTIONS } from './CreateProjectModal';
 import { ChangeRequest } from '../../lib/api';
 import { isOwner, resolveValidIds } from '../../lib/ownership';
 import { isUrl } from '../../lib/url';
@@ -83,7 +83,7 @@ function InlineDeleteConfirm({ onConfirm, label, itemLabel, requiresReason, disa
           type="button"
           onClick={(e) => { e.stopPropagation(); onRequestReason?.(); }}
           aria-label={label}
-          className="text-[#A0A0A0] hover:text-red-600 cursor-pointer transition-colors"
+          className="text-[#767676] hover:text-red-600 cursor-pointer transition-colors"
         >
           <Trash2 size={14} />
         </button>
@@ -104,7 +104,7 @@ function InlineDeleteConfirm({ onConfirm, label, itemLabel, requiresReason, disa
           if (confirmed) onConfirm();
         }}
         aria-label={label}
-        className="text-[#A0A0A0] hover:text-red-600 cursor-pointer transition-colors"
+        className="text-[#767676] hover:text-red-600 cursor-pointer transition-colors"
       >
         <Trash2 size={14} />
       </button>
@@ -348,19 +348,19 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                 type="button"
                 onClick={() => toggleTaskExpanded(t.id)}
                 aria-label={isExpanded ? 'ย่องานย่อย' : 'ขยายงานย่อย'}
-                className="text-[#A0A0A0] hover:text-[#FF6537] cursor-pointer shrink-0"
+                className="text-[#767676] hover:text-[#FF6537] cursor-pointer shrink-0"
               >
                 {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
               </button>
             ) : isSubtask ? (
-              <CornerDownRight size={12} className="text-[#A0A0A0] shrink-0" />
+              <CornerDownRight size={12} className="text-[#767676] shrink-0" />
             ) : (
               <span className="w-3.5 shrink-0" />
             )}
-            <ListChecks size={14} className="text-[#A0A0A0] shrink-0" />
+            <ListChecks size={14} className="text-[#767676] shrink-0" />
             <span>{t.title}</span>
             {subtaskCount > 0 && (
-              <span className="text-[10px] font-medium text-[#A0A0A0] bg-slate-100 rounded-full px-1.5 py-0.5 shrink-0">{subtaskCount}</span>
+              <span className="text-[11px] font-medium text-[#767676] bg-slate-100 rounded-full px-1.5 py-0.5 shrink-0">{subtaskCount}</span>
             )}
           </span>
         </td>
@@ -389,7 +389,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                 type="button"
                 onClick={() => setSelectedTask(t)}
                 aria-label="ดูรายละเอียด"
-                className="text-[#A0A0A0] hover:text-[#FF6537] cursor-pointer transition-colors"
+                className="text-[#767676] hover:text-[#FF6537] cursor-pointer transition-colors"
               >
                 <Eye size={14} />
               </button>
@@ -404,7 +404,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                   type="button"
                   onClick={() => setSubmittingTask(t)}
                   aria-label="ส่งงาน"
-                  className="text-[#A0A0A0] hover:text-[#FF6537] cursor-pointer transition-colors"
+                  className="text-[#767676] hover:text-[#FF6537] cursor-pointer transition-colors"
                 >
                   <Send size={13} />
                 </button>
@@ -416,7 +416,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                   type="button"
                   onClick={() => setReviewingTask(t)}
                   aria-label="ตรวจงาน"
-                  className="text-[#A0A0A0] hover:text-[#0EA5E9] cursor-pointer transition-colors"
+                  className="text-[#767676] hover:text-[#0EA5E9] cursor-pointer transition-colors"
                 >
                   <ClipboardCheck size={13} />
                 </button>
@@ -427,7 +427,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                 type="button"
                 onClick={() => openAddSubtask(t)}
                 aria-label="เพิ่มงานย่อย"
-                className="text-[#A0A0A0] hover:text-[#FF6537] cursor-pointer transition-colors"
+                className="text-[#767676] hover:text-[#FF6537] cursor-pointer transition-colors"
               >
                 <Plus size={13} />
               </button>
@@ -437,7 +437,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                 type="button"
                 onClick={() => openEditTask(t)}
                 aria-label="แก้ไข"
-                className="text-[#A0A0A0] hover:text-[#FF6537] cursor-pointer transition-colors"
+                className="text-[#767676] hover:text-[#FF6537] cursor-pointer transition-colors"
               >
                 <Pencil size={13} />
               </button>
@@ -564,19 +564,19 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4 pt-3 border-t border-slate-50 text-xs">
           <div>
-            <p className="text-[#A0A0A0] mb-1">ผู้รับผิดชอบหลัก</p>
+            <p className="text-[#767676] mb-1">ผู้รับผิดชอบหลัก</p>
             <PeopleCell people={owners} />
           </div>
           <div>
-            <p className="text-[#A0A0A0] mb-1">ผู้รับผิดชอบร่วม</p>
+            <p className="text-[#767676] mb-1">ผู้รับผิดชอบร่วม</p>
             {projectMembers.length > 0 ? <PeopleCell people={projectMembers} /> : <p className="font-medium text-[#272220]">ยังไม่มี</p>}
           </div>
           <div>
-            <p className="text-[#A0A0A0] mb-1">แผนก</p>
+            <p className="text-[#767676] mb-1">แผนก</p>
             <p className="font-medium text-[#272220]">{row.department ?? 'ยังไม่มี'}</p>
           </div>
           <div>
-            <p className="text-[#A0A0A0] mb-1">ความสำคัญ</p>
+            <p className="text-[#767676] mb-1">ความสำคัญ</p>
             {row.priority ? (
               <span className={`inline-block px-2 py-0.5 rounded-full font-medium ${PROJECT_PRIORITY_META[row.priority].className}`}>
                 {PROJECT_PRIORITY_META[row.priority].label}
@@ -584,15 +584,15 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
             ) : <p className="font-medium text-[#272220]">ยังไม่มี</p>}
           </div>
           <div>
-            <p className="text-[#A0A0A0] mb-1">วันที่เริ่ม</p>
+            <p className="text-[#767676] mb-1">วันที่เริ่ม</p>
             <p className="font-medium text-[#272220]">{row.startDate ?? 'ยังไม่มี'}</p>
           </div>
           <div>
-            <p className="text-[#A0A0A0] mb-1">กำหนดส่ง</p>
+            <p className="text-[#767676] mb-1">กำหนดส่ง</p>
             <p className="font-medium text-[#272220]">{row.endDate ?? 'ยังไม่มี'}</p>
           </div>
           <div>
-            <p className="text-[#A0A0A0] mb-1">งบประมาณ</p>
+            <p className="text-[#767676] mb-1">งบประมาณ</p>
             <p className="font-medium text-[#272220]">{formatBudget(row.budget)}</p>
           </div>
         </div>
@@ -601,7 +601,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
           <div className="flex flex-wrap items-start gap-x-6 gap-y-2 pt-3 border-t border-slate-50 text-xs">
             {parentProject && (
               <div>
-                <p className="text-[#A0A0A0] mb-1">โครงการหลัก</p>
+                <p className="text-[#767676] mb-1">โครงการหลัก</p>
                 <button
                   type="button"
                   onClick={() => onSelectProject(parentProject.id)}
@@ -613,7 +613,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
             )}
             {childProjects.length > 0 && (
               <div>
-                <p className="text-[#A0A0A0] mb-1">โครงการย่อย ({childProjects.length})</p>
+                <p className="text-[#767676] mb-1">โครงการย่อย ({childProjects.length})</p>
                 <div className="flex flex-wrap gap-x-3 gap-y-1">
                   {childProjects.map((cp) => (
                     <button
@@ -727,7 +727,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
         <div className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] overflow-hidden">
           <h4 className="font-bold text-[#272220] px-5 pt-5 pb-3">งานทั้งหมดของโครงการ</h4>
           {filteredTasks.length === 0 ? (
-            <p className="text-sm text-[#A0A0A0] px-5 pb-5">ไม่มีงานที่ตรงกับตัวกรอง</p>
+            <p className="text-sm text-[#767676] px-5 pb-5">ไม่มีงานที่ตรงกับตัวกรอง</p>
           ) : (
             <div className="overflow-x-auto">
               {/* No table-fixed / percentage widths here on purpose — every column takes its
@@ -764,7 +764,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
         <div className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] overflow-hidden">
           <h4 className="font-bold text-[#272220] px-5 pt-5 pb-3">การประชุมของโครงการ</h4>
           {projectMeetings.length === 0 ? (
-            <p className="text-sm text-[#A0A0A0] px-5 pb-5">ยังไม่มีการนัดประชุมในโครงการนี้</p>
+            <p className="text-sm text-[#767676] px-5 pb-5">ยังไม่มีการนัดประชุมในโครงการนี้</p>
           ) : (
             <div className="divide-y divide-[#F4F4F4]">
               {projectMeetings.map((meeting) => {
@@ -778,10 +778,10 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                     className={`w-full flex items-center justify-between gap-3 px-5 py-3 text-left hover:bg-slate-50 cursor-pointer ${isCancelled ? 'opacity-60' : ''}`}
                   >
                     <span className="flex items-center gap-2 min-w-0">
-                      <Users2 size={14} className="text-[#A0A0A0] shrink-0" />
+                      <Users2 size={14} className="text-[#767676] shrink-0" />
                       <span className={`truncate text-sm font-medium text-[#272220] ${isCancelled ? 'line-through' : ''}`}>{meeting.title}</span>
                       {linkedTask && (
-                        <span className="shrink-0 text-[10px] font-medium text-[#6F6F6F] bg-slate-100 px-1.5 py-0.5 rounded-full truncate max-w-40">
+                        <span className="shrink-0 text-[11px] font-medium text-[#6F6F6F] bg-slate-100 px-1.5 py-0.5 rounded-full truncate max-w-40">
                           งาน: {linkedTask.title}
                         </span>
                       )}
@@ -789,7 +789,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                     <span className="flex items-center gap-3 shrink-0">
                       <span className="text-xs text-[#6F6F6F] whitespace-nowrap flex items-center gap-1">
                         <CalendarClock size={12} />
-                        {meeting.date} {meeting.startTime}
+                        {formatThaiDateShort(meeting.date)} {meeting.startTime}
                       </span>
                       {isCancelled ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 text-red-600 text-[11px] font-medium">
@@ -813,7 +813,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
       {tab === 'tasks' && (
         <div className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] overflow-hidden">
           {myTasks.length === 0 ? (
-            <div className="p-10 text-center text-sm text-[#A0A0A0]">
+            <div className="p-10 text-center text-sm text-[#767676]">
               {taskFilter === 'all' ? 'ยังไม่มีงานที่คุณรับผิดชอบในโครงการนี้' : 'ไม่มีงานที่ตรงกับตัวกรอง'}
             </div>
           ) : (
@@ -857,7 +857,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                         <td className="px-5 py-3 font-medium text-[#272220] min-w-52 max-w-70">
                           {t.title}
                           {t.description && <Tooltip content={t.description}><p className="text-[11px] font-normal text-[#6F6F6F] mt-0.5 truncate">{t.description}</p></Tooltip>}
-                          {creator && <p className="text-[11px] font-normal text-[#A0A0A0] mt-0.5">สร้างโดย: {displayName(creator)}</p>}
+                          {creator && <p className="text-[11px] font-normal text-[#767676] mt-0.5">สร้างโดย: {displayName(creator)}</p>}
                         </td>
                         <td className="px-5 py-3 text-[#6F6F6F] whitespace-nowrap">
                           {t.startDate ? `${t.startDate} — ${t.dueDate ?? 'ยังไม่มี'}` : t.dueDate ?? 'ยังไม่มี'}
@@ -884,7 +884,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                             <button
                               type="button"
                               onClick={() => setSelectedTask(t)}
-                              className="inline-flex items-center gap-1.5 text-[#A0A0A0] hover:text-[#FF6537] text-xs font-medium cursor-pointer transition-colors"
+                              className="inline-flex items-center gap-1.5 text-[#767676] hover:text-[#FF6537] text-xs font-medium cursor-pointer transition-colors"
                             >
                               <Eye size={14} />
                               ดูรายละเอียด
@@ -907,7 +907,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                                 type="button"
                                 onClick={() => openEditTask(t)}
                                 aria-label="แก้ไข"
-                                className="text-[#A0A0A0] hover:text-[#FF6537] cursor-pointer transition-colors"
+                                className="text-[#767676] hover:text-[#FF6537] cursor-pointer transition-colors"
                               >
                                 <Pencil size={13} />
                               </button>
@@ -946,14 +946,14 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                 (ownerMatches) shows their real tasks inline instead of appearing twice below. */}
             {owners.length === 0 ? (
               <div className="flex flex-col items-center gap-2 bg-white border-2 border-[#FF6537] rounded-2xl px-6 py-4 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)]">
-                <span className="text-[10px] font-bold uppercase tracking-wide text-[#FF6537]">ผู้รับผิดชอบหลัก</span>
-                <p className="text-sm text-[#A0A0A0] py-2">ยังไม่มีผู้รับผิดชอบหลัก</p>
+                <span className="text-[11px] font-bold uppercase tracking-wide text-[#FF6537]">ผู้รับผิดชอบหลัก</span>
+                <p className="text-sm text-[#767676] py-2">ยังไม่มีผู้รับผิดชอบหลัก</p>
               </div>
             ) : (
               <div className="flex flex-wrap justify-center gap-4">
                 {ownerMatches.map(({ owner, match }) => (
                   <div key={owner.id} className="flex flex-col items-center gap-2 bg-white border-2 border-[#FF6537] rounded-2xl px-6 py-4 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] w-60">
-                    <span className="text-[10px] font-bold uppercase tracking-wide text-[#FF6537]">ผู้รับผิดชอบหลัก</span>
+                    <span className="text-[11px] font-bold uppercase tracking-wide text-[#FF6537]">ผู้รับผิดชอบหลัก</span>
                     {owner.avatar ? (
                       <img src={owner.avatar} alt="" className="w-12 h-12 rounded-full object-cover shrink-0" />
                     ) : (
@@ -961,7 +961,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                     )}
                     <div className="text-center">
                       <p className="font-bold text-[#272220] text-sm">{displayName(owner)}</p>
-                      <p className="text-xs text-[#A0A0A0]">{owner.role}</p>
+                      <p className="text-xs text-[#767676]">{owner.role}</p>
                     </div>
                     {match && match.tasks.length > 0 && (
                       <div className="w-full pt-3 mt-1 border-t border-slate-50 space-y-2 text-left">
@@ -970,7 +970,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                             <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: TASK_STATUS_COLOR[t.status] }} />
                             <div className="min-w-0">
                               <p className="text-xs text-[#272220] truncate">{t.title}</p>
-                              <p className="text-[10px] text-[#A0A0A0]">
+                              <p className="text-[11px] text-[#767676]">
                                 เริ่ม {t.startDate ?? 'ยังไม่มี'} · ส่ง {t.dueDate ?? 'ยังไม่มี'}
                               </p>
                             </div>
@@ -984,7 +984,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
             )}
 
             {childMembers.length === 0 ? (
-              <p className="text-sm text-[#A0A0A0] flex items-center gap-2 mt-6">
+              <p className="text-sm text-[#767676] flex items-center gap-2 mt-6">
                 <Users2 size={16} />
                 {teamMembers.length > 0 ? 'สมาชิกที่เหลือคือผู้รับผิดชอบหลักด้านบนแล้ว' : taskFilter === 'all' ? 'ยังไม่มีสมาชิกในทีมของโครงการนี้' : 'ไม่มีสมาชิกที่มีงานตรงกับตัวกรอง'}
               </p>
@@ -1004,7 +1004,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                       )}
                       <div className="text-center">
                         <p className="font-semibold text-[#272220] text-sm truncate max-w-52">{member.nickname || member.name}</p>
-                        <p className="text-xs text-[#A0A0A0]">{member.role}</p>
+                        <p className="text-xs text-[#767676]">{member.role}</p>
                         {row.memberDuties?.[member.id] && (
                           <Tooltip content={row.memberDuties[member.id]}>
                             <p className="text-[11px] text-[#FF6537] mt-0.5 truncate max-w-52">
@@ -1020,7 +1020,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                             <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: TASK_STATUS_COLOR[t.status] }} />
                             <div className="min-w-0">
                               <p className="text-xs text-[#272220] truncate">{t.title}</p>
-                              <p className="text-[10px] text-[#A0A0A0]">
+                              <p className="text-[11px] text-[#767676]">
                                 เริ่ม {t.startDate ?? 'ยังไม่มี'} · ส่ง {t.dueDate ?? 'ยังไม่มี'}
                               </p>
                             </div>
@@ -1040,7 +1040,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
         <div className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] overflow-hidden">
           <h4 className="font-bold text-[#272220] px-5 pt-5 pb-3">การประชุมของโครงการ</h4>
           {projectMeetings.length === 0 ? (
-            <p className="text-sm text-[#A0A0A0] px-5 pb-5">ยังไม่มีการนัดประชุมในโครงการนี้</p>
+            <p className="text-sm text-[#767676] px-5 pb-5">ยังไม่มีการนัดประชุมในโครงการนี้</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm border-collapse table-fixed">
@@ -1063,7 +1063,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                       <tr key={meeting.id} className={`border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50 align-top ${isCancelled ? 'opacity-60' : ''}`}>
                         <td className="px-5 py-3 font-medium text-[#272220]">
                           <span className="flex items-center gap-2 min-w-0">
-                            <Users2 size={14} className="text-[#A0A0A0] shrink-0" />
+                            <Users2 size={14} className="text-[#767676] shrink-0" />
                             <span className={`truncate ${isCancelled ? 'line-through' : ''}`}>{meeting.title}</span>
                           </span>
                         </td>
@@ -1071,7 +1071,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                         <td className="px-5 py-3 text-[#6F6F6F] whitespace-nowrap">
                           <span className="flex items-center gap-1.5">
                             <CalendarClock size={13} className="shrink-0" />
-                            {meeting.date} {meeting.startTime}{meeting.endTime ? ` - ${meeting.endTime}` : ''}
+                            {formatThaiDateShort(meeting.date)} {meeting.startTime}{meeting.endTime ? ` - ${meeting.endTime}` : ''}
                           </span>
                         </td>
                         <td className="px-5 py-3 text-[#6F6F6F]">
@@ -1139,7 +1139,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                                   type="button"
                                   onClick={() => setEditingMeeting(meeting)}
                                   aria-label="แก้ไขสถานที่/ลิงก์"
-                                  className="text-[#A0A0A0] hover:text-[#FF6537] cursor-pointer transition-colors"
+                                  className="text-[#767676] hover:text-[#FF6537] cursor-pointer transition-colors"
                                 >
                                   <Pencil size={14} />
                                 </button>
@@ -1149,7 +1149,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                                   type="button"
                                   onClick={() => setCancellingMeeting(meeting)}
                                   aria-label="ยกเลิกประชุม"
-                                  className="text-[#A0A0A0] hover:text-red-600 cursor-pointer transition-colors"
+                                  className="text-[#767676] hover:text-red-600 cursor-pointer transition-colors"
                                 >
                                   <Ban size={14} />
                                 </button>

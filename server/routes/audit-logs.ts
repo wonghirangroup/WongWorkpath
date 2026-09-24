@@ -27,16 +27,15 @@ function toAuditLog(row: AuditLogRowDb) {
   };
 }
 
-// Small internal-tool dataset, loaded whole — same convention as change-requests.ts. Every
-// existing client-side search/date/department/action filter in EmployeeManagement.tsx's Log tab
-// already runs over the full array in memory, so this endpoint needs to keep returning
-// everything, not a paginated slice, for that to keep working unmodified. No actorEmployeeId
-// gate here: today every logged-in session's browser already loads the entire audit log into
-// memory unconditionally (see AppDataContext's old localStorage read) regardless of whether that
-// account can even reach the Log tab's UI — this preserves that exact behavior, just from a
-// shared table instead of each browser's own copy.
-auditLogsRouter.get('/', async (_req, res) => {
+// Loaded whole — every client-side search/date/department/action filter in EmployeeManagement.tsx's
+// Log tab runs over the full array in memory, so this returns everything rather than a page.
+auditLogsRouter.get('/', async (req, res) => {
   try {
+    // The log records who did what across the whole company — only the accounts that can open the
+    // Log tab (admin / Super Admin / ผู้บริหาร) get it; everyone else's client just gets an empty list.
+    const [[actor]] = await pool.query<RowDataPacket[]>('SELECT account_type FROM employee WHERE id = ?', [req.actorId]);
+    if (!actor || !['admin', 'superadmin', 'executive'].includes(actor.account_type)) return res.json([]);
+
     const [rows] = await pool.query<AuditLogRowDb[]>('SELECT * FROM audit_log ORDER BY timestamp DESC');
     res.json(rows.map(toAuditLog));
   } catch (err) {

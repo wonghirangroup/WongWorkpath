@@ -28,7 +28,7 @@ function MemberRow({ employee, highlighted }: { employee: Employee; highlighted?
         <img src={employee.avatar} alt="" className="w-6 h-6 rounded-full object-cover shrink-0" />
       ) : (
         <span
-          className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-bold shrink-0"
+          className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[11px] font-bold shrink-0"
           style={{ backgroundColor: getAvatarColor(displayName(employee)) }}
         >
           {displayName(employee).trim().charAt(0).toUpperCase()}
@@ -36,7 +36,7 @@ function MemberRow({ employee, highlighted }: { employee: Employee; highlighted?
       )}
       <div className="min-w-0">
         <p className="text-xs text-[#272220] truncate">{displayName(employee)}</p>
-        <p className="text-[10px] text-[#A0A0A0] truncate">{employee.role}</p>
+        <p className="text-[11px] text-[#767676] truncate">{employee.role}</p>
       </div>
     </div>
   );
@@ -65,7 +65,7 @@ function MemberChip({ employee, highlighted }: { employee: Employee; highlighted
         <img src={employee.avatar} alt="" className="w-6 h-6 rounded-full object-cover shrink-0" />
       ) : (
         <span
-          className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-bold shrink-0"
+          className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[11px] font-bold shrink-0"
           style={{ backgroundColor: getAvatarColor(displayName(employee)) }}
         >
           {displayName(employee).trim().charAt(0).toUpperCase()}
@@ -73,7 +73,7 @@ function MemberChip({ employee, highlighted }: { employee: Employee; highlighted
       )}
       <div className="min-w-0">
         <p className="text-[11px] font-semibold text-[#272220] leading-tight truncate max-w-24">{displayName(employee)}</p>
-        <p className="text-[9px] text-[#A0A0A0] leading-tight truncate max-w-24">{employee.role}</p>
+        <p className="text-[11px] text-[#767676] leading-tight truncate max-w-24">{employee.role}</p>
       </div>
     </div>
   );
@@ -131,7 +131,7 @@ export function EmployeeLocateSearch({ employees, onSelect }: { employees: Emplo
       {isOpen && q && (
         <div className="absolute z-30 top-full left-0 right-0 mt-1 bg-white border border-slate-100 rounded-xl shadow-lg max-h-64 overflow-y-auto">
           {results.length === 0 ? (
-            <p className="px-3 py-2.5 text-xs text-[#A0A0A0]">ไม่พบพนักงาน</p>
+            <p className="px-3 py-2.5 text-xs text-[#767676]">ไม่พบพนักงาน</p>
           ) : (
             results.map((emp) => (
               <button
@@ -144,7 +144,7 @@ export function EmployeeLocateSearch({ employees, onSelect }: { employees: Emplo
                   <img src={emp.avatar} alt="" className="w-6 h-6 rounded-full object-cover shrink-0" />
                 ) : (
                   <span
-                    className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-bold shrink-0"
+                    className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[11px] font-bold shrink-0"
                     style={{ backgroundColor: getAvatarColor(displayName(emp)) }}
                   >
                     {displayName(emp).trim().charAt(0).toUpperCase()}
@@ -152,7 +152,7 @@ export function EmployeeLocateSearch({ employees, onSelect }: { employees: Emplo
                 )}
                 <span className="min-w-0">
                   <p className="text-xs font-semibold text-[#272220] truncate">{displayName(emp)}</p>
-                  <p className="text-[10px] text-[#A0A0A0] truncate">{emp.role}</p>
+                  <p className="text-[11px] text-[#767676] truncate">{emp.role}</p>
                 </span>
               </button>
             ))
@@ -234,7 +234,7 @@ function NamePromptModal({
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
-          className="relative bg-white rounded-2xl shadow-xl w-full max-w-sm mx-4 p-5"
+          role="dialog" aria-modal="true" aria-label={title} className="relative bg-white rounded-2xl shadow-xl w-full max-w-sm mx-4 p-5"
         >
           <div className="flex justify-between items-center mb-3">
             <h3 className="text-sm font-bold text-slate-800">{title}</h3>
@@ -307,7 +307,7 @@ function DeleteConfirmModal({
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
-          className="relative bg-white rounded-2xl shadow-xl w-full max-w-sm mx-4 p-5"
+          role="dialog" aria-modal="true" aria-label={title} className="relative bg-white rounded-2xl shadow-xl w-full max-w-sm mx-4 p-5"
         >
           <div className="flex justify-between items-center mb-3">
             <h3 className="text-sm font-bold text-slate-800">{title}</h3>
@@ -385,7 +385,6 @@ interface OrgChartProps {
   filterDivision: string;
   onFilterDivisionChange: (value: string) => void;
   editMode: boolean;
-  onEditModeChange: (value: boolean) => void;
   onAddDivision: (name: string) => void;
   onRenameDivision: (oldName: string, newName: string) => void;
   onDeleteDivision: (name: string) => void;
@@ -415,7 +414,6 @@ const OrgChart = forwardRef<OrgChartHandle, OrgChartProps>(function OrgChart({
   filterDivision,
   onFilterDivisionChange,
   editMode,
-  onEditModeChange,
   onAddDivision,
   onRenameDivision,
   onDeleteDivision,
@@ -762,7 +760,7 @@ const OrgChart = forwardRef<OrgChartHandle, OrgChartProps>(function OrgChart({
                       <button
                         type="button"
                         onClick={() => setRenamePrompt({ kind: 'add-section', division: col.division.name })}
-                        className="mt-3 flex items-center gap-1 h-7 px-2.5 rounded-lg text-[10px] font-semibold text-[#FF6537] border border-dashed border-[#FF6537] hover:bg-[#FFF1EC] cursor-pointer"
+                        className="mt-3 flex items-center gap-1 h-7 px-2.5 rounded-lg text-[11px] font-semibold text-[#FF6537] border border-dashed border-[#FF6537] hover:bg-[#FFF1EC] cursor-pointer"
                       >
                         <Plus size={11} /> เพิ่มแผนก
                       </button>
@@ -774,7 +772,7 @@ const OrgChart = forwardRef<OrgChartHandle, OrgChartProps>(function OrgChart({
 
             {unassigned.length > 0 && (
               <div className="mt-8 pt-5 border-t border-slate-200 w-full max-w-md">
-                <p className="flex items-center gap-1.5 text-[11px] font-semibold text-[#A0A0A0] mb-2">
+                <p className="flex items-center gap-1.5 text-[11px] font-semibold text-[#767676] mb-2">
                   <Users2 size={13} /> ยังไม่ระบุฝ่าย
                 </p>
                 <div className="flex flex-wrap gap-1.5">

@@ -371,7 +371,7 @@ export default function SettingsView({ currentUser, changeRequests, onUpdateEmpl
         <div className="flex lg:flex-col gap-1 lg:gap-4 overflow-x-auto lg:overflow-visible pb-1 lg:pb-0">
           {MENU_GROUPS.map((group) => (
             <div key={group.label} className="contents lg:flex lg:flex-col lg:gap-0.5">
-              <p className="hidden lg:block px-3 pt-1 pb-1 text-[11px] font-bold text-[#A0A0A0]">{group.label}</p>
+              <p className="hidden lg:block px-3 pt-1 pb-1 text-[11px] font-bold text-[#767676]">{group.label}</p>
               {group.items.map(({ id, label, icon: Icon }) => {
                 const isActive = section === id;
                 return (
@@ -393,7 +393,7 @@ export default function SettingsView({ currentUser, changeRequests, onUpdateEmpl
                       <span className={`w-2 h-2 rounded-full shrink-0 ${isActive ? 'bg-white' : 'bg-amber-500'}`} role="img" aria-label="มีคำขอรออนุมัติ" />
                     )}
                     {id === 'notifications' && mutedCategories.length > 0 && (
-                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${isActive ? 'bg-white/25 text-white' : 'bg-[#F4F4F5] text-[#6F6F6F]'}`}>
+                      <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${isActive ? 'bg-white/25 text-white' : 'bg-[#F4F4F5] text-[#6F6F6F]'}`}>
                         ปิด {mutedCategories.length}
                       </span>
                     )}

@@ -97,11 +97,26 @@ function LoadingDots() {
 }
 
 interface LoginProps {
-  employees: Employee[];
   onLogin: (employee: Employee) => void;
 }
 
-export default function Login({ employees, onLogin }: LoginProps) {
+// AppDataContext sets this when the server rejects a stored session (expired, or the account was
+// removed) so the login page can say why the user was sent back here.
+const SESSION_EXPIRED_KEY = 'unityspace_session_expired';
+
+function consumeSessionExpiredNotice(): string {
+  try {
+    if (sessionStorage.getItem(SESSION_EXPIRED_KEY)) {
+      sessionStorage.removeItem(SESSION_EXPIRED_KEY);
+      return 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบอีกครั้ง';
+    }
+  } catch {
+    /* storage blocked — no notice */
+  }
+  return '';
+}
+
+export default function Login({ onLogin }: LoginProps) {
   const prefersReducedMotion = useReducedMotion();
   const [introPhase, setIntroPhase] = useState<'logo' | 'brand' | 'form'>(() => {
     try {
@@ -135,9 +150,11 @@ export default function Login({ employees, onLogin }: LoginProps) {
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(() => !!localStorage.getItem(REMEMBER_USERNAME_KEY));
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(consumeSessionExpiredNotice);
   const [shakeError, setShakeError] = useState(false);
   const [loginSuccess, setLoginSuccess] = useState('');
+  // Proof from /verify-otp that lets the reset step change the password — see server auth route.
+  const [resetToken, setResetToken] = useState('');
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotEmailError, setForgotEmailError] = useState('');
   const [otpDigits, setOtpDigits] = useState(['', '', '', '', '', '']);
@@ -187,11 +204,6 @@ export default function Login({ employees, onLogin }: LoginProps) {
 
     try {
       const result = await loginRequest(username.trim(), password);
-      const matchedEmployee = employees.find(emp => emp.id === result.employeeId);
-      if (!matchedEmployee) {
-        rejectLogin('บัญชีนี้ยังไม่ได้ผูกกับข้อมูลพนักงานในระบบ');
-        return;
-      }
 
       if (rememberMe) {
         localStorage.setItem(REMEMBER_USERNAME_KEY, username.trim());
@@ -200,7 +212,7 @@ export default function Login({ employees, onLogin }: LoginProps) {
       }
 
       setError('');
-      setPendingEmployee(matchedEmployee);
+      setPendingEmployee(result.employee);
       setView('loading');
     } catch (err) {
       rejectLogin(err instanceof ApiError ? err.message : 'ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง');
@@ -281,7 +293,7 @@ export default function Login({ employees, onLogin }: LoginProps) {
     setOtpError('');
     setIsVerifyingOtp(true);
     try {
-      await verifyPasswordResetOtp(forgotEmail.trim(), otpDigits.join(''));
+      setResetToken(await verifyPasswordResetOtp(forgotEmail.trim(), otpDigits.join('')));
       setNewPassword('');
       setConfirmPassword('');
       setResetError('');
@@ -313,7 +325,7 @@ export default function Login({ employees, onLogin }: LoginProps) {
     setResetError('');
     setIsResettingPassword(true);
     try {
-      await resetPasswordWithOtp(forgotEmail.trim(), newPassword);
+      await resetPasswordWithOtp(forgotEmail.trim(), newPassword, resetToken);
       handleBackToLogin();
       setLoginSuccess('เปลี่ยนรหัสผ่านสำเร็จ กรุณาเข้าสู่ระบบอีกครั้ง');
     } catch (err) {

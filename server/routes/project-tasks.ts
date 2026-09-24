@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import type { RowDataPacket } from 'mysql2';
-import { pool } from '../db.ts';
-import { nowBangkokDateTime, formatThaiDateShort } from '../lib/datetime.ts';
+import { pool, withTransaction } from '../db.ts';
+import { nowBangkokDateTime, formatThaiDateShort, daysUntilBangkokDate } from '../lib/datetime.ts';
+import { newId } from '../lib/ids.ts';
 import { isOwner, isExecutiveActor, resolveValidOwnerIds } from '../lib/ownership.ts';
 
 export const projectTasksRouter = Router();
@@ -44,14 +45,6 @@ function sanitizeIds(raw: unknown): string[] {
   return Array.isArray(raw) ? raw.filter((id): id is string => typeof id === 'string') : [];
 }
 
-function daysUntilDue(dueDate: string | null): number | undefined {
-  if (!dueDate) return undefined;
-  const due = new Date(`${dueDate}T00:00:00`);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-}
-
 // startDateISO/dueDateISO mirror ProjectRow's own startDateISO/endDateISO pattern — the display
 // fields (startDate/dueDate) stay pre-formatted Thai text so ProjectDetail's tables/team tab need
 // no changes, while the *ISO fields let AddTaskModal's edit mode populate <input type="date">.
@@ -70,7 +63,7 @@ function toProjectTask(r: ProjectTaskRowDb) {
     dueDate: formatThaiDateShort(r.due_date),
     startDateISO: r.start_date,
     dueDateISO: r.due_date,
-    daysUntilDue: daysUntilDue(r.due_date),
+    daysUntilDue: daysUntilBangkokDate(r.due_date),
     progress: r.progress,
     checklist: r.checklist ? JSON.parse(r.checklist) : [],
     submissionNote: r.submission_note ?? undefined,
@@ -133,7 +126,15 @@ projectTasksRouter.post('/', async (req, res) => {
   const parentTaskId = typeof t.parentTaskId === 'string' && t.parentTaskId ? t.parentTaskId : null;
 
   try {
-    const id = `PTASK_${Date.now()}`;
+    // A subtask always lives in the same project as the task it hangs under.
+    if (parentTaskId) {
+      const [[parent]] = await pool.query<RowDataPacket[]>('SELECT project_id FROM project_task WHERE id = ?', [parentTaskId]);
+      if (!parent || parent.project_id !== t.projectId) {
+        return res.status(400).json({ message: 'งานหลักของงานย่อยต้องอยู่ในโครงการเดียวกัน' });
+      }
+    }
+
+    const id = newId('PTASK');
     const now = nowBangkokDateTime();
     await pool.query(
       `INSERT INTO project_task
@@ -143,7 +144,7 @@ projectTasksRouter.post('/', async (req, res) => {
       [
         id, t.projectId, t.title.trim(), t.description?.trim() || null, status, priority,
         assigneeIds.length ? JSON.stringify(assigneeIds) : null, reviewerIds.length ? JSON.stringify(reviewerIds) : null,
-        t.creatorEmployeeId || null, t.startDate || null, t.dueDate || null, t.progress ?? 0,
+        req.actorId, t.startDate || null, t.dueDate || null, t.progress ?? 0,
         checklist.length ? JSON.stringify(checklist) : null, parentTaskId, now, now,
       ]
     );
@@ -239,23 +240,23 @@ export async function applyTaskFields(id: string, t: any) {
 projectTasksRouter.put('/:id', async (req, res) => {
   const t = req.body ?? {};
 
-  // Once a task has ≥1 assignee, only one of them (or one of its reviewers — ReviewTaskModal's
-  // "ผ่าน"/"ตีกลับ" go through this same route) may edit it directly — anyone else must file a
-  // change_request instead (see change-requests.ts). A task with no assignees yet stays open to
-  // everyone. Reviewers are trusted with this same edit right, not just a narrower "decide"
-  // action, since this app has no real per-field permission model to split the two.
-  // งานย่อย (a row with parent_task_id set) is exempt from this gate entirely — per the product
-  // decision, only the main task goes through approval, so anyone can edit a subtask directly.
-  const [[existing]] = await pool.query<RowDataPacket[]>('SELECT assignee_employee_ids, reviewer_employee_ids, parent_task_id FROM project_task WHERE id = ?', [req.params.id]);
-  if (!existing) return res.status(404).json({ message: 'ไม่พบงานนี้' });
-  const currentAssigneeIds: string[] = existing.assignee_employee_ids ? JSON.parse(existing.assignee_employee_ids) : [];
-  const currentReviewerIds: string[] = existing.reviewer_employee_ids ? JSON.parse(existing.reviewer_employee_ids) : [];
-  const validOwnerIds = await resolveValidOwnerIds([...currentAssigneeIds, ...currentReviewerIds]);
-  if (!existing.parent_task_id && !isOwner(validOwnerIds, t.actorEmployeeId) && !(await isExecutiveActor(t.actorEmployeeId))) {
-    return res.status(409).json({ message: 'ต้องขออนุมัติจากผู้รับผิดชอบก่อนจึงจะแก้ไขได้', requiresApproval: true });
-  }
-
   try {
+    // Once a task has ≥1 assignee, only one of them (or one of its reviewers — ReviewTaskModal's
+    // "ผ่าน"/"ตีกลับ" go through this same route) may edit it directly — anyone else must file a
+    // change_request instead (see change-requests.ts). A task with no assignees yet stays open to
+    // everyone. Reviewers are trusted with this same edit right, not just a narrower "decide"
+    // action, since this app has no real per-field permission model to split the two.
+    // งานย่อย (a row with parent_task_id set) is exempt from this gate entirely — per the product
+    // decision, only the main task goes through approval, so anyone can edit a subtask directly.
+    const [[existing]] = await pool.query<RowDataPacket[]>('SELECT assignee_employee_ids, reviewer_employee_ids, parent_task_id FROM project_task WHERE id = ?', [req.params.id]);
+    if (!existing) return res.status(404).json({ message: 'ไม่พบงานนี้' });
+    const currentAssigneeIds: string[] = existing.assignee_employee_ids ? JSON.parse(existing.assignee_employee_ids) : [];
+    const currentReviewerIds: string[] = existing.reviewer_employee_ids ? JSON.parse(existing.reviewer_employee_ids) : [];
+    const validOwnerIds = await resolveValidOwnerIds([...currentAssigneeIds, ...currentReviewerIds]);
+    if (!existing.parent_task_id && !isOwner(validOwnerIds, t.actorEmployeeId) && !(await isExecutiveActor(t.actorEmployeeId))) {
+      return res.status(409).json({ message: 'ต้องขออนุมัติจากผู้รับผิดชอบก่อนจึงจะแก้ไขได้', requiresApproval: true });
+    }
+
     const row = await applyTaskFields(req.params.id, t);
     if (!row) return res.status(400).json({ message: 'ไม่มีข้อมูลที่จะอัปเดต' });
     res.json(row);
@@ -264,6 +265,39 @@ projectTasksRouter.put('/:id', async (req, res) => {
     res.status(500).json({ message: 'เกิดข้อผิดพลาดในระบบ กรุณาลองใหม่อีกครั้ง' });
   }
 });
+
+// Removes a task (its subtasks go with it via the parent_task_id FK cascade) together with any
+// change requests that pointed at it or at those subtasks, then re-derives its parent's status —
+// shared by the direct DELETE route and change-requests.ts's approve-a-delete path so both behave
+// the same.
+export async function deleteTaskCascade(taskId: string): Promise<void> {
+  const [[row]] = await pool.query<RowDataPacket[]>('SELECT parent_task_id FROM project_task WHERE id = ?', [taskId]);
+  if (!row) return;
+
+  const doomedIds = [taskId];
+  let frontier = [taskId];
+  while (frontier.length > 0) {
+    const [children] = await pool.query<RowDataPacket[]>(
+      `SELECT id FROM project_task WHERE parent_task_id IN (${frontier.map(() => '?').join(',')})`,
+      frontier
+    );
+    frontier = children.map((c) => c.id as string);
+    doomedIds.push(...frontier);
+  }
+
+  await withTransaction(async (conn) => {
+    await conn.query(
+      `DELETE FROM change_request WHERE entity_type = 'project_task' AND entity_id IN (${doomedIds.map(() => '?').join(',')})`,
+      doomedIds
+    );
+    await conn.query('DELETE FROM project_task WHERE id = ?', [taskId]);
+  });
+
+  // A deleted subtask may have been the deciding one keeping its parent 'in_progress' (or the last
+  // one at all, in which case the parent's status simply falls back to being freely editable again
+  // — see recomputeAncestorStatuses' own early-out for zero remaining children).
+  if (row.parent_task_id) await recomputeAncestorStatuses(row.parent_task_id);
+}
 
 projectTasksRouter.delete('/:id', async (req, res) => {
   try {
@@ -277,11 +311,7 @@ projectTasksRouter.delete('/:id', async (req, res) => {
       return res.status(409).json({ message: 'ต้องขออนุมัติจากผู้รับผิดชอบก่อนจึงจะลบได้', requiresApproval: true });
     }
 
-    await pool.query('DELETE FROM project_task WHERE id = ?', [req.params.id]);
-    // A deleted subtask may have been the deciding one keeping its parent 'in_progress' (or the
-    // last one at all, in which case the parent's status simply falls back to being freely
-    // editable again — see recomputeAncestorStatuses' own early-out for zero remaining children).
-    if (existing.parent_task_id) await recomputeAncestorStatuses(existing.parent_task_id);
+    await deleteTaskCascade(req.params.id);
     res.status(204).end();
   } catch (err) {
     console.error('DELETE /api/project-tasks/:id failed:', err);

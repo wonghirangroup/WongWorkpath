@@ -6,6 +6,7 @@ import { PROJECT_STATUS_OPTIONS, STATUS_LABEL } from './statusMeta';
 import { MAX_STATUS_CARDS } from './statusWidgetPrefs';
 import Tooltip from '../Tooltip';
 import { useConfirm } from '../../context/ConfirmContext';
+import { ApiError } from '../../lib/api';
 
 interface StatusWidgetSettingsMenuProps {
   selectedIds: string[];
@@ -87,7 +88,7 @@ export default function StatusWidgetSettingsMenu({
             transition={{ duration: 0.15 }}
             className="absolute left-0 top-full mt-1.5 w-72 bg-white border border-slate-200 rounded-xl shadow-lg py-2 z-20"
           >
-            <p className="px-3.5 py-1 text-[11px] font-bold text-[#A0A0A0] uppercase tracking-wide">
+            <p className="px-3.5 py-1 text-[11px] font-bold text-[#767676] uppercase tracking-wide">
               เลือกการ์ดที่จะแสดง (สูงสุด {MAX_STATUS_CARDS})
             </p>
             <div className="max-h-52 overflow-y-auto">
@@ -116,7 +117,14 @@ export default function StatusWidgetSettingsMenu({
                               message: `ลบสถานะ "${STATUS_LABEL[id]}" ออกจากระบบ`,
                               tone: 'danger',
                             });
-                            if (confirmed) onDeleteCustomStatus(id);
+                            if (!confirmed) return;
+                            setCreateError('');
+                            try {
+                              await onDeleteCustomStatus(id);
+                            } catch (err) {
+                              // e.g. 409 — projects still use this status; the server says how many.
+                              setCreateError(err instanceof ApiError ? err.message : 'ลบสถานะไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+                            }
                           }}
                           aria-label="ลบสถานะนี้"
                           className="text-slate-300 hover:text-red-600 cursor-pointer shrink-0"
@@ -131,7 +139,7 @@ export default function StatusWidgetSettingsMenu({
             </div>
             <div className="my-1.5 border-t border-slate-100" />
             <div className="px-3.5 pt-1.5">
-              <p className="text-[11px] font-bold text-[#A0A0A0] uppercase tracking-wide mb-1.5">สร้างสถานะใหม่</p>
+              <p className="text-[11px] font-bold text-[#767676] uppercase tracking-wide mb-1.5">สร้างสถานะใหม่</p>
               <div className="flex items-center gap-1.5">
                 <input
                   type="text"

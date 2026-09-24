@@ -1,9 +1,11 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import type { RowDataPacket } from 'mysql2';
-import { pool } from '../db.ts';
+import { pool, withTransaction } from '../db.ts';
 import { nowBangkokDateTime, bangkokDateTimeFrom } from '../lib/datetime.ts';
-import { isNotificationCategory, parseMutedCategories } from '../lib/notificationCategories.ts';
+import { isNotificationCategory } from '../lib/notificationCategories.ts';
+import { forgetActor } from '../lib/auth.ts';
+import { EMPLOYEE_SELECT, toEmployeeDto, type EmployeeRow } from '../lib/employeeDto.ts';
 
 export const employeesRouter = Router();
 
@@ -46,25 +48,47 @@ export async function applyEmployeeFields(id: string, changes: Record<string, un
 // server-side whitelist to check against, so these are just validated as non-empty strings.
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-interface EmployeeRow extends RowDataPacket {
-  id: string;
-  name: string;
-  nickname: string | null;
-  email: string;
-  username: string | null;
-  phone: string | null;
-  address: string | null;
-  role: string;
-  department: string;
-  division: string | null;
-  avatar: string | null;
-  account_type: string;
-  restricted_menu_ids: string | null;
-  muted_notification_categories: string | null;
-  created_at: string;
-}
-
 const ACCOUNT_TYPES = ['employee', 'admin', 'superadmin', 'executive'];
+
+// ผู้บริหาร is capped at 2 people. Super Admin and an existing ผู้บริหาร can both hand the title out
+// or take it back (a plain admin can't) — the cap is what stops it growing past 2.
+const MAX_EXECUTIVES = 2;
+
+// Fields a plain employee may change on their own record (Settings page). Everything else —
+// role, department, division, accountType, restricted menus, username — is an admin decision, and
+// letting anyone PUT those to themselves was a self-promotion hole.
+const SELF_SERVICE_FIELDS = new Set(['actorEmployeeId', 'avatar', 'phone', 'address', 'email', 'mutedNotificationCategories', 'password', 'name', 'nickname']);
+
+// Returns a Thai error message when this account-type change isn't allowed, or null when it is.
+// `currentType` is null for a brand-new account.
+export async function accountTypeChangeError(
+  actorType: string,
+  currentType: string | null,
+  nextType: string,
+  targetId: string | null
+): Promise<string | null> {
+  if (nextType === currentType) return null;
+
+  // Handing out admin/superadmin/ผู้บริหาร is limited to Super Admin and ผู้บริหาร (mirrors the
+  // client's assignableAccountTypes); a plain admin can only ever leave someone as 'employee'.
+  const actorCanAssignPrivileged = actorType === 'superadmin' || actorType === 'executive';
+  if (!actorCanAssignPrivileged && nextType !== 'employee') {
+    return 'เฉพาะ Super Admin หรือผู้บริหารเท่านั้นที่กำหนดสิทธิ์ Admin/Super Admin/ผู้บริหารได้';
+  }
+
+  if (nextType === 'executive' || currentType === 'executive') {
+    if (nextType === 'executive') {
+      const [[row]] = await pool.query<RowDataPacket[]>(
+        `SELECT COUNT(*) AS cnt FROM employee WHERE account_type = 'executive' AND id != ?`,
+        [targetId ?? '']
+      );
+      if (Number(row?.cnt ?? 0) >= MAX_EXECUTIVES) {
+        return `มีผู้บริหารครบ ${MAX_EXECUTIVES} คนแล้ว กรุณาลดตำแหน่งผู้บริหารคนใดคนหนึ่งก่อน`;
+      }
+    }
+  }
+  return null;
+}
 
 // Mirrors src/lib/permissions.ts's canEditOrDeleteTarget exactly: self-edit always allowed;
 // superadmin/executive can touch anyone; a plain admin can touch anyone except another
@@ -83,33 +107,8 @@ function canEditOrDeleteTarget(actorId: string | undefined, actorType: string | 
 
 employeesRouter.get('/', async (_req, res) => {
   try {
-    const [rows] = await pool.query<EmployeeRow[]>(
-      `SELECT e.id, e.name, e.nickname, e.email, l.username, e.phone, e.address, e.role, e.department, e.division, e.avatar, e.account_type, e.restricted_menu_ids, e.muted_notification_categories, e.created_at
-       FROM employee e
-       LEFT JOIN login l ON l.employee_id = e.id
-       ORDER BY e.id`
-    );
-
-    // camelCase to match the Employee type in src/types.ts.
-    res.json(
-      rows.map((r) => ({
-        id: r.id,
-        name: r.name,
-        nickname: r.nickname || r.name,
-        email: r.email,
-        username: r.username,
-        phone: r.phone || undefined,
-        address: r.address || undefined,
-        role: r.role,
-        department: r.department,
-        division: r.division || undefined,
-        avatar: r.avatar,
-        accountType: r.account_type,
-        restrictedMenuIds: r.restricted_menu_ids ? JSON.parse(r.restricted_menu_ids) : undefined,
-        mutedNotificationCategories: parseMutedCategories(r.muted_notification_categories),
-        createdAt: r.created_at,
-      }))
-    );
+    const [rows] = await pool.query<EmployeeRow[]>(`${EMPLOYEE_SELECT} ORDER BY e.id`);
+    res.json(rows.map(toEmployeeDto));
   } catch (err) {
     console.error('GET /api/employees failed:', err);
     res.status(500).json({ message: 'เกิดข้อผิดพลาดในระบบ กรุณาลองใหม่อีกครั้ง' });
@@ -145,6 +144,15 @@ employeesRouter.post('/', async (req, res) => {
   }
 
   try {
+    // Creating accounts is an Employee Management action — this route used to be open to anyone who
+    // could reach the URL, including for privileged account types.
+    const [[actor]] = await pool.query<RowDataPacket[]>('SELECT account_type FROM employee WHERE id = ?', [req.actorId]);
+    if (!actor || !isAdminLike(actor.account_type)) {
+      return res.status(403).json({ message: 'ไม่มีสิทธิ์สร้างบัญชีพนักงาน' });
+    }
+    const typeError = await accountTypeChangeError(actor.account_type, null, accountType, null);
+    if (typeError) return res.status(403).json({ message: typeError });
+
     // email is optional now — `email = ?` against a null parameter never matches any row (not
     // even another blank one), same as the UNIQUE key's own "multiple NULLs are distinct" rule,
     // so this still only flags a real duplicate.
@@ -164,23 +172,26 @@ employeesRouter.post('/', async (req, res) => {
     }
 
     const now = nowBangkokDateTime();
-    // Same Super Admin singleton rule as the PUT route below — creating a brand-new employee
-    // directly as superadmin still auto-demotes whoever currently holds it.
-    if (accountType === 'superadmin') {
-      await pool.query(`UPDATE employee SET account_type = 'admin', updated_at = ? WHERE account_type = 'superadmin'`, [now]);
-    }
-    await pool.query(
-      `INSERT INTO employee (id, name, nickname, email, role, department, division, avatar, account_type, restricted_menu_ids, phone, address, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [e.id, e.name, nickname, email, e.role, e.department || '', e.division, e.avatar || null, accountType, restrictedMenuIds.length ? JSON.stringify(restrictedMenuIds) : null, phone, address, now, now]
-    );
-
     const passwordHash = await bcrypt.hash(password, 10);
-    await pool.query(
-      `INSERT INTO login (employee_id, email, username, password_hash, is_active, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 1, ?, ?)`,
-      [e.id, email, username, passwordHash, now, now]
-    );
+    // One transaction so a failure on the login row can't leave a directory entry nobody can sign in
+    // as (or, worse, a demoted Super Admin with no replacement).
+    await withTransaction(async (conn) => {
+      // Same Super Admin singleton rule as the PUT route below — creating a brand-new employee
+      // directly as superadmin still auto-demotes whoever currently holds it.
+      if (accountType === 'superadmin') {
+        await conn.query(`UPDATE employee SET account_type = 'admin', updated_at = ? WHERE account_type = 'superadmin'`, [now]);
+      }
+      await conn.query(
+        `INSERT INTO employee (id, name, nickname, email, role, department, division, avatar, account_type, restricted_menu_ids, phone, address, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [e.id, e.name, nickname, email, e.role, e.department || '', e.division, e.avatar || null, accountType, restrictedMenuIds.length ? JSON.stringify(restrictedMenuIds) : null, phone, address, now, now]
+      );
+      await conn.query(
+        `INSERT INTO login (employee_id, email, username, password_hash, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, ?, ?)`,
+        [e.id, email, username, passwordHash, now, now]
+      );
+    });
 
     res.status(201).json({
       id: e.id,
@@ -213,18 +224,41 @@ employeesRouter.post('/', async (req, res) => {
 employeesRouter.put('/:id', async (req, res) => {
   const e = req.body ?? {};
 
-  const [[target], [actor]] = await Promise.all([
-    pool.query<RowDataPacket[]>('SELECT account_type, name, nickname FROM employee WHERE id = ?', [req.params.id]).then(([rows]) => rows),
-    typeof e.actorEmployeeId === 'string' && e.actorEmployeeId
-      ? pool.query<RowDataPacket[]>('SELECT account_type FROM employee WHERE id = ?', [e.actorEmployeeId]).then(([rows]) => rows)
-      : Promise.resolve([undefined]),
-  ]);
+  let target: RowDataPacket | undefined;
+  let actor: RowDataPacket | undefined;
+  try {
+    [[target], [actor]] = await Promise.all([
+      pool.query<RowDataPacket[]>('SELECT account_type, name, nickname FROM employee WHERE id = ?', [req.params.id]).then(([rows]) => rows),
+      pool.query<RowDataPacket[]>('SELECT account_type FROM employee WHERE id = ?', [req.actorId]).then(([rows]) => rows),
+    ]);
+  } catch (err) {
+    console.error('PUT /api/employees/:id failed:', err);
+    return res.status(500).json({ message: 'เกิดข้อผิดพลาดในระบบ กรุณาลองใหม่อีกครั้ง' });
+  }
   if (!target) return res.status(404).json({ message: 'ไม่พบพนักงานนี้' });
-  if (!canEditOrDeleteTarget(e.actorEmployeeId, actor?.account_type, req.params.id, target.account_type)) {
+  if (!canEditOrDeleteTarget(req.actorId, actor?.account_type, req.params.id, target.account_type)) {
     return res.status(403).json({ message: 'ไม่มีสิทธิ์แก้ไขข้อมูลพนักงานคนนี้' });
   }
 
-  const isSelfEdit = e.actorEmployeeId === req.params.id;
+  const isSelfEdit = req.actorId === req.params.id;
+
+  // A plain employee (canEditOrDeleteTarget above only lets them through for their own record) may
+  // only touch the self-service fields — never role/department/accountType/menu restrictions.
+  if (actor && !isAdminLike(actor.account_type)) {
+    const forbidden = Object.keys(e).filter((key) => !SELF_SERVICE_FIELDS.has(key));
+    if (forbidden.length > 0) {
+      return res.status(403).json({ message: 'พนักงานทั่วไปแก้ไขได้เฉพาะรูปโปรไฟล์ เบอร์โทร ที่อยู่ และอีเมลของตัวเอง' });
+    }
+  }
+  if (typeof e.accountType === 'string' && ACCOUNT_TYPES.includes(e.accountType)) {
+    try {
+      const typeError = await accountTypeChangeError(actor?.account_type ?? '', target.account_type, e.accountType, req.params.id);
+      if (typeError) return res.status(403).json({ message: typeError });
+    } catch (err) {
+      console.error('PUT /api/employees/:id failed:', err);
+      return res.status(500).json({ message: 'เกิดข้อผิดพลาดในระบบ กรุณาลองใหม่อีกครั้ง' });
+    }
+  }
 
   // A plain employee editing their own account can't change name/nickname directly — that goes
   // through a change request an admin approves (see change-requests.ts). Admin-like accounts, and
@@ -348,42 +382,48 @@ employeesRouter.put('/:id', async (req, res) => {
       }
     }
 
-    // Super Admin is a singleton — promoting someone new to it auto-demotes whoever currently
-    // holds it, so the system is never left with 0 or 2+ superadmins at once.
-    if (e.accountType === 'superadmin') {
-      await pool.query(
-        `UPDATE employee SET account_type = 'admin', updated_at = ? WHERE account_type = 'superadmin' AND id != ?`,
-        [nowBangkokDateTime(), req.params.id]
-      );
-    }
+    const passwordHash = newPassword ? await bcrypt.hash(newPassword, 10) : null;
 
-    if (employeeFields.length > 0) {
-      employeeFields.push('updated_at = ?');
-      employeeValues.push(nowBangkokDateTime());
-      await pool.query(`UPDATE employee SET ${employeeFields.join(', ')} WHERE id = ?`, [...employeeValues, req.params.id]);
-    }
+    // Demotion of the old Super Admin, the employee row and the login row are one change — apply
+    // them together so a failure part-way can't leave the system with no Super Admin.
+    await withTransaction(async (conn) => {
+      // Super Admin is a singleton — promoting someone new to it auto-demotes whoever currently
+      // holds it, so the system is never left with 0 or 2+ superadmins at once.
+      if (e.accountType === 'superadmin') {
+        await conn.query(
+          `UPDATE employee SET account_type = 'admin', updated_at = ? WHERE account_type = 'superadmin' AND id != ?`,
+          [nowBangkokDateTime(), req.params.id]
+        );
+      }
 
-    if (newUsername || newPassword || emailProvided) {
-      const loginFields: string[] = ['updated_at = ?'];
-      const loginValues: unknown[] = [nowBangkokDateTime()];
-      if (newUsername) {
-        loginFields.push('username = ?');
-        loginValues.push(newUsername);
+      if (employeeFields.length > 0) {
+        employeeFields.push('updated_at = ?');
+        employeeValues.push(nowBangkokDateTime());
+        await conn.query(`UPDATE employee SET ${employeeFields.join(', ')} WHERE id = ?`, [...employeeValues, req.params.id]);
       }
-      if (emailProvided) {
-        loginFields.push('email = ?');
-        loginValues.push(newEmail);
-      }
-      if (newPassword) {
-        loginFields.push('password_hash = ?');
-        loginValues.push(await bcrypt.hash(newPassword, 10));
-        if (isSelfEdit) {
-          loginFields.push('password_changed_at = ?');
-          loginValues.push(nowBangkokDateTime());
+
+      if (newUsername || passwordHash || emailProvided) {
+        const loginFields: string[] = ['updated_at = ?'];
+        const loginValues: unknown[] = [nowBangkokDateTime()];
+        if (newUsername) {
+          loginFields.push('username = ?');
+          loginValues.push(newUsername);
         }
+        if (emailProvided) {
+          loginFields.push('email = ?');
+          loginValues.push(newEmail);
+        }
+        if (passwordHash) {
+          loginFields.push('password_hash = ?');
+          loginValues.push(passwordHash);
+          if (isSelfEdit) {
+            loginFields.push('password_changed_at = ?');
+            loginValues.push(nowBangkokDateTime());
+          }
+        }
+        await conn.query(`UPDATE login SET ${loginFields.join(', ')} WHERE employee_id = ?`, [...loginValues, req.params.id]);
       }
-      await pool.query(`UPDATE login SET ${loginFields.join(', ')} WHERE employee_id = ?`, [...loginValues, req.params.id]);
-    }
+    });
 
     res.json({ id: req.params.id });
   } catch (err) {
@@ -425,29 +465,32 @@ employeesRouter.put('/:id/password', async (req, res) => {
 });
 
 // Removes both the login credentials and the directory row. Deliberately no cross-check against
-// task assignments — tasks aren't backend-persisted in this app (still localStorage/mock-only),
-// so there's nothing server-side to check against.
+// task assignments — a task's assignee ids that no longer match a real employee are already ignored
+// everywhere (see resolveValidOwnerIds), so there is nothing to block on.
 employeesRouter.delete('/:id', async (req, res) => {
-  const actorEmployeeId = typeof req.query.actorEmployeeId === 'string' ? req.query.actorEmployeeId : undefined;
   // Deleting your own account is never allowed (unlike editing, which self trivially passes) —
   // matches EmployeeManagement.tsx's own deleteDisabled rule.
-  if (actorEmployeeId && actorEmployeeId === req.params.id) {
+  if (req.actorId === req.params.id) {
     return res.status(403).json({ message: 'ไม่สามารถลบบัญชีของตัวเองได้' });
   }
   try {
     const [[target], [actor]] = await Promise.all([
       pool.query<RowDataPacket[]>('SELECT account_type FROM employee WHERE id = ?', [req.params.id]).then(([rows]) => rows),
-      actorEmployeeId
-        ? pool.query<RowDataPacket[]>('SELECT account_type FROM employee WHERE id = ?', [actorEmployeeId]).then(([rows]) => rows)
-        : Promise.resolve([undefined]),
+      pool.query<RowDataPacket[]>('SELECT account_type FROM employee WHERE id = ?', [req.actorId]).then(([rows]) => rows),
     ]);
     if (!target) return res.status(404).json({ message: 'ไม่พบพนักงานนี้' });
     if (!actor || !(actor.account_type === 'superadmin' || actor.account_type === 'executive' || (actor.account_type === 'admin' && !isAdminLike(target.account_type)))) {
       return res.status(403).json({ message: 'ไม่มีสิทธิ์ลบพนักงานคนนี้' });
     }
 
-    await pool.query('DELETE FROM login WHERE employee_id = ?', [req.params.id]);
-    await pool.query('DELETE FROM employee WHERE id = ?', [req.params.id]);
+    await withTransaction(async (conn) => {
+      // A pending name-change request from this person has nothing left to change once they're gone.
+      await conn.query(`DELETE FROM change_request WHERE entity_type = 'employee' AND entity_id = ?`, [req.params.id]);
+      await conn.query('DELETE FROM login WHERE employee_id = ?', [req.params.id]);
+      await conn.query('DELETE FROM employee WHERE id = ?', [req.params.id]);
+    });
+    // Their still-unexpired session token must stop working right now, not up to 30s later.
+    forgetActor(req.params.id);
     res.status(204).end();
   } catch (err) {
     console.error('DELETE /api/employees/:id failed:', err);

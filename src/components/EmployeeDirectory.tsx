@@ -35,7 +35,7 @@ function EmployeeQuickViewModal({ employee, onClose }: { employee: Employee | nu
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ type: 'spring', stiffness: 300, damping: 24, mass: 0.9 }}
-            className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-sm overflow-hidden"
+            role="dialog" aria-modal="true" aria-label="ข้อมูลพนักงาน" className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-sm overflow-hidden"
           >
             <div className="flex justify-end px-4 pt-4">
               <button onClick={onClose} className="text-slate-400 hover:text-slate-600 cursor-pointer" type="button" aria-label="ปิด">
@@ -60,7 +60,7 @@ function EmployeeQuickViewModal({ employee, onClose }: { employee: Employee | nu
                     <p className="text-[12px] text-slate-400 truncate">{employee.name}</p>
                   )}
                   <span
-                    className={`inline-flex items-center gap-1 mt-1 font-bold uppercase px-2 py-0.5 rounded-full leading-none text-[9px] ${
+                    className={`inline-flex items-center gap-1 mt-1 font-bold uppercase px-2 py-0.5 rounded-full leading-none text-[11px] ${
                       employee.accountType !== 'employee' ? 'text-[#FF6537] bg-black border border-[#FF6537]' : 'text-[#6F6F6F] bg-slate-100 border border-slate-200'
                     }`}
                   >
@@ -72,24 +72,24 @@ function EmployeeQuickViewModal({ employee, onClose }: { employee: Employee | nu
 
               <div className="space-y-2.5 pt-4 border-t border-slate-100 text-[13px]">
                 <div className="flex items-center gap-2 text-[#272220]">
-                  <Briefcase size={14} className="text-[#A0A0A0] shrink-0" />
+                  <Briefcase size={14} className="text-[#767676] shrink-0" />
                   <span>{employee.role}</span>
                 </div>
                 <div className="flex items-center gap-2 text-[#272220]">
-                  <Building2 size={14} className="text-[#A0A0A0] shrink-0" />
+                  <Building2 size={14} className="text-[#767676] shrink-0" />
                   <span>{employee.division || '—'}</span>
                   {employee.department && (
-                    <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(employee.department)}`}>
+                    <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(employee.department)}`}>
                       {employee.department}
                     </span>
                   )}
                 </div>
                 <div className="flex items-center gap-2 text-[#272220]">
-                  <Phone size={14} className="text-[#A0A0A0] shrink-0" />
+                  <Phone size={14} className="text-[#767676] shrink-0" />
                   <span>{employee.phone || '—'}</span>
                 </div>
                 <div className="flex items-center gap-2 text-[#272220]">
-                  <Mail size={14} className="text-[#A0A0A0] shrink-0" />
+                  <Mail size={14} className="text-[#767676] shrink-0" />
                   <span className="break-all">{employee.email || '—'}</span>
                 </div>
               </div>
@@ -152,7 +152,7 @@ export default function EmployeeDirectory({ employees, orgDivisions, currentUser
   const accountBadge = (emp: Employee, size: 'sm' | 'xs' = 'sm') => (
     <span
       className={`shrink-0 inline-flex items-center gap-1 font-bold uppercase px-2 py-0.5 rounded-full leading-none ${
-        size === 'sm' ? 'text-[9px]' : 'text-[8px]'
+        size === 'sm' ? 'text-[11px]' : 'text-[11px]'
       } ${emp.accountType !== 'employee' ? 'text-[#FF6537] bg-black border border-[#FF6537]' : 'text-[#6F6F6F] bg-slate-100 border border-slate-200'}`}
     >
       {emp.accountType !== 'employee' && <Crown size={9} className="fill-current" />}
@@ -308,11 +308,6 @@ export default function EmployeeDirectory({ employees, orgDivisions, currentUser
                       {emp.nickname && emp.nickname !== emp.name && (
                         <p className="text-[11px] text-slate-400 truncate">{emp.name}</p>
                       )}
-                      {emp.department && (
-                        <span className={`inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(emp.department)}`}>
-                          {emp.department}
-                        </span>
-                      )}
                     </div>
                     <Tooltip content="ดูรายละเอียด">
                       <button
@@ -325,6 +320,15 @@ export default function EmployeeDirectory({ employees, orgDivisions, currentUser
                       </button>
                     </Tooltip>
                   </div>
+
+                  {/* Full card width (not the narrow column beside the avatar) so the name stays on one line. */}
+                  {emp.department && (
+                    <Tooltip content={emp.department}>
+                      <span className={`inline-block max-w-full truncate text-[11px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(emp.department)}`}>
+                        {emp.department}
+                      </span>
+                    </Tooltip>
+                  )}
 
                   <div className="pt-2 border-t border-[#EDEEEF] space-y-1.5">
                     <div className="flex items-center gap-1.5 text-[12px] text-[#6F6F6F] min-w-0">
@@ -393,11 +397,11 @@ export default function EmployeeDirectory({ employees, orgDivisions, currentUser
                       <td className="px-4 py-3 whitespace-nowrap text-[12px] font-normal text-[#6F6F6F]">{emp.division || '—'}</td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         {emp.department ? (
-                          <span className={`inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(emp.department)}`}>
+                          <span className={`inline-block text-[11px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(emp.department)}`}>
                             {emp.department}
                           </span>
                         ) : (
-                          <span className="text-[#A0A0A0]">—</span>
+                          <span className="text-[#767676]">—</span>
                         )}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
@@ -428,7 +432,6 @@ export default function EmployeeDirectory({ employees, orgDivisions, currentUser
             filterDivision={orgFilterDivision}
             onFilterDivisionChange={setOrgFilterDivision}
             editMode={false}
-            onEditModeChange={noop}
             onAddDivision={noop}
             onRenameDivision={noop}
             onDeleteDivision={noop}

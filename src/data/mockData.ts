@@ -1,4 +1,4 @@
-import { Employee, LinkedDoc, CredentialItem, Notification } from '../types';
+import { Employee, CredentialItem } from '../types';
 
 export const INITIAL_EMPLOYEES: Employee[] = [
   {
@@ -97,54 +97,6 @@ export const INITIAL_EMPLOYEES: Employee[] = [
   }
 ];
 
-export const INITIAL_DOCS: LinkedDoc[] = [
-  {
-    id: 'DOC01',
-    name: 'Google Sheets: แผนงบประมาณโครงการ Q3-2026',
-    kind: 'link',
-    parentId: null,
-    url: 'https://docs.google.com/spreadsheets/d/1XyZABC123/edit',
-    scope: 'ส่วนตัว',
-    version: 3,
-    lastUpdated: '2026-07-01 14:30',
-    updatedBy: 'อานนท์ เลิศวิทยา',
-    history: [
-      { version: 3, updatedBy: 'อานนท์ เลิศวิทยา', date: '2026-07-01 14:30', note: 'อัปเดตงบโฆษณาใน Marketing Plan' },
-      { version: 2, updatedBy: 'สมศักดิ์ รักดี', date: '2026-06-28 10:15', note: 'เพิ่มงบประมาณส่วน Server & Cloud Hosting' },
-      { version: 1, updatedBy: 'อานนท์ เลิศวิทยา', date: '2026-06-25 09:00', note: 'สร้างเอกสารโครงสร้างงบประมาณครั้งแรก' }
-    ]
-  },
-  {
-    id: 'DOC02',
-    name: 'Google Docs: เอกสารสเปกความปลอดภัยระเบียบข้อมูล',
-    kind: 'link',
-    parentId: null,
-    url: 'https://docs.google.com/document/d/1YzDEF456/edit',
-    scope: 'ส่วนตัว',
-    version: 1,
-    lastUpdated: '2026-06-30 11:20',
-    updatedBy: 'สมศักดิ์ รักดี',
-    history: [
-      { version: 1, updatedBy: 'สมศักดิ์ รักดี', date: '2026-06-30 11:20', note: 'เอกสารเริ่มต้นข้อตกลงความปลอดภัย' }
-    ]
-  },
-  {
-    id: 'DOC03',
-    name: 'Figma: ออกแบบ UI/UX หน้าหลักและระบบแดชบอร์ด',
-    kind: 'link',
-    parentId: null,
-    url: 'https://figma.com/file/1Z_UIUX_Design/edit',
-    scope: 'ส่วนตัว',
-    version: 5,
-    lastUpdated: '2026-07-02 16:45',
-    updatedBy: 'ณิชา วงศ์สุวรรณ',
-    history: [
-      { version: 5, updatedBy: 'ณิชา วงศ์สุวรรณ', date: '2026-07-02 16:45', note: 'ปรับปรุงสีโทนเข้มและ UI Gantt Chart' },
-      { version: 4, updatedBy: 'ณิชา วงศ์สุวรรณ', date: '2026-06-30 15:00', note: 'เพิ่มหน้าโปรไฟล์และการตั้งค่ารหัสผ่าน' }
-    ]
-  }
-];
-
 export const INITIAL_CREDENTIALS: CredentialItem[] = [
   {
     id: 'CRED01',
@@ -179,24 +131,5 @@ export const INITIAL_CREDENTIALS: CredentialItem[] = [
     notes: 'สำหรับเชื่อมต่อระบบออกสลิปเงินเดือนพนักงานปลายเดือน',
     createdAt: '2026-06-22 11:15',
     createdBy: 'อานนท์ เลิศวิทยา'
-  }
-];
-
-export const INITIAL_NOTIFICATIONS: Notification[] = [
-  {
-    id: 'NOTIF01',
-    title: 'งานที่ได้รับมอบหมายใหม่',
-    message: 'คุณได้รับมอบหมายงาน "วางแผนโฆษณาโซเชียลมีเดียสิงหาคม" ในฐานะผู้มีส่วนร่วม',
-    timestamp: '2026-07-02 10:00',
-    read: false,
-    type: 'info'
-  },
-  {
-    id: 'NOTIF02',
-    title: 'การส่งมอบงานต้องการอนุมัติ',
-    message: 'งาน "พัฒนาโมดูลเก็บรักษาข้อมูลความปลอดภัย" มีความคืบหน้า 40% และส่งมอบเพื่ออัปเดตสเตจแล้ว',
-    timestamp: '2026-07-02 15:30',
-    read: false,
-    type: 'warning'
   }
 ];

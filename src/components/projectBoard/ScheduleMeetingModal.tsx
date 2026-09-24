@@ -191,7 +191,7 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ type: 'spring', stiffness: 300, damping: 24, mass: 0.9 }}
-            className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-xl mx-4 max-h-[85vh] overflow-hidden flex flex-col"
+            role="dialog" aria-modal="true" aria-label="นัดประชุม" className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-xl mx-4 max-h-[85vh] overflow-hidden flex flex-col"
           >
             <div className="flex justify-between items-center px-5 pt-5 pb-2 shrink-0">
               <div>
@@ -259,7 +259,7 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
                   </label>
                   <div className="grid grid-cols-3 gap-3">
                     <div className="col-span-1">
-                      <label className="block text-[#A0A0A0] text-[10px] mb-1">วันที่</label>
+                      <label className="block text-[#767676] text-[11px] mb-1">วันที่</label>
                       <ThaiDatePicker
                         value={meetingDate}
                         onChange={setMeetingDate}
@@ -269,7 +269,7 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
                       />
                     </div>
                     <div>
-                      <label className="block text-[#A0A0A0] text-[10px] mb-1">เวลาเริ่ม</label>
+                      <label className="block text-[#767676] text-[11px] mb-1">เวลาเริ่ม</label>
                       <input
                         type="time"
                         value={meetingStartTime}
@@ -278,7 +278,7 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
                       />
                     </div>
                     <div>
-                      <label className="block text-[#A0A0A0] text-[10px] mb-1">เวลาสิ้นสุด</label>
+                      <label className="block text-[#767676] text-[11px] mb-1">เวลาสิ้นสุด</label>
                       <input
                         type="time"
                         value={meetingEndTime}

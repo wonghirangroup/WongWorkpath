@@ -140,7 +140,7 @@ export default function ProjectsGanttChart({ projects, projectTasks, onSelectPro
 
   if (rows.length === 0) {
     return (
-      <div className="flex-1 min-h-0 flex items-center justify-center gap-2 text-sm text-[#A0A0A0]">
+      <div className="flex-1 min-h-0 flex items-center justify-center gap-2 text-sm text-[#767676]">
         <CalendarRange size={16} />
         ยังไม่มีโครงการในระบบ
       </div>
@@ -172,12 +172,12 @@ export default function ProjectsGanttChart({ projects, projectTasks, onSelectPro
       <div className="flex-1 min-h-0 overflow-auto">
         <div className="min-w-225">
           <div className="flex border-b border-[#F4F4F4] sticky top-0 bg-white z-10">
-            <div className="w-45 shrink-0 px-4 py-2.5 text-xs font-medium text-[#A0A0A0] border-r border-[#F4F4F4]">
+            <div className="w-45 shrink-0 px-4 py-2.5 text-xs font-medium text-[#767676] border-r border-[#F4F4F4]">
               โครงการ
             </div>
             <div className="flex-1 grid grid-cols-12">
               {THAI_MONTHS_SHORT.map((label, idx) => (
-                <div key={idx} className="text-center py-2.5 text-[11px] text-[#A0A0A0] border-r border-[#F9F9F9] last:border-r-0">
+                <div key={idx} className="text-center py-2.5 text-[11px] text-[#767676] border-r border-[#F9F9F9] last:border-r-0">
                   {label}
                 </div>
               ))}
@@ -216,7 +216,7 @@ export default function ProjectsGanttChart({ projects, projectTasks, onSelectPro
                   >
                     <div className="w-45 shrink-0 px-4 py-2.5 border-r border-[#F4F4F4] min-w-0">
                       <p className="text-sm font-medium text-[#272220] truncate">{p.title}</p>
-                      <p className="text-[11px] text-[#A0A0A0] truncate">{p.code} · {STATUS_LABEL[p.status]}</p>
+                      <p className="text-[11px] text-[#767676] truncate">{p.code} · {STATUS_LABEL[p.status]}</p>
                     </div>
                     <div
                       ref={(el) => {
@@ -265,7 +265,7 @@ export default function ProjectsGanttChart({ projects, projectTasks, onSelectPro
                         )}
                         {!hasDates && (
                           <div className="flex items-center h-3 self-center" style={{ gridRow: 1, gridColumn: '1 / 4' }}>
-                            <span className="text-[10px] text-[#A0A0A0] italic ml-1">ยังไม่กำหนดวันที่</span>
+                            <span className="text-[11px] text-[#767676] italic ml-1">ยังไม่กำหนดวันที่</span>
                           </div>
                         )}
                         {months.map((monthKey, idx) => {
@@ -276,7 +276,7 @@ export default function ProjectsGanttChart({ projects, projectTasks, onSelectPro
                               {monthTasks.slice(0, 2).map((t) => (
                                 <Tooltip key={t.id} content={`${t.title} · กำหนดส่ง ${t.dueDate}`}>
                                   <div
-                                    className="text-[9px] px-1 py-0.5 rounded truncate font-medium"
+                                    className="text-[11px] px-1 py-0.5 rounded truncate font-medium"
                                     style={{ backgroundColor: `${TASK_STATUS_COLOR[t.status]}1A`, color: TASK_STATUS_COLOR[t.status] }}
                                   >
                                     {new Date(`${t.dueDateISO}T00:00:00`).getDate()} — {t.title}
@@ -284,7 +284,7 @@ export default function ProjectsGanttChart({ projects, projectTasks, onSelectPro
                                 </Tooltip>
                               ))}
                               {monthTasks.length > 2 && (
-                                <div className="text-[8px] text-center text-[#A0A0A0] font-bold">+{monthTasks.length - 2} งาน</div>
+                                <div className="text-[11px] text-center text-[#767676] font-bold">+{monthTasks.length - 2} งาน</div>
                               )}
                             </div>
                           );

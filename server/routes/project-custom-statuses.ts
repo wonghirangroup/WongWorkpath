@@ -40,7 +40,7 @@ projectCustomStatusesRouter.post('/', async (req, res) => {
     const now = nowBangkokDateTime();
     await pool.query(
       'INSERT INTO project_custom_status (id, label, created_by, created_at) VALUES (?, ?, ?, ?)',
-      [id, label, p.createdBy || null, now]
+      [id, label, req.actorId, now]
     );
     res.status(201).json({ id, label });
   } catch (err) {
@@ -49,12 +49,16 @@ projectCustomStatusesRouter.post('/', async (req, res) => {
   }
 });
 
-// Deletes only the status definition — a project already holding this status keeps the raw id
-// as its `status` value (statusMeta.ts's fallback still renders it a sensible color/icon, just
-// without the custom label anymore) rather than trying to cascade-reassign every project to
-// something else.
+// A status that projects are still using can't be deleted — they'd be left holding a raw id like
+// "cs_mgx3k2a1" that renders as nothing meaningful. The user has to move those projects to another
+// status first.
 projectCustomStatusesRouter.delete('/:id', async (req, res) => {
   try {
+    const [[usage]] = await pool.query<RowDataPacket[]>('SELECT COUNT(*) AS cnt FROM project WHERE status = ?', [req.params.id]);
+    const inUse = Number(usage?.cnt ?? 0);
+    if (inUse > 0) {
+      return res.status(409).json({ message: `ลบสถานะนี้ไม่ได้ เพราะยังมี ${inUse} โครงการที่ใช้สถานะนี้อยู่ กรุณาเปลี่ยนสถานะของโครงการเหล่านั้นก่อน` });
+    }
     await pool.query('DELETE FROM project_custom_status WHERE id = ?', [req.params.id]);
     res.status(204).send();
   } catch (err) {

@@ -54,7 +54,7 @@ projectCustomTypesRouter.post('/', async (req, res) => {
 
     await pool.query(
       'INSERT INTO project_custom_type (id, label, created_by, created_at) VALUES (?, ?, ?, ?)',
-      [id, label, p.createdBy || null, nowBangkokDateTime()]
+      [id, label, req.actorId, nowBangkokDateTime()]
     );
     res.status(201).json({ id, label });
   } catch (err) {

@@ -149,7 +149,7 @@ export default function ThaiDatePicker({ value, onChange, min, max, placeholder 
           compact ? 'h-10 px-3' : 'p-2.5'
         } ${hasError ? 'border-red-400' : 'border-[#E5E5E5]'}`}
       >
-        <span className={value ? 'text-[#272220]' : 'text-[#B0B0B0]'}>{value ? formatThaiDateShort(value) : placeholder}</span>
+        <span className={value ? 'text-[#272220]' : 'text-[#767676]'}>{value ? formatThaiDateShort(value) : placeholder}</span>
         <span className="flex items-center gap-1 shrink-0">
           {value && (
             <span
@@ -162,7 +162,7 @@ export default function ThaiDatePicker({ value, onChange, min, max, placeholder 
               <X size={13} />
             </span>
           )}
-          <CalendarIcon size={14} className="text-[#A0A0A0]" />
+          <CalendarIcon size={14} className="text-[#767676]" />
         </span>
       </button>
 
@@ -200,7 +200,7 @@ export default function ThaiDatePicker({ value, onChange, min, max, placeholder 
 
               <div className="grid grid-cols-7 mb-1">
                 {THAI_WEEKDAYS.map((w) => (
-                  <div key={w} className="text-center text-[11px] font-semibold text-[#A0A0A0] py-1">{w}</div>
+                  <div key={w} className="text-center text-[11px] font-semibold text-[#767676] py-1">{w}</div>
                 ))}
               </div>
 

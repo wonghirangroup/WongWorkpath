@@ -214,7 +214,7 @@ export default function EmployeeProfileModal({
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.97 }}
           transition={{ duration: 0.2 }}
-          className="relative bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto"
+          role="dialog" aria-modal="true" aria-label="โปรไฟล์พนักงาน" className="relative bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto"
         >
           <form onSubmit={handleSave}>
             <div className="p-6 space-y-6">
@@ -301,7 +301,7 @@ export default function EmployeeProfileModal({
                         className={`${fieldInputClass} ${targetIsAdminLike ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}`}
                       />
                       {targetIsAdminLike && (
-                        <p className="text-[10px] text-slate-400 mt-1">ไม่สามารถเปลี่ยน Username ของบัญชี Admin/Super Admin ได้</p>
+                        <p className="text-[11px] text-slate-400 mt-1">ไม่สามารถเปลี่ยน Username ของบัญชี Admin/Super Admin ได้</p>
                       )}
                     </InfoRow>
                     <InfoRow label="เบอร์โทร" value={phone} editing={mode === 'edit'}>
@@ -418,7 +418,7 @@ export default function EmployeeProfileModal({
                   <div className="space-y-2 max-h-56 overflow-y-auto">
                     {visibleLogs.map((log) => (
                       <div key={log.id} className="flex items-start gap-2 text-xs">
-                        <span className="inline-block text-[10px] font-semibold text-[#FF6537] bg-[#FFF1EC] px-1.5 py-0.5 rounded-full shrink-0 mt-0.5 whitespace-nowrap">{log.action}</span>
+                        <span className="inline-block text-[11px] font-semibold text-[#FF6537] bg-[#FFF1EC] px-1.5 py-0.5 rounded-full shrink-0 mt-0.5 whitespace-nowrap">{log.action}</span>
                         <span className="flex-1 min-w-0 text-[#6F6F6F]">{log.details}</span>
                         <span className="shrink-0 text-slate-400 whitespace-nowrap">{formatThaiDateTimeShort(log.timestamp)}</span>
                       </div>

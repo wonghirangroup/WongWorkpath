@@ -85,6 +85,17 @@ export default function Tooltip({ children, content, placement = 'top' }: Toolti
     return () => window.removeEventListener('scroll', hide, true);
   }, [isVisible]);
 
+  // An icon-only button wrapped in a text tooltip has no name a screen reader can announce — the
+  // tooltip's own text is exactly that name, so lend it to the trigger (only when the trigger is a
+  // button/link with no text, aria-label or aria-labelledby of its own).
+  useEffect(() => {
+    const trigger = triggerRef.current?.firstElementChild;
+    if (!trigger || typeof content !== 'string' || !content.trim()) return;
+    const isControl = trigger.matches('button, a[href], [role="button"]');
+    const hasName = trigger.hasAttribute('aria-label') || trigger.hasAttribute('aria-labelledby') || (trigger.textContent ?? '').trim() !== '';
+    if (isControl && !hasName) trigger.setAttribute('aria-label', content);
+  });
+
   if (!hasContent) return <>{children}</>;
 
   return (

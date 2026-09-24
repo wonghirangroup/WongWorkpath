@@ -33,7 +33,7 @@ function MiniProgressRing({ progress, color }: { progress: number; color: string
         />
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
-        <span className="text-[9px] font-bold text-[#272220]">{clamped}%</span>
+        <span className="text-[11px] font-bold text-[#272220]">{clamped}%</span>
       </div>
     </div>
   );
@@ -62,12 +62,12 @@ export default function ProjectSummaryTable({ projects, employees, onSelectProje
       </div>
 
       {filtered.length === 0 ? (
-        <div className="flex-1 flex items-center justify-center text-xs text-[#A0A0A0] py-6">ไม่พบโครงการที่ตรงกับตัวกรอง</div>
+        <div className="flex-1 flex items-center justify-center text-xs text-[#767676] py-6">ไม่พบโครงการที่ตรงกับตัวกรอง</div>
       ) : (
         <div className="flex-1 overflow-auto max-h-90">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-[11px] text-[#A0A0A0] border-b border-slate-100">
+              <tr className="text-left text-[11px] text-[#767676] border-b border-slate-100">
                 <th className="pb-2 font-semibold">ชื่อโครงการ</th>
                 <th className="pb-2 font-semibold">ผู้รับผิดชอบหลัก</th>
                 <th className="pb-2 font-semibold">วันครบกำหนด</th>
@@ -98,13 +98,13 @@ export default function ProjectSummaryTable({ projects, employees, onSelectProje
                     <td className="py-2.5 pr-3 whitespace-nowrap">
                       <p className="text-xs text-[#272220]">{p.endDate ?? 'ไม่ระบุ'}</p>
                       {p.daysUntilDue !== undefined && (
-                        <p className={`text-[10px] ${overdue ? 'text-[#FF2A04] font-semibold' : 'text-[#A0A0A0]'}`}>
+                        <p className={`text-[11px] ${overdue ? 'text-[#FF2A04] font-semibold' : 'text-[#767676]'}`}>
                           {overdue ? 'เลยกำหนดแล้ว' : `อีก ${p.daysUntilDue} วัน`}
                         </p>
                       )}
                     </td>
                     <td className="py-2.5 pr-3 whitespace-nowrap text-xs text-[#272220]">
-                      {p.budget !== null ? formatBaht(p.budget) : <span className="text-[#A0A0A0]">ยังไม่มี</span>}
+                      {p.budget !== null ? formatBaht(p.budget) : <span className="text-[#767676]">ยังไม่มี</span>}
                     </td>
                     <td className="py-2.5 pr-3 whitespace-nowrap">
                       <span

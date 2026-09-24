@@ -134,7 +134,7 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
         >
           <Bell size={24} className="text-[#272220]" />
           {unreadCount > 0 && (
-            <span className="absolute -top-1 -right-1 min-w-4.5 h-4.5 px-1 bg-[#F50C0C] text-[10px] font-bold text-white rounded-full flex items-center justify-center ring-2 ring-[#F6F6F6]">
+            <span className="absolute -top-1 -right-1 min-w-4.5 h-4.5 px-1 bg-[#F50C0C] text-[11px] font-bold text-white rounded-full flex items-center justify-center ring-2 ring-[#F6F6F6]">
               {unreadCount > 9 ? '9+' : unreadCount}
             </span>
           )}
@@ -162,7 +162,7 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
           )}
           <div className="hidden sm:block text-sm text-left">
             <p className="font-bold text-[#272220] text-[18px] whitespace-nowrap">{displayName}</p>
-            <p className="text-[13px] text-[#A0A0A0] whitespace-nowrap">{displayRole}</p>
+            <p className="text-[13px] text-[#767676] whitespace-nowrap">{displayRole}</p>
           </div>
           <ChevronDown
             size={20}
@@ -177,11 +177,11 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
               <p className="font-semibold text-slate-800 truncate">{displayName}</p>
               <p className="text-xs text-slate-400 truncate">{displayRoleFull}</p>
               <div className="flex items-center gap-1.5 mt-1">
-                <span className={`inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(currentUser.department)}`}>
+                <span className={`inline-block text-[11px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(currentUser.department)}`}>
                   {currentUser.department}
                 </span>
                 {currentUser.accountType !== 'employee' && (
-                  <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase px-2 py-0.5 rounded-full leading-none text-[#FF6537] bg-black border border-[#FF6537]">
+                  <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase px-2 py-0.5 rounded-full leading-none text-[#FF6537] bg-black border border-[#FF6537]">
                     <Crown size={9} className="fill-current" />
                     {ACCOUNT_TYPE_LABELS[currentUser.accountType]}
                   </span>
@@ -226,7 +226,7 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
                   <div className="flex items-center gap-2">
                     <h4 className="text-sm font-bold text-[#272220]">การแจ้งเตือน</h4>
                     {unreadCount > 0 && (
-                      <span className="text-[10px] font-semibold text-[#E04D1D] bg-[#FFF1EC] px-2 py-0.5 rounded-full">
+                      <span className="text-[11px] font-semibold text-[#E04D1D] bg-[#FFF1EC] px-2 py-0.5 rounded-full">
                         ใหม่ {unreadCount}
                       </span>
                     )}
@@ -235,7 +235,7 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
                     type="button"
                     onClick={handleMarkAllNotificationsRead}
                     disabled={unreadCount === 0}
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-[#E04D1D] hover:underline cursor-pointer disabled:text-[#A0A0A0] disabled:no-underline disabled:cursor-default"
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-[#E04D1D] hover:underline cursor-pointer disabled:text-[#767676] disabled:no-underline disabled:cursor-default"
                   >
                     <CheckCheck size={14} />
                     อ่านทั้งหมดแล้ว

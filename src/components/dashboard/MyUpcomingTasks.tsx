@@ -26,7 +26,7 @@ export default function MyUpcomingTasks({ projectTasks, projectById, currentUser
       </div>
 
       {mine.length === 0 ? (
-        <div className="flex-1 flex items-center justify-center text-xs text-[#A0A0A0] py-6">ไม่มีงานที่ค้างอยู่ในตอนนี้</div>
+        <div className="flex-1 flex items-center justify-center text-xs text-[#767676] py-6">ไม่มีงานที่ค้างอยู่ในตอนนี้</div>
       ) : (
         <div className="space-y-1 flex-1 overflow-y-auto max-h-90">
           {mine.map((t) => {
@@ -43,17 +43,17 @@ export default function MyUpcomingTasks({ projectTasks, projectById, currentUser
                 <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-[#272220] truncate">{t.title}</p>
-                  <p className="text-[11px] text-[#A0A0A0] truncate">{project?.title ?? 'ไม่ทราบโครงการ'}</p>
+                  <p className="text-[11px] text-[#767676] truncate">{project?.title ?? 'ไม่ทราบโครงการ'}</p>
                 </div>
                 <div className="text-right shrink-0 flex flex-col items-end gap-1">
                   <span
-                    className="inline-block text-[10px] font-medium px-2 py-0.5 rounded-full"
+                    className="inline-block text-[11px] font-medium px-2 py-0.5 rounded-full"
                     style={{ backgroundColor: `${color}1A`, color }}
                   >
                     {TASK_STATUS_LABEL[t.status]}
                   </span>
                   {t.daysUntilDue !== undefined && (
-                    <span className={`text-[10px] ${overdue ? 'text-[#FF2A04] font-semibold' : 'text-[#A0A0A0]'}`}>
+                    <span className={`text-[11px] ${overdue ? 'text-[#FF2A04] font-semibold' : 'text-[#767676]'}`}>
                       {overdue ? 'เลยกำหนดแล้ว' : `อีก ${t.daysUntilDue} วัน`}
                     </span>
                   )}

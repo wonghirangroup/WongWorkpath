@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import type { RowDataPacket } from 'mysql2';
-import { pool } from '../db.ts';
-import { nowBangkokDateTime, formatThaiDateShort } from '../lib/datetime.ts';
+import { pool, withTransaction } from '../db.ts';
+import { nowBangkokDateTime, formatThaiDateShort, daysUntilBangkokDate } from '../lib/datetime.ts';
 import { customStatusIds } from './project-custom-statuses.ts';
 import { customTypeIds } from './project-custom-types.ts';
 import { isOwner, isExecutiveActor, resolveValidOwnerIds } from '../lib/ownership.ts';
@@ -108,16 +108,6 @@ function sanitizeMemberDuties(raw: unknown): Record<string, string> {
   return result;
 }
 
-// daysUntilDue is deliberately never stored — it's "days from right now", so it has to be
-// computed fresh on every read or it'd go stale the moment a day passes.
-function daysUntilDue(endDate: string | null): number | undefined {
-  if (!endDate) return undefined;
-  const end = new Date(`${endDate}T00:00:00`);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return Math.round((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-}
-
 // camelCase + Thai-formatted dates, matching the ProjectRow shape the client already renders
 // (see projectBoard/types.ts) so ProjectTable/ProjectCard/ProjectDetail need no changes at all.
 // startDateISO/endDateISO are the raw yyyy-mm-dd values alongside — the display fields are
@@ -143,7 +133,8 @@ function toProjectRow(r: ProjectRowDb) {
     startDateISO: r.start_date,
     endDateISO: r.end_date,
     createdDate: formatThaiDateShort(r.created_at ? r.created_at.slice(0, 10) : null),
-    daysUntilDue: daysUntilDue(r.end_date),
+    // Never stored — it's "days from right now", so it's computed fresh on every read.
+    daysUntilDue: daysUntilBangkokDate(r.end_date),
     status: r.status,
     createdByEmployeeId: r.created_by ?? undefined,
     parentProjectId: r.parent_project_id ?? undefined,
@@ -183,15 +174,15 @@ projectsRouter.post('/', async (req, res) => {
   if (!p.title || typeof p.title !== 'string' || !p.title.trim()) {
     return res.status(400).json({ message: 'กรุณาระบุชื่อโครงการ' });
   }
-  const status = (await isValidProjectStatus(p.status)) ? p.status : 'draft';
   const priority = PRIORITIES.includes(p.priority) ? p.priority : null;
-  const type = (await isValidProjectType(p.type)) ? p.type : null;
   const abbreviation = typeof p.abbreviation === 'string' ? p.abbreviation.trim().toUpperCase() : '';
   const ownerEmployeeIds = sanitizeIds(p.ownerEmployeeIds);
   const memberEmployeeIds = sanitizeIds(p.memberEmployeeIds);
   const memberDuties = sanitizeMemberDuties(p.memberDuties);
 
   try {
+    const status = (await isValidProjectStatus(p.status)) ? p.status : 'draft';
+    const type = (await isValidProjectType(p.type)) ? p.type : null;
     const code = await generateProjectCode(abbreviation, type);
     // Normally server-generated, but CreateProjectModal's own "create matching Drive folder"
     // checkbox needs the project's real id before the project itself exists (so the new folder's
@@ -210,7 +201,7 @@ projectsRouter.post('/', async (req, res) => {
         id, code, p.title.trim(), p.description?.trim() || null, p.department || null, type, abbreviation || null, priority,
         p.budget ?? null, ownerEmployeeIds.length ? JSON.stringify(ownerEmployeeIds) : null, memberEmployeeIds.length ? JSON.stringify(memberEmployeeIds) : null,
         Object.keys(memberDuties).length ? JSON.stringify(memberDuties) : null,
-        p.docFolderId || null, p.progress ?? 0, p.startDate || null, p.endDate || null, status, p.createdBy || null, parentProjectId, now, now,
+        p.docFolderId || null, p.progress ?? 0, p.startDate || null, p.endDate || null, status, req.actorId, parentProjectId, now, now,
       ]
     );
 
@@ -300,18 +291,18 @@ export async function applyProjectFields(id: string, p: any) {
 projectsRouter.put('/:id', async (req, res) => {
   const p = req.body ?? {};
 
-  // Once a project has ≥1 owner, only one of them may edit it directly — anyone else must file a
-  // change_request instead (see change-requests.ts). An unowned project stays open to everyone,
-  // same as before this feature existed.
-  const [[existing]] = await pool.query<RowDataPacket[]>('SELECT owner_employee_ids FROM project WHERE id = ?', [req.params.id]);
-  if (!existing) return res.status(404).json({ message: 'ไม่พบโครงการนี้' });
-  const currentOwnerIds: string[] = existing.owner_employee_ids ? JSON.parse(existing.owner_employee_ids) : [];
-  const validOwnerIds = await resolveValidOwnerIds(currentOwnerIds);
-  if (!isOwner(validOwnerIds, p.actorEmployeeId) && !(await isExecutiveActor(p.actorEmployeeId))) {
-    return res.status(409).json({ message: 'ต้องขออนุมัติจากผู้รับผิดชอบหลักก่อนจึงจะแก้ไขได้', requiresApproval: true });
-  }
-
   try {
+    // Once a project has ≥1 owner, only one of them may edit it directly — anyone else must file a
+    // change_request instead (see change-requests.ts). An unowned project stays open to everyone,
+    // same as before this feature existed.
+    const [[existing]] = await pool.query<RowDataPacket[]>('SELECT owner_employee_ids FROM project WHERE id = ?', [req.params.id]);
+    if (!existing) return res.status(404).json({ message: 'ไม่พบโครงการนี้' });
+    const currentOwnerIds: string[] = existing.owner_employee_ids ? JSON.parse(existing.owner_employee_ids) : [];
+    const validOwnerIds = await resolveValidOwnerIds(currentOwnerIds);
+    if (!isOwner(validOwnerIds, p.actorEmployeeId) && !(await isExecutiveActor(p.actorEmployeeId))) {
+      return res.status(409).json({ message: 'ต้องขออนุมัติจากผู้รับผิดชอบหลักก่อนจึงจะแก้ไขได้', requiresApproval: true });
+    }
+
     const row = await applyProjectFields(req.params.id, p);
     if (!row) return res.status(400).json({ message: 'ไม่มีข้อมูลที่จะอัปเดต' });
     // Returns the freshly-formatted row (not just {id}) so the client can replace its local copy
@@ -324,6 +315,27 @@ projectsRouter.put('/:id', async (req, res) => {
   }
 });
 
+// Deleting a project takes its tasks with it (FK cascade), and now also everything else that only
+// makes sense inside it: its Drive files/folders and any pending change requests. Vault secrets
+// filed under the project are never destroyed — they move back to their creator's personal vault,
+// so nobody loses a password just because a project ended.
+export async function deleteProjectCascade(projectId: string): Promise<void> {
+  await withTransaction(async (conn) => {
+    await conn.query(
+      `DELETE FROM change_request
+       WHERE (entity_type = 'project' AND entity_id = ?)
+          OR (entity_type = 'project_task' AND entity_id IN (SELECT id FROM project_task WHERE project_id = ?))`,
+      [projectId, projectId]
+    );
+    await conn.query('DELETE FROM document WHERE project_id = ?', [projectId]);
+    await conn.query(
+      `UPDATE credential SET scope = 'ส่วนตัว', project_id = NULL, team = NULL, updated_at = ? WHERE scope = 'โครงการ' AND project_id = ?`,
+      [nowBangkokDateTime(), projectId]
+    );
+    await conn.query('DELETE FROM project WHERE id = ?', [projectId]);
+  });
+}
+
 projectsRouter.delete('/:id', async (req, res) => {
   try {
     const [[existing]] = await pool.query<RowDataPacket[]>('SELECT owner_employee_ids FROM project WHERE id = ?', [req.params.id]);
@@ -335,7 +347,7 @@ projectsRouter.delete('/:id', async (req, res) => {
       return res.status(409).json({ message: 'ต้องขออนุมัติจากผู้รับผิดชอบหลักก่อนจึงจะลบได้', requiresApproval: true });
     }
 
-    await pool.query('DELETE FROM project WHERE id = ?', [req.params.id]);
+    await deleteProjectCascade(req.params.id);
     res.status(204).end();
   } catch (err) {
     console.error('DELETE /api/projects/:id failed:', err);

@@ -15,10 +15,62 @@ export class ApiError extends Error {
   }
 }
 
+// --- Session token -------------------------------------------------------------------------
+// /api/auth/login hands back a signed token; every other endpoint requires it as a Bearer header.
+// It lives in localStorage (the API is on a different site from the page, so a cookie wouldn't be
+// sent reliably) and is dropped the moment the server says it's no longer valid.
+const AUTH_TOKEN_KEY = 'unityspace_auth_token';
+
+export function getAuthToken(): string | null {
+  try {
+    return localStorage.getItem(AUTH_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setAuthToken(token: string): void {
+  try {
+    localStorage.setItem(AUTH_TOKEN_KEY, token);
+  } catch {
+    /* storage blocked — the session simply won't survive a reload */
+  }
+}
+
+export function clearAuthToken(): void {
+  try {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+  } catch {
+    /* nothing to clear */
+  }
+}
+
+// AppDataContext registers this so an expired/revoked session drops the user back to the login page
+// from anywhere, instead of every screen showing its own confusing "failed to load" error.
+let onSessionExpired: (() => void) | null = null;
+export function setSessionExpiredHandler(handler: (() => void) | null): void {
+  onSessionExpired = handler;
+}
+
+// Drop-in replacement for fetch() that attaches the session token and reacts to a 401.
+async function authFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const token = getAuthToken();
+  const headers = new Headers(init.headers);
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const res = await fetch(input, { ...init, headers });
+  if (res.status === 401 && token) {
+    clearAuthToken();
+    onSessionExpired?.();
+  }
+  return res;
+}
+
 export interface LoginResult {
   id: number;
   username: string;
-  employeeId: string | null;
+  employeeId: string;
+  token: string;
+  employee: Employee;
 }
 
 export async function loginRequest(username: string, password: string): Promise<LoginResult> {
@@ -37,10 +89,30 @@ export async function loginRequest(username: string, password: string): Promise<
   if (!res.ok) {
     throw new ApiError(data.message ?? 'เข้าสู่ระบบไม่สำเร็จ', res.status);
   }
+  // A server that doesn't hand back a token + employee is an older build still mid-deploy — say so
+  // instead of storing "undefined" and crashing on the missing employee.
+  if (typeof data.token !== 'string' || !data.employee) {
+    throw new ApiError('ระบบกำลังอัปเดต กรุณารอสักครู่แล้วลองเข้าสู่ระบบอีกครั้ง', 503);
+  }
+  setAuthToken(data.token);
   return data as LoginResult;
 }
 
-async function postAuthAction(path: string, body: Record<string, string>, fallbackMessage: string): Promise<string> {
+// Validates the stored token and returns the employee it belongs to — used to restore a session
+// after a page reload. Throws ApiError with status 401 when the token is missing/expired.
+export async function fetchCurrentUser(): Promise<Employee> {
+  let res: Response;
+  try {
+    res = await authFetch(`${API_BASE_URL}/api/auth/me`);
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(data.message ?? 'เข้าสู่ระบบไม่สำเร็จ', res.status);
+  return data as Employee;
+}
+
+async function postAuthAction<T extends { message: string }>(path: string, body: Record<string, string>, fallbackMessage: string): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${API_BASE_URL}/api/auth/${path}`, {
@@ -56,23 +128,25 @@ async function postAuthAction(path: string, body: Record<string, string>, fallba
   if (!res.ok) {
     throw new ApiError(data.message ?? fallbackMessage, res.status);
   }
-  return data.message as string;
+  return data as T;
 }
 
-export function requestPasswordResetOtp(email: string): Promise<string> {
-  return postAuthAction('forgot-password', { email }, 'ส่งรหัส OTP ไม่สำเร็จ');
+export async function requestPasswordResetOtp(email: string): Promise<string> {
+  return (await postAuthAction('forgot-password', { email }, 'ส่งรหัส OTP ไม่สำเร็จ')).message;
 }
 
-export function verifyPasswordResetOtp(email: string, otp: string): Promise<string> {
-  return postAuthAction('verify-otp', { email, otp }, 'ยืนยันรหัส OTP ไม่สำเร็จ');
+// Returns the resetToken to hand to resetPasswordWithOtp — proof that this browser entered the OTP.
+export async function verifyPasswordResetOtp(email: string, otp: string): Promise<string> {
+  const data = await postAuthAction<{ message: string; resetToken: string }>('verify-otp', { email, otp }, 'ยืนยันรหัส OTP ไม่สำเร็จ');
+  return data.resetToken;
 }
 
-export function resetPasswordWithOtp(email: string, newPassword: string): Promise<string> {
-  return postAuthAction('reset-password', { email, newPassword }, 'เปลี่ยนรหัสผ่านไม่สำเร็จ');
+export async function resetPasswordWithOtp(email: string, newPassword: string, resetToken: string): Promise<string> {
+  return (await postAuthAction('reset-password', { email, newPassword, resetToken }, 'เปลี่ยนรหัสผ่านไม่สำเร็จ')).message;
 }
 
 export async function fetchEmployees(): Promise<Employee[]> {
-  const res = await fetch(`${API_BASE_URL}/api/employees`);
+  const res = await authFetch(`${API_BASE_URL}/api/employees`);
   if (!res.ok) throw new Error(`Failed to fetch employees: ${res.status}`);
   return res.json();
 }
@@ -80,7 +154,7 @@ export async function fetchEmployees(): Promise<Employee[]> {
 export async function createEmployee(employee: Employee & { password: string }): Promise<Employee> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}/api/employees`, {
+    res = await authFetch(`${API_BASE_URL}/api/employees`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(employee),
@@ -96,9 +170,8 @@ export async function createEmployee(employee: Employee & { password: string }):
   return data as Employee;
 }
 
-// actorEmployeeId lets the server's "admin can't touch admin-like accounts" gate tell a
-// self-edit/superadmin/executive apart from a plain admin overreaching — same trust level as
-// every other actorEmployeeId check in this app (no real session/auth layer to verify it against).
+// The server takes the acting employee from the session token, not from actorEmployeeId (it
+// overwrites whatever is sent) — the argument is kept only so existing call sites stay unchanged.
 export async function updateEmployeeRemote(
   id: string,
   updates: Partial<Pick<Employee, 'name' | 'nickname' | 'email' | 'role' | 'avatar' | 'department' | 'division' | 'username' | 'accountType' | 'restrictedMenuIds' | 'phone' | 'address' | 'mutedNotificationCategories'>> & { password?: string },
@@ -106,7 +179,7 @@ export async function updateEmployeeRemote(
 ): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}/api/employees/${encodeURIComponent(id)}`, {
+    res = await authFetch(`${API_BASE_URL}/api/employees/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...updates, actorEmployeeId }),
@@ -126,7 +199,7 @@ export async function updateEmployeeRemote(
 export async function changeSelfPassword(id: string, password: string): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}/api/employees/${encodeURIComponent(id)}/password`, {
+    res = await authFetch(`${API_BASE_URL}/api/employees/${encodeURIComponent(id)}/password`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ actorEmployeeId: id, password }),
@@ -143,7 +216,7 @@ export async function changeSelfPassword(id: string, password: string): Promise<
 export async function deleteEmployeeRemote(id: string, actorEmployeeId?: string): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}/api/employees/${encodeURIComponent(id)}?actorEmployeeId=${encodeURIComponent(actorEmployeeId ?? '')}`, { method: 'DELETE' });
+    res = await authFetch(`${API_BASE_URL}/api/employees/${encodeURIComponent(id)}?actorEmployeeId=${encodeURIComponent(actorEmployeeId ?? '')}`, { method: 'DELETE' });
   } catch {
     throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
   }
@@ -157,13 +230,13 @@ export async function deleteEmployeeRemote(id: string, actorEmployeeId?: string)
 // team by department, project by project membership — ผู้บริหาร sees every team/project row) —
 // mirrors fetchDocuments' own actor-scoped shape. No actorEmployeeId means nobody's logged in yet.
 export async function fetchCredentials(actorEmployeeId: string): Promise<CredentialItem[]> {
-  const res = await fetch(`${API_BASE_URL}/api/credentials?actorEmployeeId=${encodeURIComponent(actorEmployeeId)}`);
+  const res = await authFetch(`${API_BASE_URL}/api/credentials?actorEmployeeId=${encodeURIComponent(actorEmployeeId)}`);
   if (!res.ok) throw new Error(`Failed to fetch credentials: ${res.status}`);
   return res.json();
 }
 
 export async function createCredential(item: CredentialItem): Promise<void> {
-  const res = await fetch(`${API_BASE_URL}/api/credentials`, {
+  const res = await authFetch(`${API_BASE_URL}/api/credentials`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(item),
@@ -172,7 +245,7 @@ export async function createCredential(item: CredentialItem): Promise<void> {
 }
 
 export async function updateCredentialRemote(id: string, item: CredentialItem): Promise<void> {
-  const res = await fetch(`${API_BASE_URL}/api/credentials/${encodeURIComponent(id)}`, {
+  const res = await authFetch(`${API_BASE_URL}/api/credentials/${encodeURIComponent(id)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(item),
@@ -181,12 +254,12 @@ export async function updateCredentialRemote(id: string, item: CredentialItem): 
 }
 
 export async function deleteCredentialRemote(id: string): Promise<void> {
-  const res = await fetch(`${API_BASE_URL}/api/credentials/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  const res = await authFetch(`${API_BASE_URL}/api/credentials/${encodeURIComponent(id)}`, { method: 'DELETE' });
   if (!res.ok) throw new Error(`Failed to delete credential: ${res.status}`);
 }
 
 export async function fetchProjects(): Promise<ProjectRow[]> {
-  const res = await fetch(`${API_BASE_URL}/api/projects`);
+  const res = await authFetch(`${API_BASE_URL}/api/projects`);
   if (!res.ok) throw new Error(`Failed to fetch projects: ${res.status}`);
   return res.json();
 }
@@ -198,7 +271,7 @@ export type CreateProjectPayload = Partial<
 export async function createProject(payload: CreateProjectPayload): Promise<ProjectRow> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}/api/projects`, {
+    res = await authFetch(`${API_BASE_URL}/api/projects`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -220,7 +293,7 @@ export async function createProject(payload: CreateProjectPayload): Promise<Proj
 export async function updateProjectRemote(id: string, updates: Partial<ProjectRow>, actorEmployeeId: string): Promise<ProjectRow> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}/api/projects/${encodeURIComponent(id)}`, {
+    res = await authFetch(`${API_BASE_URL}/api/projects/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...updates, actorEmployeeId }),
@@ -239,7 +312,7 @@ export async function updateProjectRemote(id: string, updates: Partial<ProjectRo
 export async function deleteProjectRemote(id: string, actorEmployeeId: string): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}/api/projects/${encodeURIComponent(id)}?actorEmployeeId=${encodeURIComponent(actorEmployeeId)}`, { method: 'DELETE' });
+    res = await authFetch(`${API_BASE_URL}/api/projects/${encodeURIComponent(id)}?actorEmployeeId=${encodeURIComponent(actorEmployeeId)}`, { method: 'DELETE' });
   } catch {
     throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
   }
@@ -250,7 +323,7 @@ export async function deleteProjectRemote(id: string, actorEmployeeId: string): 
 }
 
 export async function fetchProjectCustomStatuses(): Promise<CustomProjectStatus[]> {
-  const res = await fetch(`${API_BASE_URL}/api/project-custom-statuses`);
+  const res = await authFetch(`${API_BASE_URL}/api/project-custom-statuses`);
   if (!res.ok) throw new Error(`Failed to fetch project custom statuses: ${res.status}`);
   return res.json();
 }
@@ -258,7 +331,7 @@ export async function fetchProjectCustomStatuses(): Promise<CustomProjectStatus[
 export async function createProjectCustomStatus(label: string, createdBy?: string | null): Promise<CustomProjectStatus> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}/api/project-custom-statuses`, {
+    res = await authFetch(`${API_BASE_URL}/api/project-custom-statuses`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ label, createdBy }),
@@ -276,7 +349,7 @@ export async function createProjectCustomStatus(label: string, createdBy?: strin
 export async function deleteProjectCustomStatusRemote(id: string): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}/api/project-custom-statuses/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    res = await authFetch(`${API_BASE_URL}/api/project-custom-statuses/${encodeURIComponent(id)}`, { method: 'DELETE' });
   } catch {
     throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
   }
@@ -287,7 +360,7 @@ export async function deleteProjectCustomStatusRemote(id: string): Promise<void>
 }
 
 export async function fetchProjectCustomTypes(): Promise<CustomProjectType[]> {
-  const res = await fetch(`${API_BASE_URL}/api/project-custom-types`);
+  const res = await authFetch(`${API_BASE_URL}/api/project-custom-types`);
   if (!res.ok) throw new Error(`Failed to fetch project custom types: ${res.status}`);
   return res.json();
 }
@@ -296,7 +369,7 @@ export async function fetchProjectCustomTypes(): Promise<CustomProjectType[]> {
 export async function createProjectCustomType(label: string, abbreviation: string, createdBy?: string | null): Promise<CustomProjectType> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}/api/project-custom-types`, {
+    res = await authFetch(`${API_BASE_URL}/api/project-custom-types`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ label, abbreviation, createdBy }),
@@ -312,7 +385,7 @@ export async function createProjectCustomType(label: string, abbreviation: strin
 }
 
 export async function fetchMeetings(): Promise<Meeting[]> {
-  const res = await fetch(`${API_BASE_URL}/api/meetings`);
+  const res = await authFetch(`${API_BASE_URL}/api/meetings`);
   if (!res.ok) throw new Error(`Failed to fetch meetings: ${res.status}`);
   return res.json();
 }
@@ -320,7 +393,7 @@ export async function fetchMeetings(): Promise<Meeting[]> {
 export async function createMeeting(meeting: Omit<Meeting, 'id'>): Promise<Meeting> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}/api/meetings`, {
+    res = await authFetch(`${API_BASE_URL}/api/meetings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(meeting),
@@ -339,7 +412,7 @@ export async function createMeeting(meeting: Omit<Meeting, 'id'>): Promise<Meeti
 export async function updateMeetingRemote(id: string, updates: Partial<Meeting>): Promise<Meeting> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}/api/meetings/${encodeURIComponent(id)}`, {
+    res = await authFetch(`${API_BASE_URL}/api/meetings/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates),
@@ -356,7 +429,7 @@ export async function updateMeetingRemote(id: string, updates: Partial<Meeting>)
 }
 
 export async function fetchProjectTasks(): Promise<ProjectTaskItem[]> {
-  const res = await fetch(`${API_BASE_URL}/api/project-tasks`);
+  const res = await authFetch(`${API_BASE_URL}/api/project-tasks`);
   if (!res.ok) throw new Error(`Failed to fetch project tasks: ${res.status}`);
   return res.json();
 }
@@ -364,7 +437,7 @@ export async function fetchProjectTasks(): Promise<ProjectTaskItem[]> {
 export async function createProjectTask(task: Omit<ProjectTaskItem, 'id'>): Promise<ProjectTaskItem> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}/api/project-tasks`, {
+    res = await authFetch(`${API_BASE_URL}/api/project-tasks`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(task),
@@ -386,7 +459,7 @@ export async function createProjectTask(task: Omit<ProjectTaskItem, 'id'>): Prom
 export async function updateProjectTaskRemote(id: string, updates: Partial<ProjectTaskItem>, actorEmployeeId: string): Promise<ProjectTaskItem> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}/api/project-tasks/${encodeURIComponent(id)}`, {
+    res = await authFetch(`${API_BASE_URL}/api/project-tasks/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...updates, actorEmployeeId }),
@@ -405,7 +478,7 @@ export async function updateProjectTaskRemote(id: string, updates: Partial<Proje
 export async function deleteProjectTaskRemote(id: string, actorEmployeeId: string): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}/api/project-tasks/${encodeURIComponent(id)}?actorEmployeeId=${encodeURIComponent(actorEmployeeId)}`, { method: 'DELETE' });
+    res = await authFetch(`${API_BASE_URL}/api/project-tasks/${encodeURIComponent(id)}?actorEmployeeId=${encodeURIComponent(actorEmployeeId)}`, { method: 'DELETE' });
   } catch {
     throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
   }
@@ -419,7 +492,7 @@ export async function deleteProjectTaskRemote(id: string, actorEmployeeId: strin
 // creator, project docs by project ownership/membership) — see server/routes/documents.ts. No
 // actorEmployeeId means nobody's logged in yet, so the server returns an empty list.
 export async function fetchDocuments(actorEmployeeId: string): Promise<LinkedDoc[]> {
-  const res = await fetch(`${API_BASE_URL}/api/documents?actorEmployeeId=${encodeURIComponent(actorEmployeeId)}`);
+  const res = await authFetch(`${API_BASE_URL}/api/documents?actorEmployeeId=${encodeURIComponent(actorEmployeeId)}`);
   if (!res.ok) throw new Error(`Failed to fetch documents: ${res.status}`);
   return res.json();
 }
@@ -427,7 +500,7 @@ export async function fetchDocuments(actorEmployeeId: string): Promise<LinkedDoc
 export async function createDocument(doc: Omit<LinkedDoc, 'id'>): Promise<LinkedDoc> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}/api/documents`, {
+    res = await authFetch(`${API_BASE_URL}/api/documents`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(doc),
@@ -446,7 +519,7 @@ export async function createDocument(doc: Omit<LinkedDoc, 'id'>): Promise<Linked
 export async function updateDocumentRemote(id: string, updates: Partial<LinkedDoc>): Promise<LinkedDoc> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}/api/documents/${encodeURIComponent(id)}`, {
+    res = await authFetch(`${API_BASE_URL}/api/documents/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates),
@@ -465,7 +538,7 @@ export async function updateDocumentRemote(id: string, updates: Partial<LinkedDo
 export async function deleteDocumentRemote(id: string): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}/api/documents/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    res = await authFetch(`${API_BASE_URL}/api/documents/${encodeURIComponent(id)}`, { method: 'DELETE' });
   } catch {
     throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
   }
@@ -476,7 +549,7 @@ export async function deleteDocumentRemote(id: string): Promise<void> {
 }
 
 export async function fetchNotifications(employeeId: string): Promise<Notification[]> {
-  const res = await fetch(`${API_BASE_URL}/api/notifications?employeeId=${encodeURIComponent(employeeId)}`);
+  const res = await authFetch(`${API_BASE_URL}/api/notifications?employeeId=${encodeURIComponent(employeeId)}`);
   if (!res.ok) throw new Error(`Failed to fetch notifications: ${res.status}`);
   return res.json();
 }
@@ -494,7 +567,7 @@ export interface CreateNotificationPayload {
 }
 
 export async function createNotification(payload: CreateNotificationPayload): Promise<Notification> {
-  const res = await fetch(`${API_BASE_URL}/api/notifications`, {
+  const res = await authFetch(`${API_BASE_URL}/api/notifications`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -504,11 +577,11 @@ export async function createNotification(payload: CreateNotificationPayload): Pr
 }
 
 export async function markNotificationRead(id: string): Promise<void> {
-  await fetch(`${API_BASE_URL}/api/notifications/${encodeURIComponent(id)}/read`, { method: 'PATCH' });
+  await authFetch(`${API_BASE_URL}/api/notifications/${encodeURIComponent(id)}/read`, { method: 'PATCH' });
 }
 
 export async function markAllNotificationsRead(employeeId: string): Promise<void> {
-  await fetch(`${API_BASE_URL}/api/notifications/mark-all-read`, {
+  await authFetch(`${API_BASE_URL}/api/notifications/mark-all-read`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ employeeId }),
@@ -535,7 +608,7 @@ export interface ChangeRequest {
 
 export async function fetchChangeRequests(filter?: { entityType: 'project' | 'project_task' | 'employee'; entityId: string }): Promise<ChangeRequest[]> {
   const query = filter ? `?entityType=${encodeURIComponent(filter.entityType)}&entityId=${encodeURIComponent(filter.entityId)}` : '';
-  const res = await fetch(`${API_BASE_URL}/api/change-requests${query}`);
+  const res = await authFetch(`${API_BASE_URL}/api/change-requests${query}`);
   if (!res.ok) throw new Error(`Failed to fetch change requests: ${res.status}`);
   return res.json();
 }
@@ -550,7 +623,7 @@ export async function createChangeRequest(payload: {
 }): Promise<ChangeRequest> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}/api/change-requests`, {
+    res = await authFetch(`${API_BASE_URL}/api/change-requests`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -573,7 +646,7 @@ export async function decideChangeRequest(
 ): Promise<ChangeRequest> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}/api/change-requests/${encodeURIComponent(id)}/decide`, {
+    res = await authFetch(`${API_BASE_URL}/api/change-requests/${encodeURIComponent(id)}/decide`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ decision, decidedBy, note }),
@@ -593,7 +666,7 @@ export async function decideChangeRequest(
 // the full, freshly-reloaded list so the caller can just setOrgDivisions(result) directly instead
 // of re-deriving the update locally.
 export async function fetchOrgStructure(): Promise<OrgDivisionData[]> {
-  const res = await fetch(`${API_BASE_URL}/api/org-structure`);
+  const res = await authFetch(`${API_BASE_URL}/api/org-structure`);
   if (!res.ok) throw new Error(`Failed to fetch org structure: ${res.status}`);
   return res.json();
 }
@@ -601,7 +674,7 @@ export async function fetchOrgStructure(): Promise<OrgDivisionData[]> {
 export async function addOrgDivision(name: string, actorEmployeeId: string): Promise<OrgDivisionData[]> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}/api/org-structure/divisions`, {
+    res = await authFetch(`${API_BASE_URL}/api/org-structure/divisions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, actorEmployeeId }),
@@ -619,7 +692,7 @@ export async function addOrgDivision(name: string, actorEmployeeId: string): Pro
 export async function renameOrgDivision(oldName: string, newName: string, actorEmployeeId: string): Promise<OrgDivisionData[]> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}/api/org-structure/divisions/${encodeURIComponent(oldName)}`, {
+    res = await authFetch(`${API_BASE_URL}/api/org-structure/divisions/${encodeURIComponent(oldName)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: newName, actorEmployeeId }),
@@ -637,7 +710,7 @@ export async function renameOrgDivision(oldName: string, newName: string, actorE
 export async function deleteOrgDivision(name: string, actorEmployeeId: string): Promise<OrgDivisionData[]> {
   let res: Response;
   try {
-    res = await fetch(
+    res = await authFetch(
       `${API_BASE_URL}/api/org-structure/divisions/${encodeURIComponent(name)}?actorEmployeeId=${encodeURIComponent(actorEmployeeId)}`,
       { method: 'DELETE' }
     );
@@ -654,7 +727,7 @@ export async function deleteOrgDivision(name: string, actorEmployeeId: string): 
 export async function addOrgSection(divisionName: string, sectionName: string, actorEmployeeId: string): Promise<OrgDivisionData[]> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}/api/org-structure/divisions/${encodeURIComponent(divisionName)}/sections`, {
+    res = await authFetch(`${API_BASE_URL}/api/org-structure/divisions/${encodeURIComponent(divisionName)}/sections`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: sectionName, actorEmployeeId }),
@@ -677,7 +750,7 @@ export async function renameOrgSection(
 ): Promise<OrgDivisionData[]> {
   let res: Response;
   try {
-    res = await fetch(
+    res = await authFetch(
       `${API_BASE_URL}/api/org-structure/divisions/${encodeURIComponent(divisionName)}/sections/${encodeURIComponent(oldName)}`,
       {
         method: 'PUT',
@@ -698,7 +771,7 @@ export async function renameOrgSection(
 export async function deleteOrgSection(divisionName: string, sectionName: string, actorEmployeeId: string): Promise<OrgDivisionData[]> {
   let res: Response;
   try {
-    res = await fetch(
+    res = await authFetch(
       `${API_BASE_URL}/api/org-structure/divisions/${encodeURIComponent(divisionName)}/sections/${encodeURIComponent(sectionName)}?actorEmployeeId=${encodeURIComponent(actorEmployeeId)}`,
       { method: 'DELETE' }
     );
@@ -716,7 +789,7 @@ export async function deleteOrgSection(divisionName: string, sectionName: string
 // fetched whole (see that route's own note on why) so EmployeeManagement.tsx's existing
 // client-side search/date/department/action filters keep working unmodified.
 export async function fetchAuditLogs(): Promise<AuditLog[]> {
-  const res = await fetch(`${API_BASE_URL}/api/audit-logs`);
+  const res = await authFetch(`${API_BASE_URL}/api/audit-logs`);
   if (!res.ok) throw new Error(`Failed to fetch audit logs: ${res.status}`);
   return res.json();
 }
@@ -724,7 +797,7 @@ export async function fetchAuditLogs(): Promise<AuditLog[]> {
 export async function createAuditLog(entry: AuditLog): Promise<AuditLog> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}/api/audit-logs`, {
+    res = await authFetch(`${API_BASE_URL}/api/audit-logs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(entry),

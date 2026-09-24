@@ -37,10 +37,9 @@ const SELECT_FIELDS = `id, title, message, type, link_type, link_id, is_read, cr
 // Newest 50 for the current employee — the bell dropdown only ever shows a short recent list, and
 // this also caps how much a single poll transfers.
 notificationsRouter.get('/', async (req, res) => {
-  const employeeId = typeof req.query.employeeId === 'string' ? req.query.employeeId : '';
-  if (!employeeId) {
-    return res.status(400).json({ message: 'กรุณาระบุ employeeId' });
-  }
+  // Always the caller's own inbox — the employeeId the client sends is ignored, so nobody can read
+  // someone else's notifications by asking for them.
+  const employeeId = req.actorId!;
   try {
     // Categories this person muted in Settings → การแจ้งเตือน are hidden here rather than never
     // created, so the rows stay in the table and reappear if they switch a category back on. A row
@@ -98,7 +97,7 @@ notificationsRouter.post('/', async (req, res) => {
 
 notificationsRouter.patch('/:id/read', async (req, res) => {
   try {
-    await pool.query('UPDATE notification SET is_read = TRUE WHERE id = ?', [req.params.id]);
+    await pool.query('UPDATE notification SET is_read = TRUE WHERE id = ? AND target_employee_id = ?', [req.params.id, req.actorId]);
     res.status(204).send();
   } catch (err) {
     console.error('PATCH /api/notifications/:id/read failed:', err);
@@ -107,12 +106,8 @@ notificationsRouter.patch('/:id/read', async (req, res) => {
 });
 
 notificationsRouter.post('/mark-all-read', async (req, res) => {
-  const employeeId = typeof req.body?.employeeId === 'string' ? req.body.employeeId : '';
-  if (!employeeId) {
-    return res.status(400).json({ message: 'กรุณาระบุ employeeId' });
-  }
   try {
-    await pool.query('UPDATE notification SET is_read = TRUE WHERE target_employee_id = ?', [employeeId]);
+    await pool.query('UPDATE notification SET is_read = TRUE WHERE target_employee_id = ?', [req.actorId]);
     res.status(204).send();
   } catch (err) {
     console.error('POST /api/notifications/mark-all-read failed:', err);

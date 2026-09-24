@@ -54,7 +54,7 @@ export default function PendingRequestCard({
           </p>
           <p className="text-[11px] text-[#6F6F6F] mt-0.5">เหตุผล: {request.reason}</p>
         </div>
-        <span className="text-[10px] font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full shrink-0 whitespace-nowrap">รออนุมัติ</span>
+        <span className="text-[11px] font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full shrink-0 whitespace-nowrap">รออนุมัติ</span>
       </div>
 
       {canDecide && (showRejectField ? (

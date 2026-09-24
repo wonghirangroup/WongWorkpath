@@ -30,7 +30,7 @@ export default function LogoutConfirmModal({ open, onConfirm, onCancel }: Logout
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.2 }}
-            className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4"
+            role="dialog" aria-modal="true" aria-label="ยืนยันการออกจากระบบ" className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4"
           >
             <div className="flex justify-between items-center pb-2 border-b border-slate-100">
               <h3 className="text-sm font-bold text-slate-800">ออกจากระบบ</h3>

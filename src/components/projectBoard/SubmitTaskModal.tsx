@@ -187,7 +187,7 @@ export default function SubmitTaskModal({ task, employees, documents, projectDoc
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ type: 'spring', stiffness: 300, damping: 24, mass: 0.9 }}
-            className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-md mx-4 max-h-[85vh] overflow-hidden flex flex-col"
+            role="dialog" aria-modal="true" aria-label="ส่งงาน" className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-md mx-4 max-h-[85vh] overflow-hidden flex flex-col"
           >
             <div className="flex justify-between items-center px-5 pt-5 pb-2 shrink-0">
               <div className="min-w-0">
@@ -203,7 +203,7 @@ export default function SubmitTaskModal({ task, employees, documents, projectDoc
               <div className="flex-1 min-h-0 overflow-y-auto px-5 pt-4 pb-1 space-y-3">
                 <div>
                   <label className="block text-[#272220] font-bold text-[11px] mb-1">
-                    ผู้ตรวจงาน <span className="text-[#FF6537]">*</span> <span className="font-normal text-[#A0A0A0]">(เลือกได้มากกว่า 1)</span>
+                    ผู้ตรวจงาน <span className="text-[#FF6537]">*</span> <span className="font-normal text-[#767676]">(เลือกได้มากกว่า 1)</span>
                   </label>
                   <EmployeeMultiSelect
                     employees={selectableEmployees}
@@ -226,7 +226,7 @@ export default function SubmitTaskModal({ task, employees, documents, projectDoc
 
                 <div>
                   <label className="block text-[#272220] font-bold text-[11px] mb-1">
-                    ไฟล์แนบ (ไม่บังคับ) <span className="font-normal text-[#A0A0A0]">— ไม่เกิน {formatFileSize(MAX_FILE_BYTES)} ต่อไฟล์</span>
+                    ไฟล์แนบ (ไม่บังคับ) <span className="font-normal text-[#767676]">— ไม่เกิน {formatFileSize(MAX_FILE_BYTES)} ต่อไฟล์</span>
                   </label>
 
                   {existingFiles.length > 0 && (
@@ -239,7 +239,7 @@ export default function SubmitTaskModal({ task, employees, documents, projectDoc
                               <Icon size={16} className={color} />
                             </div>
                             <span className="truncate flex-1 text-xs font-medium text-[#272220]">{doc.name}</span>
-                            <span className="text-[11px] text-[#A0A0A0] shrink-0">ส่งไปแล้ว</span>
+                            <span className="text-[11px] text-[#767676] shrink-0">ส่งไปแล้ว</span>
                           </div>
                         );
                       })}
@@ -293,7 +293,7 @@ export default function SubmitTaskModal({ task, employees, documents, projectDoc
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="truncate text-xs font-medium text-[#272220]">{f.name}</p>
-                              <p className="text-[11px] text-[#A0A0A0]">{formatFileSize(f.size)}</p>
+                              <p className="text-[11px] text-[#767676]">{formatFileSize(f.size)}</p>
                             </div>
                             <button type="button" onClick={() => removePickedFile(idx)} className="text-slate-400 hover:text-red-600 cursor-pointer shrink-0">
                               <Trash2 size={13} />
@@ -310,7 +310,7 @@ export default function SubmitTaskModal({ task, employees, documents, projectDoc
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="truncate text-xs font-medium text-[#272220]">{link.name}</p>
-                              <p className="truncate text-[11px] text-[#A0A0A0]">{link.url}</p>
+                              <p className="truncate text-[11px] text-[#767676]">{link.url}</p>
                             </div>
                             <button type="button" onClick={() => removePickedLink(idx)} className="text-slate-400 hover:text-red-600 cursor-pointer shrink-0">
                               <Trash2 size={13} />

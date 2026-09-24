@@ -1,20 +1,27 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Wong Workpath
 
-# Run and deploy your AI Studio app
+เครื่องมือภายในบริษัทสำหรับจัดการโปรเจกต์ งาน นัดประชุม เอกสาร คลังรหัสผ่าน และพนักงาน
+(React + TypeScript + Vite ฝั่งหน้าเว็บ / Express + MySQL ฝั่งเซิร์ฟเวอร์)
 
-This contains everything you need to run your app locally.
+รายละเอียดสถาปัตยกรรม สิทธิ์การใช้งาน และแนวทางการทำงานอยู่ใน [CLAUDE.md](CLAUDE.md)
+ส่วนแนวทางการออกแบบหน้าจออยู่ใน [Design.md](Design.md)
 
-View your app in AI Studio: https://ai.studio/apps/f6b6184e-70a4-4c41-bfb8-a929721c8bbe
+## รันบนเครื่อง
 
-## Run Locally
+ต้องมี Node.js และไฟล์ `.env` (ดูตัวอย่างที่ [.env.example](.env.example))
 
-**Prerequisites:**  Node.js
+```
+npm install
+npm run dev:all      # เปิดทั้งหน้าเว็บ (พอร์ต 3000) และ API (พอร์ต 4000)
+npm run lint         # ตรวจชนิดข้อมูลด้วย tsc
+npm run build        # บิลด์หน้าเว็บ
+```
 
+> ⚠️ เครื่องพัฒนาเชื่อมฐานข้อมูล MySQL ตัวเดียวกับระบบจริง — ข้อมูลที่สร้าง/ลบตอนทดสอบกระทบข้อมูลจริง
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## ระบบจริง
+
+- หน้าเว็บ: Vercel (`wong-workpath.vercel.app`) — build ด้วย `npm run build`
+- API: Render (`wongworkpath.onrender.com`) — รันด้วย `npm run server:start`
+- push ขึ้น branch `main` = deploy จริงอัตโนมัติทั้งสองฝั่ง
+- ตั้งค่า `JWT_SECRET` (สตริงสุ่มยาว 32 ตัวอักษรขึ้นไป) ใน Environment ของ Render — ใช้เซ็น token ล็อกอิน

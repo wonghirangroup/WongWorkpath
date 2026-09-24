@@ -86,7 +86,7 @@ export default function ReviewTaskModal({ task, employees, documents, onReview, 
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ type: 'spring', stiffness: 300, damping: 24, mass: 0.9 }}
-            className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-md mx-4 max-h-[85vh] overflow-hidden flex flex-col"
+            role="dialog" aria-modal="true" aria-label="ตรวจงาน" className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-md mx-4 max-h-[85vh] overflow-hidden flex flex-col"
           >
             <div className="flex justify-between items-center px-5 pt-5 pb-2 shrink-0">
               <div className="min-w-0">
@@ -100,7 +100,7 @@ export default function ReviewTaskModal({ task, employees, documents, onReview, 
 
             <div className="flex-1 min-h-0 overflow-y-auto px-5 pt-4 pb-1 space-y-3">
               <div>
-                <p className="text-[#A0A0A0] text-[11px] mb-1">ผู้ส่งงาน</p>
+                <p className="text-[#767676] text-[11px] mb-1">ผู้ส่งงาน</p>
                 {assignees.length > 0 ? (
                   <div className="space-y-1.5">
                     {assignees.map((assignee) => (
@@ -109,7 +109,7 @@ export default function ReviewTaskModal({ task, employees, documents, onReview, 
                           <img src={assignee.avatar} alt="" className="w-6 h-6 rounded-full object-cover shrink-0" />
                         ) : (
                           <span
-                            className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0"
+                            className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[11px] font-bold shrink-0"
                             style={{ backgroundColor: getAvatarColor(displayName(assignee)) }}
                           >
                             {displayName(assignee).trim().charAt(0).toUpperCase()}
@@ -120,12 +120,12 @@ export default function ReviewTaskModal({ task, employees, documents, onReview, 
                     ))}
                   </div>
                 ) : (
-                  <span className="flex items-center gap-1.5 text-sm text-[#A0A0A0]"><User size={14} /> ไม่ทราบผู้ส่งงาน</span>
+                  <span className="flex items-center gap-1.5 text-sm text-[#767676]"><User size={14} /> ไม่ทราบผู้ส่งงาน</span>
                 )}
               </div>
 
               <div>
-                <p className="text-[#A0A0A0] text-[11px] mb-1">บันทึกจากผู้ส่งงาน</p>
+                <p className="text-[#767676] text-[11px] mb-1">บันทึกจากผู้ส่งงาน</p>
                 <p className="text-sm text-[#272220] whitespace-pre-wrap break-words">
                   {task.submissionNote || 'ไม่มีบันทึกเพิ่มเติม'}
                 </p>
@@ -133,7 +133,7 @@ export default function ReviewTaskModal({ task, employees, documents, onReview, 
 
               {submissionFiles.length > 0 && (
                 <div>
-                  <p className="text-[#A0A0A0] text-[11px] mb-1.5">ไฟล์แนบ ({submissionFiles.length})</p>
+                  <p className="text-[#767676] text-[11px] mb-1.5">ไฟล์แนบ ({submissionFiles.length})</p>
                   <div className="space-y-1.5">
                     {submissionFiles.map((doc) => {
                       const { Icon, color } = getItemVisual(doc);
@@ -152,9 +152,9 @@ export default function ReviewTaskModal({ task, employees, documents, onReview, 
                           </div>
                           <span className="truncate flex-1 text-xs font-medium text-[#272220]">{doc.name}</span>
                           {isLink ? (
-                            <ExternalLink size={13} className="text-[#A0A0A0] shrink-0" />
+                            <ExternalLink size={13} className="text-[#767676] shrink-0" />
                           ) : (
-                            <Download size={13} className="text-[#A0A0A0] shrink-0" />
+                            <Download size={13} className="text-[#767676] shrink-0" />
                           )}
                         </a>
                       );

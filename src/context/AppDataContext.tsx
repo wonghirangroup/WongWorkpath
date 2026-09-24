@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, useRef, ReactNode } from 'react';
+import { createContext, useCallback, useContext, useState, useEffect, useMemo, useRef, ReactNode } from 'react';
 import {
   Employee,
   LinkedDoc,
@@ -8,11 +8,8 @@ import {
   AuditLog,
 } from '../types';
 import { DEFAULT_ORG_DIVISIONS, OrgDivisionData } from '../data/orgStructure';
-import {
-  INITIAL_EMPLOYEES
-} from '../data/mockData';
-import { fetchEmployees, createEmployee, updateEmployeeRemote, changeSelfPassword, deleteEmployeeRemote, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote, fetchProjects, createProject, updateProjectRemote, deleteProjectRemote, CreateProjectPayload, fetchMeetings, createMeeting, updateMeetingRemote, fetchProjectTasks, createProjectTask, updateProjectTaskRemote, deleteProjectTaskRemote, fetchProjectCustomStatuses, createProjectCustomStatus, deleteProjectCustomStatusRemote, fetchNotifications, createNotification, markNotificationRead, markAllNotificationsRead, CreateNotificationPayload, fetchChangeRequests, createChangeRequest, decideChangeRequest, ChangeRequest, fetchDocuments, createDocument, updateDocumentRemote, deleteDocumentRemote, fetchOrgStructure, addOrgDivision, renameOrgDivision, deleteOrgDivision, addOrgSection, renameOrgSection, deleteOrgSection, fetchAuditLogs, createAuditLog, fetchProjectCustomTypes, createProjectCustomType } from '../lib/api';
-import { nowTimestamp } from '../lib/datetime';
+import { ApiError, fetchCurrentUser, getAuthToken, clearAuthToken, setSessionExpiredHandler, fetchEmployees, createEmployee, updateEmployeeRemote, changeSelfPassword, deleteEmployeeRemote, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote, fetchProjects, createProject, updateProjectRemote, deleteProjectRemote, CreateProjectPayload, fetchMeetings, createMeeting, updateMeetingRemote, fetchProjectTasks, createProjectTask, updateProjectTaskRemote, deleteProjectTaskRemote, fetchProjectCustomStatuses, createProjectCustomStatus, deleteProjectCustomStatusRemote, fetchNotifications, createNotification, markNotificationRead, markAllNotificationsRead, CreateNotificationPayload, fetchChangeRequests, createChangeRequest, decideChangeRequest, ChangeRequest, fetchDocuments, createDocument, updateDocumentRemote, deleteDocumentRemote, fetchOrgStructure, addOrgDivision, renameOrgDivision, deleteOrgDivision, addOrgSection, renameOrgSection, deleteOrgSection, fetchAuditLogs, createAuditLog, fetchProjectCustomTypes, createProjectCustomType } from '../lib/api';
+import { nowTimestamp, formatThaiDateShort } from '../lib/datetime';
 import type { ProjectRow, ProjectTaskItem, CustomProjectStatus, CustomProjectType } from '../components/projectBoard/types';
 import { registerCustomStatusLabels, registerCustomTypeLabels } from '../components/projectBoard/statusMeta';
 
@@ -40,6 +37,39 @@ function recomputeAncestorTaskStatuses(list: ProjectTaskItem[], startParentId: s
     parentId = parent.parentTaskId;
   }
   return current;
+}
+
+// Loads one domain's data when someone logs in (and again for the next person), ignoring a response
+// that arrives after they've logged out or been replaced. `reset` empties the state on logout so the
+// next person never glimpses the previous one's data.
+function useLoadOnLogin<T>(
+  userId: string | null,
+  label: string,
+  load: () => Promise<T>,
+  apply: (data: T) => void,
+  reset: () => void,
+  onFailure: () => void
+) {
+  useEffect(() => {
+    if (!userId) {
+      reset();
+      return;
+    }
+    let cancelled = false;
+    load()
+      .then((data) => {
+        if (!cancelled) apply(data);
+      })
+      .catch((err) => {
+        console.warn(`Could not load ${label} from the API:`, err);
+        if (!cancelled) onFailure();
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Only a change of person should reload — the callbacks are recreated on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 }
 
 interface AppDataContextValue {
@@ -120,6 +150,9 @@ interface AppDataContextValue {
   // null when nothing new is waiting to be announced.
   notificationToast: { notification: Notification; moreCount: number } | null;
   dismissNotificationToast: () => void;
+  // App-wide "something went wrong" message (failed data load, refused change) — see AppErrorToast.
+  appError: string | null;
+  dismissAppError: () => void;
 
   // Org chart structure (โครงสร้างองค์กร) — admin-editable from Employee Management's
   // โครงสร้างองค์กร tab. `orgSections` is every section flattened, in division order, for the
@@ -169,276 +202,147 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [orgDivisions, setOrgDivisions] = useState<OrgDivisionData[]>(DEFAULT_ORG_DIVISIONS);
   const orgSections = useMemo(() => orgDivisions.flatMap((d) => d.sections), [orgDivisions]);
 
-  // Employees now live in the real `employee` table (see server/routes/employees.ts) instead of
-  // localStorage-only mock data. Show the cached/mock list immediately so the UI isn't blocked on
-  // the network, then refresh from the API once it answers; if the API is unreachable, the
-  // cached/mock data silently stays as-is.
+  // Every API call below needs a session, so all loading waits for a logged-in user and re-runs when
+  // a different person signs in (which also wipes the previous person's data first). `visibilityKey`
+  // covers the one field that changes what the server returns for the *same* person — becoming or
+  // ceasing to be ผู้บริหาร widens/narrows the docs and vault they may see.
+  const userId = currentUser?.id ?? null;
+  const visibilityKey = `${userId ?? ''}:${currentUser?.accountType ?? ''}`;
+
+  // Failures the person would otherwise never learn about (data that didn't load, a change the
+  // server refused) surface as one toast instead of a silent console warning.
+  const [appError, setAppError] = useState<string | null>(null);
+  const dismissAppError = useCallback(() => setAppError(null), []);
+  const reportLoadFailure = useCallback(() => setAppError('โหลดข้อมูลบางส่วนไม่สำเร็จ กรุณารีเฟรชหน้าอีกครั้ง หากยังไม่หายให้แจ้งผู้ดูแลระบบ'), []);
+  const reportActionFailure = (err: unknown, fallback: string) => setAppError(err instanceof ApiError ? err.message : fallback);
+  // A new login starts with a clean slate — an error from the previous session shouldn't linger.
+  useEffect(() => setAppError(null), [userId]);
+
+  // Employees live in the real `employee` table (see server/routes/employees.ts). Nothing is cached
+  // in localStorage any more — the directory holds phone numbers and addresses, and the login
+  // response already hands back the signed-in employee, so there is nothing to show before this lands.
   useEffect(() => {
-    let cancelled = false;
-
-    const localEmployees = localStorage.getItem('unityspace_employees');
-    if (localEmployees) setEmployees(JSON.parse(localEmployees));
-    else {
-      setEmployees(INITIAL_EMPLOYEES);
-      localStorage.setItem('unityspace_employees', JSON.stringify(INITIAL_EMPLOYEES));
+    if (!userId) {
+      setEmployees([]);
+      return;
     }
-
+    let cancelled = false;
     fetchEmployees()
       .then((apiEmployees) => {
-        if (cancelled) return;
-        setEmployees(apiEmployees);
-        localStorage.setItem('unityspace_employees', JSON.stringify(apiEmployees));
+        if (!cancelled) setEmployees(apiEmployees);
       })
       .catch((err) => {
-        console.warn('Could not load employees from the API, using cached/mock data instead:', err);
+        console.warn('Could not load employees from the API:', err);
+        if (!cancelled) reportLoadFailure();
       });
-
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [userId]);
+
+  // Keeps `currentUser` in step with the directory: an edit to your own profile (or a role change an
+  // admin makes) arrives via `employees`, and everything derived from currentUser should follow.
+  useEffect(() => {
+    setCurrentUser((prev) => (prev ? employees.find((emp) => emp.id === prev.id) ?? prev : prev));
+  }, [employees]);
 
   // Credential Vault items live in the real `credential` table (see server/routes/credentials.ts);
   // visibility is server-enforced there (personal/team/project scoping by real employee id, not
   // the old client-side display-name match) — same actor-scoped shape as the documents fetch below.
   useEffect(() => {
-    if (!currentUser) {
+    if (!userId) {
       setCredentials([]);
       return;
     }
     let cancelled = false;
 
-    fetchCredentials(currentUser.id)
+    fetchCredentials(userId)
       .then((apiCredentials) => {
         if (cancelled) return;
         setCredentials(apiCredentials);
       })
       .catch((err) => {
         console.warn('Could not load credentials from the API:', err);
+        if (!cancelled) reportLoadFailure();
       });
 
     return () => {
       cancelled = true;
     };
-  }, [currentUser]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibilityKey]);
 
   // Projects live in the real `project` table (see server/routes/projects.ts) with no
-  // localStorage layer at all — unlike employees/credentials there's no legacy mock data worth
-  // caching or falling back to, since the user is creating every real project from scratch.
-  useEffect(() => {
-    let cancelled = false;
-
-    fetchProjects()
-      .then((apiProjects) => {
-        if (cancelled) return;
-        setProjects(apiProjects);
-      })
-      .catch((err) => {
-        console.warn('Could not load projects from the API:', err);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  // localStorage layer at all.
+  useLoadOnLogin(userId, 'projects', fetchProjects, setProjects, () => setProjects([]), reportLoadFailure);
 
   // Custom project statuses (see server/routes/project-custom-statuses.ts) — registered into
   // statusMeta.ts's label lookup as soon as they arrive, so every existing STATUS_LABEL[status]
   // call site across the app resolves a custom status's real label instead of its raw id, with
   // zero changes needed at any of those call sites.
-  useEffect(() => {
-    let cancelled = false;
-
-    fetchProjectCustomStatuses()
-      .then((statuses) => {
-        if (cancelled) return;
-        setCustomProjectStatuses(statuses);
-        registerCustomStatusLabels(statuses);
-      })
-      .catch((err) => {
-        console.warn('Could not load project custom statuses from the API:', err);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  useLoadOnLogin(
+    userId,
+    'project custom statuses',
+    fetchProjectCustomStatuses,
+    (statuses) => {
+      setCustomProjectStatuses(statuses);
+      registerCustomStatusLabels(statuses);
+    },
+    () => setCustomProjectStatuses([]),
+    reportLoadFailure
+  );
 
   // Custom project types (see server/routes/project-custom-types.ts) — same registration
   // pattern as custom project statuses above, into statusMeta.ts's PROJECT_TYPE_META instead.
-  useEffect(() => {
-    let cancelled = false;
+  useLoadOnLogin(
+    userId,
+    'project custom types',
+    fetchProjectCustomTypes,
+    (types) => {
+      setCustomProjectTypes(types);
+      registerCustomTypeLabels(types);
+    },
+    () => setCustomProjectTypes([]),
+    reportLoadFailure
+  );
 
-    fetchProjectCustomTypes()
-      .then((types) => {
-        if (cancelled) return;
-        setCustomProjectTypes(types);
-        registerCustomTypeLabels(types);
-      })
-      .catch((err) => {
-        console.warn('Could not load project custom types from the API:', err);
-      });
+  // Meetings live in the real `meeting` table (see server/routes/meetings.ts).
+  useLoadOnLogin(userId, 'meetings', fetchMeetings, setMeetings, () => setMeetings([]), reportLoadFailure);
 
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Meetings live in the real `meeting` table (see server/routes/meetings.ts) — same no-
-  // localStorage-layer treatment as projects. Old localStorage meetings from before this migration
-  // are not carried over (they referenced the old mock project ids, which no longer exist anyway).
-  useEffect(() => {
-    let cancelled = false;
-
-    fetchMeetings()
-      .then((apiMeetings) => {
-        if (cancelled) return;
-        setMeetings(apiMeetings);
-      })
-      .catch((err) => {
-        console.warn('Could not load meetings from the API:', err);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Project tasks live in the real `project_task` table (see server/routes/project-tasks.ts) —
-  // same no-localStorage-layer treatment as projects/meetings. Replaces the session-only
-  // extraTasks state ProjectBoard.tsx used to hold, plus the old INITIAL_PROJECT_TASKS mock seed.
-  useEffect(() => {
-    let cancelled = false;
-
-    fetchProjectTasks()
-      .then((apiProjectTasks) => {
-        if (cancelled) return;
-        setProjectTasks(apiProjectTasks);
-      })
-      .catch((err) => {
-        console.warn('Could not load project tasks from the API:', err);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  // Project tasks live in the real `project_task` table (see server/routes/project-tasks.ts).
+  useLoadOnLogin(userId, 'project tasks', fetchProjectTasks, setProjectTasks, () => setProjectTasks([]), reportLoadFailure);
 
   // Pending/decided edit-or-delete requests (see server/routes/change-requests.ts) — loaded
   // whole, same as projects/tasks, since this is a small internal-tool dataset. Powers both the
   // "is a request already pending here" check before opening an edit/delete form and
   // ProjectDetail's owner-facing pending-requests panel.
+  useLoadOnLogin(userId, 'change requests', fetchChangeRequests, setChangeRequests, () => setChangeRequests([]), reportLoadFailure);
+
+  // Documents (เอกสาร Drive) live in the real `document` table now. Visibility is per-user (a
+  // 'ส่วนตัว' doc only shows to its creator; a 'โครงการ' doc only to that project's owners/members),
+  // so this re-fetches whenever a different person signs in — login as someone else must not keep
+  // showing the previous person's personal docs.
   useEffect(() => {
-    let cancelled = false;
-
-    fetchChangeRequests()
-      .then((requests) => {
-        if (cancelled) return;
-        setChangeRequests(requests);
-      })
-      .catch((err) => {
-        console.warn('Could not load change requests from the API:', err);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Documents (เอกสาร Drive) live in the real `document` table now — same no-localStorage-layer
-  // treatment as projects/tasks/meetings. Unlike those, visibility itself is per-user (a 'ส่วนตัว'
-  // doc only shows to its creator; a 'โครงการ' doc only to that project's owners/members), so the
-  // server needs to know who's asking — this can't fetch until `currentUser` is known, and must
-  // re-fetch whenever it changes (login as someone else must not keep showing the previous
-  // person's personal docs).
-  useEffect(() => {
-    if (!currentUser) {
+    if (!userId) {
       setDocuments([]);
       return;
     }
     let cancelled = false;
-    fetchDocuments(currentUser.id)
+    fetchDocuments(userId)
       .then((docs) => {
         if (cancelled) return;
         setDocuments(docs);
       })
       .catch((err) => {
         console.warn('Could not load documents from the API:', err);
+        if (!cancelled) reportLoadFailure();
       });
 
     return () => {
       cancelled = true;
     };
-  }, [currentUser]);
-
-  // One-time recovery for documents created before today's move to the shared backend — they used
-  // to live in this browser's own `unityspace_docs` localStorage, so anyone opening the app here
-  // would otherwise see an empty Drive (the data isn't gone, the app just stopped reading it).
-  // Runs once per browser: uploads whatever's still sitting in that old key into the real
-  // `document` table, then marks itself done so it never re-runs (and never duplicates) here again.
-  // Waits for `employees` to actually be loaded (not just currentUser) so it can best-effort match
-  // each old doc's original creator by name to a real employee id — matching against an empty list
-  // would silently attribute everything to whoever happens to trigger this first.
-  useEffect(() => {
-    if (!currentUser || employees.length === 0) return;
-    if (localStorage.getItem('unityspace_docs_migrated_v1')) return;
-    const raw = localStorage.getItem('unityspace_docs');
-    // Set the flag before doing any async work — even if the upload below throws partway
-    // through, this must never retry (and re-duplicate whatever already made it across).
-    localStorage.setItem('unityspace_docs_migrated_v1', 'true');
-    if (!raw) return;
-
-    (async () => {
-      try {
-        const oldDocs: any[] = JSON.parse(raw);
-        if (!Array.isArray(oldDocs) || oldDocs.length === 0) return;
-
-        const idMap = new Map<string, string>(); // old localStorage id -> new server id
-        const remaining = [...oldDocs];
-        let progressed = true;
-        while (remaining.length > 0 && progressed) {
-          progressed = false;
-          for (let i = remaining.length - 1; i >= 0; i--) {
-            const d = remaining[i];
-            // A folder must be created (and its new id known) before any child referencing it as
-            // parentId — skip for now if that hasn't happened yet, retried on the next pass.
-            if (d.parentId && !idMap.has(d.parentId) && oldDocs.some((o) => o.id === d.parentId)) continue;
-
-            const creatorName = d.history?.[0]?.updatedBy || d.updatedBy;
-            const matchedCreator = employees.find((e) => (e.nickname || e.name) === creatorName);
-            const created = await createDocument({
-              name: d.name ?? 'ไม่มีชื่อ',
-              kind: d.kind === 'folder' || d.kind === 'file' ? d.kind : 'link',
-              parentId: d.parentId ? idMap.get(d.parentId) ?? null : null,
-              url: d.url,
-              fileDataUrl: d.fileDataUrl,
-              fileMimeType: d.fileMimeType,
-              fileSize: d.fileSize,
-              // The old 'ทีม' (department) scope has no equivalent under the current project-based
-              // model — falls back to 'ส่วนตัว' rather than guessing a project, same call made when
-              // this scope was first retired earlier today.
-              scope: 'ส่วนตัว',
-              creatorEmployeeId: matchedCreator?.id ?? currentUser.id,
-              version: typeof d.version === 'number' ? d.version : 1,
-              lastUpdated: d.lastUpdated || nowTimestamp(),
-              updatedBy: d.updatedBy || currentUser.name,
-              history: Array.isArray(d.history) ? d.history : [],
-            });
-            idMap.set(d.id, created.id);
-            remaining.splice(i, 1);
-            progressed = true;
-          }
-        }
-
-        // Refresh so the recovered documents show up immediately, no manual reload needed.
-        const fresh = await fetchDocuments(currentUser.id);
-        setDocuments(fresh);
-        localStorage.removeItem('unityspace_docs');
-      } catch (err) {
-        console.warn('Could not migrate old localStorage documents:', err);
-      }
-    })();
-  }, [currentUser, employees]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibilityKey]);
 
   // Notifications: fetched for the logged-in user and re-polled every 45s. There's no WebSocket
   // layer anywhere in this app, so a notification another user triggers (a task assigned to you,
@@ -456,12 +360,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     seenNotificationIds.current = null;
     setNotificationToast(null);
-    if (!currentUser) {
+    if (!userId) {
       setNotifications([]);
       return;
     }
     let cancelled = false;
-    const employeeId = currentUser.id;
+    const employeeId = userId;
 
     const refresh = () => {
       fetchNotifications(employeeId)
@@ -480,7 +384,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [currentUser]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 
   // "Due soon / overdue / meeting coming up" aren't user actions anyone triggers, so unlike the
   // rest they're derived by scanning the data already loaded on this client. Each gets a
@@ -524,17 +429,20 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         }
       });
 
-    const todayISO = new Date().toISOString().slice(0, 10);
+    // Local calendar dates, not toISOString() (which is UTC — between midnight and 07:00 in Thailand
+    // it still reads yesterday, so "today's" and "tomorrow's" meetings were off by a day).
+    const isoOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const todayISO = isoOf(new Date());
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowISO = tomorrow.toISOString().slice(0, 10);
+    const tomorrowISO = isoOf(tomorrow);
     meetings
       .filter((m) => m.status !== 'cancelled' && m.attendeeIds.includes(me) && (m.date === todayISO || m.date === tomorrowISO))
       .forEach((m) => {
         attempt(`notif_meetingsoon_${m.id}`, {
           title: 'ใกล้ถึงเวลานัดประชุม',
           category: 'meeting',
-          message: `"${m.title}" วันที่ ${m.date} เวลา ${m.startTime}`,
+          message: `"${m.title}" วันที่ ${formatThaiDateShort(m.date)} เวลา ${m.startTime}`,
           type: 'info',
           linkType: m.projectId ? 'project' : undefined,
           linkId: m.projectId,
@@ -553,50 +461,69 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('unityspace_notifications');
     localStorage.removeItem('unityspace_audit_logs');
     localStorage.removeItem('unityspace_org_divisions');
+    // Replaced by the signed session token (see lib/api.ts) — the bare user id proved nothing — and
+    // the employee directory is no longer mirrored into the browser.
+    localStorage.removeItem('unityspace_current_user_id');
+    localStorage.removeItem('unityspace_employees');
+    // The one-off "recover documents that used to live in this browser" upload has long since run
+    // on every device in use; drop what it left behind.
+    localStorage.removeItem('unityspace_docs');
+    localStorage.removeItem('unityspace_docs_migrated_v1');
   }, []);
 
-  // บันทึกกิจกรรม (audit log) — now a real, shared table (server/routes/audit-logs.ts) instead of
-  // per-browser localStorage, so two employees on two different computers see the same history.
-  // Starts from whatever the state already had (empty) if the API is unreachable — history that
-  // used to live only in some browser's localStorage cannot be recovered from here either way.
-  useEffect(() => {
-    fetchAuditLogs()
-      .then(setAuditLogs)
-      .catch((err) => console.warn('Could not load audit logs from the API:', err));
-  }, []);
+  // บันทึกกิจกรรม (audit log) — a real, shared table (server/routes/audit-logs.ts), so two employees
+  // on two different computers see the same history. Only admin-level accounts receive any rows.
+  useLoadOnLogin(userId, 'audit logs', fetchAuditLogs, setAuditLogs, () => setAuditLogs([]), reportLoadFailure);
 
-  // โครงสร้างองค์กร (ฝ่าย/แผนก) — now a real, shared table (server/routes/org-structure.ts) instead
-  // of per-browser localStorage, same reasoning. Falls back to keeping the DEFAULT_ORG_DIVISIONS
-  // the state already started with if the API is unreachable, same "stay as-is" fallback the
-  // employees fetch above uses.
-  useEffect(() => {
-    fetchOrgStructure()
-      .then(setOrgDivisions)
-      .catch((err) => console.warn('Could not load org structure from the API:', err));
-  }, []);
+  // โครงสร้างองค์กร (ฝ่าย/แผนก) — a real, shared table (server/routes/org-structure.ts). Falls back
+  // to keeping the DEFAULT_ORG_DIVISIONS the state started with if the API is unreachable.
+  useLoadOnLogin(userId, 'org structure', fetchOrgStructure, setOrgDivisions, () => setOrgDivisions(DEFAULT_ORG_DIVISIONS), reportLoadFailure);
 
-  // Restore login session once the employee directory has loaded
+  // Restore the login session after a page reload: the stored token is checked with the server (an
+  // expired or revoked one is dropped) rather than trusting a user id saved in the browser.
   useEffect(() => {
-    if (employees.length === 0) return;
-
-    const savedUserId = localStorage.getItem('unityspace_current_user_id');
-    if (savedUserId) {
-      const savedUser = employees.find(emp => emp.id === savedUserId);
-      if (savedUser) setCurrentUser(savedUser);
+    if (!getAuthToken()) {
+      setIsRestoringSession(false);
+      return;
     }
-    setIsRestoringSession(false);
-  }, [employees]);
+    let cancelled = false;
+    fetchCurrentUser()
+      .then((employee) => {
+        if (!cancelled) setCurrentUser(employee);
+      })
+      .catch((err) => console.warn('Could not restore the login session:', err))
+      .finally(() => {
+        if (!cancelled) setIsRestoringSession(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // A 401 from any call (token expired, account removed) drops the user back to the login page.
+  useEffect(() => {
+    setSessionExpiredHandler(() => {
+      try {
+        sessionStorage.setItem('unityspace_session_expired', '1');
+      } catch {
+        /* storage blocked — the login page just won't explain why */
+      }
+      setCurrentUser(null);
+    });
+    return () => setSessionExpiredHandler(null);
+  }, []);
 
   const handleLogin = (employee: Employee) => {
     setCurrentUser(employee);
-    localStorage.setItem('unityspace_current_user_id', employee.id);
     handleLogAudit('LOGIN', `${employee.name} เข้าสู่ระบบ`, employee);
   };
 
   const handleLogout = () => {
+    // The audit call reads the token synchronously as it starts, so it still goes out signed even
+    // though the token is cleared on the next line.
     if (currentUser) handleLogAudit('LOGOUT', `${currentUser.name} ออกจากระบบ`);
+    clearAuthToken();
     setCurrentUser(null);
-    localStorage.removeItem('unityspace_current_user_id');
   };
 
   // Every notification is a real row owned by one target employee. Fire-and-forget: a failure to
@@ -639,7 +566,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     const created = await createEmployee(employee);
     const updated = [...employees, created];
     setEmployees(updated);
-    localStorage.setItem('unityspace_employees', JSON.stringify(updated));
     handleLogAudit('ADD_EMPLOYEE', `สร้างบัญชีพนักงานใหม่: "${created.name}" (${created.department})`);
   };
 
@@ -655,7 +581,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     const { password: _password, ...employeeFields } = updates;
     const updated = employees.map(emp => (emp.id === id ? { ...emp, ...employeeFields } : emp));
     setEmployees(updated);
-    localStorage.setItem('unityspace_employees', JSON.stringify(updated));
     const target = updated.find(emp => emp.id === id);
     if (target) handleLogAudit('UPDATE_EMPLOYEE', `แก้ไขข้อมูลพนักงาน: "${target.name}"`);
   };
@@ -665,7 +590,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     await deleteEmployeeRemote(id, currentUser?.id);
     const updated = employees.filter(emp => emp.id !== id);
     setEmployees(updated);
-    localStorage.setItem('unityspace_employees', JSON.stringify(updated));
     if (target) handleLogAudit('DELETE_EMPLOYEE', `ลบบัญชีพนักงาน: "${target.name}" ออกจากระบบถาวร — เหตุผล: ${reason}`);
   };
 
@@ -683,7 +607,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const handleRefreshAccountData = async () => {
     const [freshEmployees, freshRequests] = await Promise.all([fetchEmployees(), fetchChangeRequests()]);
     setEmployees(freshEmployees);
-    localStorage.setItem('unityspace_employees', JSON.stringify(freshEmployees));
     setChangeRequests(freshRequests);
   };
 
@@ -753,6 +676,10 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     // project's tasks around, showing up as ghost rows tagged "ไม่ทราบโครงการ" (e.g. in
     // MyWorkspace) until the next full reload silently dropped them.
     setProjectTasks((prev) => prev.filter((t) => t.projectId !== id));
+    // The server also removes the project's Drive files/folders, and moves any vault secret filed
+    // under it back to its creator's personal vault — mirror both so nothing lingers on screen.
+    setDocuments((prev) => prev.filter((d) => d.projectId !== id));
+    setCredentials((prev) => prev.map((c) => (c.scope === 'โครงการ' && c.projectId === id ? { ...c, scope: 'ส่วนตัว', projectId: undefined, team: undefined } : c)));
     if (target) handleLogAudit('DELETE_PROJECT', `ลบโครงการ: "${target.title}" (${target.code}) ออกจากระบบถาวร`);
   };
 
@@ -977,7 +904,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       if (decision === 'approve') {
         const freshEmployees = await fetchEmployees();
         setEmployees(freshEmployees);
-        localStorage.setItem('unityspace_employees', JSON.stringify(freshEmployees));
       }
       if (before.requestedBy) {
         pushNotification({
@@ -1006,6 +932,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       const [freshProjects, freshTasks] = await Promise.all([fetchProjects(), fetchProjectTasks()]);
       setProjects(freshProjects);
       setProjectTasks(freshTasks);
+      // An approved project deletion also removes its Drive files and re-files its vault secrets.
+      if (before.entityType === 'project' && before.requestType === 'delete' && currentUser) {
+        const [freshDocs, freshCredentials] = await Promise.all([fetchDocuments(currentUser.id), fetchCredentials(currentUser.id)]);
+        setDocuments(freshDocs);
+        setCredentials(freshCredentials);
+      }
 
       // Re-look-up post-edit (not the stale pre-approval `project`/`task` above) so anyone newly
       // added by this very change — e.g. a change-request that added a ผู้รับผิดชอบหลัก — is
@@ -1091,21 +1023,20 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         setOrgDivisions(updated);
         handleLogAudit('ADD_ORG_DIVISION', `เพิ่มฝ่ายใหม่: "${trimmed}"`);
       })
-      .catch((err) => console.warn('Could not add org division:', err));
+      .catch((err) => reportActionFailure(err, 'เพิ่มฝ่ายไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'));
   };
 
   const handleRenameDivision = (oldName: string, newName: string) => {
     const trimmed = newName.trim();
     if (!trimmed || trimmed === oldName || orgDivisions.some((d) => d.name === trimmed) || !currentUser) return;
     renameOrgDivision(oldName, trimmed, currentUser.id)
-      .then((updated) => {
+      .then(async (updated) => {
         setOrgDivisions(updated);
-        employees.filter((emp) => emp.division === oldName).forEach((emp) => {
-          handleUpdateEmployee(emp.id, { division: trimmed });
-        });
+        // The server already moved every employee onto the new name — just pull the fresh list.
+        setEmployees(await fetchEmployees());
         handleLogAudit('RENAME_ORG_DIVISION', `เปลี่ยนชื่อฝ่าย: "${oldName}" → "${trimmed}"`);
       })
-      .catch((err) => console.warn('Could not rename org division:', err));
+      .catch((err) => reportActionFailure(err, 'เปลี่ยนชื่อฝ่ายไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'));
   };
 
   const handleDeleteDivision = (name: string) => {
@@ -1115,7 +1046,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         setOrgDivisions(updated);
         handleLogAudit('DELETE_ORG_DIVISION', `ลบฝ่าย: "${name}"`);
       })
-      .catch((err) => console.warn('Could not delete org division:', err));
+      .catch((err) => reportActionFailure(err, 'ลบฝ่ายไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'));
   };
 
   const handleAddSection = (divisionName: string, sectionName: string) => {
@@ -1126,21 +1057,30 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         setOrgDivisions(updated);
         handleLogAudit('ADD_ORG_SECTION', `เพิ่มแผนกใหม่: "${trimmed}" ในฝ่าย "${divisionName}"`);
       })
-      .catch((err) => console.warn('Could not add org section:', err));
+      .catch((err) => reportActionFailure(err, 'เพิ่มแผนกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'));
   };
 
   const handleRenameSection = (divisionName: string, oldName: string, newName: string) => {
     const trimmed = newName.trim();
     if (!trimmed || trimmed === oldName || !currentUser) return;
     renameOrgSection(divisionName, oldName, trimmed, currentUser.id)
-      .then((updated) => {
+      .then(async (updated) => {
         setOrgDivisions(updated);
-        employees.filter((emp) => emp.department === oldName).forEach((emp) => {
-          handleUpdateEmployee(emp.id, { department: trimmed });
-        });
+        // The server renamed the แผนก on everything that stores its name (employees, projects,
+        // meetings, team vault entries) in one transaction — reload what it touched.
+        const [freshEmployees, freshProjects, freshMeetings, freshCredentials] = await Promise.all([
+          fetchEmployees(),
+          fetchProjects(),
+          fetchMeetings(),
+          fetchCredentials(currentUser.id),
+        ]);
+        setEmployees(freshEmployees);
+        setProjects(freshProjects);
+        setMeetings(freshMeetings);
+        setCredentials(freshCredentials);
         handleLogAudit('RENAME_ORG_SECTION', `เปลี่ยนชื่อแผนก: "${oldName}" → "${trimmed}"`);
       })
-      .catch((err) => console.warn('Could not rename org section:', err));
+      .catch((err) => reportActionFailure(err, 'เปลี่ยนชื่อแผนกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'));
   };
 
   const handleDeleteSection = (divisionName: string, sectionName: string) => {
@@ -1150,7 +1090,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         setOrgDivisions(updated);
         handleLogAudit('DELETE_ORG_SECTION', `ลบแผนก: "${sectionName}" ออกจากฝ่าย "${divisionName}"`);
       })
-      .catch((err) => console.warn('Could not delete org section:', err));
+      .catch((err) => reportActionFailure(err, 'ลบแผนกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'));
   };
 
   // 3. Document Operations — documents live in the real `document` table now (see
@@ -1226,7 +1166,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const handleAddMeeting = async (newMeeting: Omit<Meeting, 'id'>) => {
     const created = await createMeeting(newMeeting);
     setMeetings((prev) => [created, ...prev]);
-    handleLogAudit('CREATE_MEETING', `นัดประชุม "${created.title}" วันที่ ${created.date} เวลา ${created.startTime}`);
+    handleLogAudit('CREATE_MEETING', `นัดประชุม "${created.title}" วันที่ ${formatThaiDateShort(created.date)} เวลา ${created.startTime}`);
 
     created.attendeeIds
       .filter((attendeeId) => attendeeId !== currentUser?.id)
@@ -1235,7 +1175,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           targetEmployeeId: attendeeId,
           title: 'มีนัดประชุมใหม่',
           category: 'meeting',
-          message: `"${created.title}" วันที่ ${created.date} เวลา ${created.startTime}`,
+          message: `"${created.title}" วันที่ ${formatThaiDateShort(created.date)} เวลา ${created.startTime}`,
           type: 'info',
           linkType: created.projectId ? 'project' : undefined,
           linkId: created.projectId,
@@ -1263,7 +1203,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
             targetEmployeeId: attendeeId,
             title: 'การประชุมถูกยกเลิก',
             category: 'meeting',
-            message: `"${updated.title}" วันที่ ${updated.date} ถูกยกเลิก: ${updated.cancellationReason || 'ไม่ได้ระบุเหตุผล'}`,
+            message: `"${updated.title}" วันที่ ${formatThaiDateShort(updated.date)} ถูกยกเลิก: ${updated.cancellationReason || 'ไม่ได้ระบุเหตุผล'}`,
             type: 'warning',
             linkType: updated.projectId ? 'project' : undefined,
             linkId: updated.projectId,
@@ -1381,6 +1321,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     handleMarkNotificationRead,
     notificationToast,
     dismissNotificationToast,
+    appError,
+    dismissAppError,
     orgDivisions,
     orgSections,
     handleAddDivision,

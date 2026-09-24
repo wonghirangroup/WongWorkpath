@@ -2,8 +2,20 @@ import { Router } from 'express';
 import type { RowDataPacket } from 'mysql2';
 import { pool } from '../db.ts';
 import { nowBangkokDateTime } from '../lib/datetime.ts';
+import { newId } from '../lib/ids.ts';
 
 export const meetingsRouter = Router();
+
+// A meeting can be tied to a specific task of its project ("ผูกกับงาน") — but only a task that
+// really belongs to that same project, and never without a project to anchor it. Returns a Thai
+// error message, or null when the pair is fine.
+async function meetingLinkError(projectId: string | null, taskId: string | null): Promise<string | null> {
+  if (!taskId) return null;
+  if (!projectId) return 'ต้องเลือกโครงการก่อนจึงจะผูกงานได้';
+  const [[task]] = await pool.query<RowDataPacket[]>('SELECT project_id FROM project_task WHERE id = ?', [taskId]);
+  if (!task || task.project_id !== projectId) return 'งานที่เลือกไม่ได้อยู่ในโครงการนี้';
+  return null;
+}
 
 interface MeetingRowDb extends RowDataPacket {
   id: string;
@@ -78,7 +90,10 @@ meetingsRouter.post('/', async (req, res) => {
   const attendeeIds = sanitizeAttendeeIds(m.attendeeIds);
 
   try {
-    const id = `MEETING_${Date.now()}`;
+    const linkError = await meetingLinkError(m.projectId || null, m.taskId || null);
+    if (linkError) return res.status(400).json({ message: linkError });
+
+    const id = newId('MEETING');
     const now = nowBangkokDateTime();
     await pool.query(
       `INSERT INTO meeting
@@ -87,7 +102,7 @@ meetingsRouter.post('/', async (req, res) => {
       [
         id, m.projectId || null, m.taskId || null, m.department?.trim() || null, m.title.trim(), m.description?.trim() || null, m.date, m.startTime,
         m.endTime || null, attendeeIds.length ? JSON.stringify(attendeeIds) : null, m.location?.trim() || null,
-        m.locationLink?.trim() || null, m.meetingLink?.trim() || null, m.createdBy || null, now, now,
+        m.locationLink?.trim() || null, m.meetingLink?.trim() || null, req.actorId, now, now,
       ]
     );
 
@@ -139,6 +154,16 @@ meetingsRouter.put('/:id', async (req, res) => {
   }
 
   try {
+    const [[existing]] = await pool.query<MeetingRowDb[]>('SELECT project_id, task_id FROM meeting WHERE id = ?', [req.params.id]);
+    if (!existing) return res.status(404).json({ message: 'ไม่พบการประชุมนี้' });
+    // Re-check the project/task pairing against whatever the meeting will look like after this edit.
+    if ('projectId' in m || 'taskId' in m) {
+      const nextProjectId = 'projectId' in m ? m.projectId || null : existing.project_id;
+      const nextTaskId = 'taskId' in m ? m.taskId || null : existing.task_id;
+      const linkError = await meetingLinkError(nextProjectId, nextTaskId);
+      if (linkError) return res.status(400).json({ message: linkError });
+    }
+
     fields.push('updated_at = ?');
     values.push(nowBangkokDateTime());
     await pool.query(`UPDATE meeting SET ${fields.join(', ')} WHERE id = ?`, [...values, req.params.id]);

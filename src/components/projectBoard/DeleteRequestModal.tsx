@@ -60,7 +60,7 @@ export default function DeleteRequestModal({ target, onClose }: DeleteRequestMod
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ type: 'spring', stiffness: 300, damping: 24, mass: 0.9 }}
-            className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-sm mx-4 overflow-hidden flex flex-col"
+            role="dialog" aria-modal="true" aria-label="ขอลบรายการ" className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-sm mx-4 overflow-hidden flex flex-col"
           >
             <div className="flex justify-between items-center px-5 pt-5 pb-2 shrink-0">
               <div className="min-w-0">

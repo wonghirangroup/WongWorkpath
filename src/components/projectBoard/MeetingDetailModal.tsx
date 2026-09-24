@@ -52,7 +52,7 @@ export default function MeetingDetailModal({ meeting, employees, onClose, onEdit
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ type: 'spring', stiffness: 300, damping: 24, mass: 0.9 }}
-            className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-md mx-4 max-h-[85vh] overflow-y-auto"
+            role="dialog" aria-modal="true" aria-label="รายละเอียดการประชุม" className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-md mx-4 max-h-[85vh] overflow-y-auto"
           >
             <div className="flex justify-between items-start px-5 pt-5 pb-3 border-b border-slate-100">
               <div className="min-w-0">
@@ -85,18 +85,18 @@ export default function MeetingDetailModal({ meeting, employees, onClose, onEdit
 
             <div className="px-5 py-4 space-y-4">
               <div>
-                <p className="text-[#A0A0A0] text-[11px] mb-1">วัน-เวลา</p>
+                <p className="text-[#767676] text-[11px] mb-1">วัน-เวลา</p>
                 <p className="text-sm text-[#272220] flex items-center gap-1.5">
-                  <Clock size={14} className="text-[#A0A0A0] shrink-0" />
+                  <Clock size={14} className="text-[#767676] shrink-0" />
                   {formatThaiDateShort(meeting.date)} · {meeting.startTime}{meeting.endTime ? ` - ${meeting.endTime}` : ''}
                 </p>
               </div>
 
               {taskTitle && (
                 <div>
-                  <p className="text-[#A0A0A0] text-[11px] mb-1">ผูกกับงาน</p>
+                  <p className="text-[#767676] text-[11px] mb-1">ผูกกับงาน</p>
                   <p className="text-sm text-[#272220] flex items-center gap-1.5 wrap-break-word">
-                    <ListChecks size={14} className="text-[#A0A0A0] shrink-0" />
+                    <ListChecks size={14} className="text-[#767676] shrink-0" />
                     {taskTitle}
                   </p>
                 </div>
@@ -104,14 +104,14 @@ export default function MeetingDetailModal({ meeting, employees, onClose, onEdit
 
               {meeting.description && (
                 <div>
-                  <p className="text-[#A0A0A0] text-[11px] mb-1">รายละเอียด</p>
+                  <p className="text-[#767676] text-[11px] mb-1">รายละเอียด</p>
                   <p className="text-sm text-[#272220] whitespace-pre-wrap break-words">{meeting.description}</p>
                 </div>
               )}
 
               {meeting.location && (
                 <div>
-                  <p className="text-[#A0A0A0] text-[11px] mb-1">สถานที่</p>
+                  <p className="text-[#767676] text-[11px] mb-1">สถานที่</p>
                   {legacyLocationIsLink ? (
                     <a
                       href={meeting.location}
@@ -124,7 +124,7 @@ export default function MeetingDetailModal({ meeting, employees, onClose, onEdit
                     </a>
                   ) : (
                     <p className="text-sm text-[#272220] flex items-center gap-1.5">
-                      <MapPin size={14} className="text-[#A0A0A0] shrink-0" />
+                      <MapPin size={14} className="text-[#767676] shrink-0" />
                       {meeting.location}
                     </p>
                   )}
@@ -144,7 +144,7 @@ export default function MeetingDetailModal({ meeting, employees, onClose, onEdit
 
               {meeting.meetingLink && (
                 <div>
-                  <p className="text-[#A0A0A0] text-[11px] mb-1">ลิงก์ประชุมออนไลน์</p>
+                  <p className="text-[#767676] text-[11px] mb-1">ลิงก์ประชุมออนไลน์</p>
                   <a
                     href={meeting.meetingLink}
                     target="_blank"
@@ -158,14 +158,14 @@ export default function MeetingDetailModal({ meeting, employees, onClose, onEdit
               )}
 
               <div>
-                <p className="text-[#A0A0A0] text-[11px] mb-1">ผู้สร้าง</p>
+                <p className="text-[#767676] text-[11px] mb-1">ผู้สร้าง</p>
                 {creator ? (
                   <span className="flex items-center gap-2">
                     {creator.avatar ? (
                       <img src={creator.avatar} alt="" className="w-6 h-6 rounded-full object-cover shrink-0" />
                     ) : (
                       <span
-                        className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0"
+                        className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[11px] font-bold shrink-0"
                         style={{ backgroundColor: getAvatarColor(displayName(creator)) }}
                       >
                         {displayName(creator).trim().charAt(0).toUpperCase()}
@@ -174,12 +174,12 @@ export default function MeetingDetailModal({ meeting, employees, onClose, onEdit
                     <span className="text-sm text-[#272220]">{displayName(creator)}</span>
                   </span>
                 ) : (
-                  <span className="text-sm text-[#A0A0A0]">ไม่ทราบผู้สร้าง</span>
+                  <span className="text-sm text-[#767676]">ไม่ทราบผู้สร้าง</span>
                 )}
               </div>
 
               <div>
-                <p className="text-[#A0A0A0] text-[11px] mb-1">ผู้เข้าร่วม</p>
+                <p className="text-[#767676] text-[11px] mb-1">ผู้เข้าร่วม</p>
                 {attendees.length > 0 ? (
                   <div className="space-y-1.5">
                     {attendees.map((employee) => (
@@ -188,7 +188,7 @@ export default function MeetingDetailModal({ meeting, employees, onClose, onEdit
                           <img src={employee.avatar} alt="" className="w-6 h-6 rounded-full object-cover shrink-0" />
                         ) : (
                           <span
-                            className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0"
+                            className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[11px] font-bold shrink-0"
                             style={{ backgroundColor: getAvatarColor(displayName(employee)) }}
                           >
                             {displayName(employee).trim().charAt(0).toUpperCase()}
@@ -199,13 +199,13 @@ export default function MeetingDetailModal({ meeting, employees, onClose, onEdit
                     ))}
                   </div>
                 ) : (
-                  <span className="text-sm text-[#A0A0A0]">ยังไม่มี</span>
+                  <span className="text-sm text-[#767676]">ยังไม่มี</span>
                 )}
               </div>
 
               {isCancelled && meeting.cancellationReason && (
                 <div>
-                  <p className="text-[#A0A0A0] text-[11px] mb-1">เหตุผลที่ยกเลิก</p>
+                  <p className="text-[#767676] text-[11px] mb-1">เหตุผลที่ยกเลิก</p>
                   <p className="text-sm text-red-600 whitespace-pre-wrap break-words bg-red-50 border border-red-100 rounded-lg px-3 py-2">{meeting.cancellationReason}</p>
                 </div>
               )}

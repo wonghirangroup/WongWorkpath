@@ -441,7 +441,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ type: 'spring', stiffness: 300, damping: 24, mass: 0.9 }}
-            className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-2xl lg:max-w-6xl mx-4 max-h-[94vh] overflow-hidden flex flex-col"
+            role="dialog" aria-modal="true" aria-label="เพิ่มงานใหม่" className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-2xl lg:max-w-6xl mx-4 max-h-[94vh] overflow-hidden flex flex-col"
           >
             <div className="flex justify-between items-center px-6 pt-5 pb-2 shrink-0">
               <div>
@@ -560,7 +560,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                           <div className="sm:col-span-2 flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
                             <div>
                               <p className="text-[#272220] font-bold text-[11px] mb-1">สถานะงาน</p>
-                              <p className="text-[10px] text-[#A0A0A0]">
+                              <p className="text-[11px] text-[#767676]">
                                 {hasSubtasks
                                   ? 'งานนี้มีงานย่อยแล้ว — สถานะคำนวณอัตโนมัติจากงานย่อยทั้งหมด (ดำเนินการอยู่จนกว่างานย่อยทุกงานจะเสร็จ) ไม่สามารถแก้ไขเองได้'
                                   : 'เปลี่ยนตามขั้นตอนอัตโนมัติ — ยังไม่เริ่ม/กำลังทำตามผู้รับผิดชอบ, รอตรวจ/เสร็จแล้วผ่านการ "ส่งงาน"/"ตรวจงาน"'}
@@ -591,7 +591,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                                 className="rounded border-[#E5E5E5] text-[#FF6537] focus:ring-[#FF6537] cursor-pointer"
                               />
                               <span className="text-[#272220] font-bold text-[11px]">ติดปัญหา</span>
-                              <span className="text-[10px] text-[#A0A0A0]">— ทุกคนที่เกี่ยวข้องกับโปรเจคนี้จะได้รับแจ้งเตือน</span>
+                              <span className="text-[11px] text-[#767676]">— ทุกคนที่เกี่ยวข้องกับโปรเจคนี้จะได้รับแจ้งเตือน</span>
                             </label>
                             {blocked && (
                               <textarea
@@ -721,7 +721,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                           </div>
                         </div>
 
-                        <p className="sm:col-span-2 -mt-1.5 text-[10px] text-[#A0A0A0]">ผู้ตรวจคนใดคนหนึ่งกดผ่าน/ตีกลับก็มีผลทันที ถ้ายังไม่เลือกตอนนี้ เลือกได้อีกครั้งตอนกด "ส่งงาน"</p>
+                        <p className="sm:col-span-2 -mt-1.5 text-[11px] text-[#767676]">ผู้ตรวจคนใดคนหนึ่งกดผ่าน/ตีกลับก็มีผลทันที ถ้ายังไม่เลือกตอนนี้ เลือกได้อีกครั้งตอนกด "ส่งงาน"</p>
 
                         <div>
                           <label className="block text-[#272220] font-bold text-[11px] mb-1">วันที่เริ่ม</label>
@@ -844,7 +844,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                     {!isEditing && (
                     <div className="lg:col-span-2 border-t border-slate-100 pt-3">
                       <label className="block text-[#272220] font-bold text-[11px] mb-1">
-                        ไฟล์แนบ/ลิงก์ประกอบ (ไม่บังคับ) <span className="font-normal text-[#A0A0A0]">— ไม่เกิน {formatFileSize(MAX_FILE_BYTES)} ต่อไฟล์</span>
+                        ไฟล์แนบ/ลิงก์ประกอบ (ไม่บังคับ) <span className="font-normal text-[#767676]">— ไม่เกิน {formatFileSize(MAX_FILE_BYTES)} ต่อไฟล์</span>
                       </label>
                       {/* File picker and link field sit side by side (stacked below sm) so this
                           row costs one line of height instead of two. */}
@@ -921,7 +921,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                                 {/* Name and size share one line — a second line per chip is what pushed
                                     a handful of attachments past the modal's no-scroll height. */}
                                 <p className="min-w-0 flex-1 truncate text-xs font-medium text-[#272220]">
-                                  {f.name} <span className="font-normal text-[11px] text-[#A0A0A0]">{formatFileSize(f.size)}</span>
+                                  {f.name} <span className="font-normal text-[11px] text-[#767676]">{formatFileSize(f.size)}</span>
                                 </p>
                                 <button
                                   type="button"
@@ -941,7 +941,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                                   <Icon size={15} className={color} />
                                 </div>
                                 <p className="min-w-0 flex-1 truncate text-xs font-medium text-[#272220]" title={link.url}>
-                                  {link.name} <span className="font-normal text-[11px] text-[#A0A0A0]">{link.url}</span>
+                                  {link.name} <span className="font-normal text-[11px] text-[#767676]">{link.url}</span>
                                 </p>
                                 <button
                                   type="button"

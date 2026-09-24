@@ -1,9 +1,13 @@
+import crypto from 'node:crypto';
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { Resend } from 'resend';
 import type { RowDataPacket } from 'mysql2';
 import { pool } from '../db.ts';
 import { nowBangkokDateTime, bangkokDateTimeFrom } from '../lib/datetime.ts';
+import { requireAuth, signSessionToken, signResetToken, verifyResetToken } from '../lib/auth.ts';
+import { createFailureLimiter } from '../lib/rateLimit.ts';
+import { EMPLOYEE_SELECT, toEmployeeDto, type EmployeeRow } from '../lib/employeeDto.ts';
 
 export const authRouter = Router();
 
@@ -23,9 +27,17 @@ const OTP_TTL_MINUTES = 10;
 const OTP_RESEND_COOLDOWN_SECONDS = 60;
 const MAX_OTP_ATTEMPTS = 5;
 
+// crypto.randomInt, not Math.random — an OTP has to be unpredictable, and Math.random's output
+// can be reconstructed from a few observed values.
 function generateOtp(): string {
-  return String(Math.floor(100000 + Math.random() * 900000));
+  return String(crypto.randomInt(100000, 1000000));
 }
+
+// Failed logins per (IP + username) and per IP alone. Keyed on the IP too so a stranger hammering
+// someone's username can't lock that real person out of their own account.
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const loginByAccountLimiter = createFailureLimiter(LOGIN_WINDOW_MS, 5);
+const loginByIpLimiter = createFailureLimiter(LOGIN_WINDOW_MS, 30);
 
 interface LoginRow extends RowDataPacket {
   id: number;
@@ -57,6 +69,18 @@ authRouter.post('/login', async (req, res) => {
     return res.status(400).json({ message: INVALID_CREDENTIALS_MESSAGE });
   }
 
+  const ip = req.ip ?? 'unknown';
+  const accountKey = `${ip}|${username.toLowerCase()}`;
+  const lockedFor = Math.max(loginByAccountLimiter.lockedForSeconds(accountKey), loginByIpLimiter.lockedForSeconds(ip));
+  if (lockedFor > 0) {
+    return res.status(429).json({ message: `ลองเข้าสู่ระบบผิดหลายครั้งเกินไป กรุณารอ ${Math.ceil(lockedFor / 60)} นาทีแล้วลองใหม่อีกครั้ง` });
+  }
+  const failLogin = () => {
+    loginByAccountLimiter.recordFailure(accountKey);
+    loginByIpLimiter.recordFailure(ip);
+    return res.status(401).json({ message: INVALID_CREDENTIALS_MESSAGE });
+  };
+
   try {
     const [rows] = await pool.query<LoginRow[]>(
       'SELECT id, employee_id, username, password_hash, is_active FROM login WHERE username = ? LIMIT 1',
@@ -64,24 +88,45 @@ authRouter.post('/login', async (req, res) => {
     );
     const row = rows[0];
 
-    if (!row || !row.is_active) {
-      return res.status(401).json({ message: INVALID_CREDENTIALS_MESSAGE });
-    }
+    if (!row || !row.is_active) return failLogin();
 
     const passwordMatches = await bcrypt.compare(password, row.password_hash);
-    if (!passwordMatches) {
-      return res.status(401).json({ message: INVALID_CREDENTIALS_MESSAGE });
+    if (!passwordMatches) return failLogin();
+
+    const [employeeRows] = row.employee_id
+      ? await pool.query<EmployeeRow[]>(`${EMPLOYEE_SELECT} WHERE e.id = ? LIMIT 1`, [row.employee_id])
+      : [[] as EmployeeRow[]];
+    if (!row.employee_id || employeeRows.length === 0) {
+      return res.status(403).json({ message: 'บัญชีนี้ยังไม่ได้ผูกกับข้อมูลพนักงานในระบบ' });
     }
 
+    loginByAccountLimiter.reset(accountKey);
     await pool.query('UPDATE login SET last_login_at = ? WHERE id = ?', [nowBangkokDateTime(), row.id]);
 
+    // Hands back the employee itself so the client doesn't need the whole directory before anyone
+    // has signed in (every other endpoint now requires the token issued here).
     return res.status(200).json({
       id: row.id,
       username: row.username,
       employeeId: row.employee_id,
+      token: signSessionToken(row.employee_id),
+      employee: toEmployeeDto(employeeRows[0]),
     });
   } catch (err) {
     console.error('POST /api/auth/login failed:', err);
+    return res.status(500).json({ message: 'เกิดข้อผิดพลาดในระบบ กรุณาลองใหม่อีกครั้ง' });
+  }
+});
+
+// Restores a session on page reload: proves the stored token is still good and returns the employee
+// it belongs to, so a role change made since the last login shows up straight away.
+authRouter.get('/me', requireAuth, async (req, res) => {
+  try {
+    const [rows] = await pool.query<EmployeeRow[]>(`${EMPLOYEE_SELECT} WHERE e.id = ? LIMIT 1`, [req.actorId]);
+    if (rows.length === 0) return res.status(401).json({ message: 'กรุณาเข้าสู่ระบบใหม่อีกครั้ง', code: 'UNAUTHENTICATED' });
+    return res.json(toEmployeeDto(rows[0]));
+  } catch (err) {
+    console.error('GET /api/auth/me failed:', err);
     return res.status(500).json({ message: 'เกิดข้อผิดพลาดในระบบ กรุณาลองใหม่อีกครั้ง' });
   }
 });
@@ -186,28 +231,34 @@ authRouter.post('/verify-otp', async (req, res) => {
     }
 
     await pool.query('UPDATE password_reset_otp SET verified = 1 WHERE id = ?', [row.id]);
-    return res.status(200).json({ message: 'ยืนยันรหัส OTP สำเร็จ' });
+    return res.status(200).json({ message: 'ยืนยันรหัส OTP สำเร็จ', resetToken: signResetToken(email, row.id) });
   } catch (err) {
     console.error('POST /api/auth/verify-otp failed:', err);
     return res.status(500).json({ message: 'เกิดข้อผิดพลาดในระบบ กรุณาลองใหม่อีกครั้ง' });
   }
 });
 
-// No OTP re-entry here on purpose — /verify-otp already consumed it by flipping `verified`, so
-// this only has to find that already-verified, still-unexpired row for the email.
+// No OTP re-entry here on purpose — /verify-otp already consumed it by flipping `verified` and
+// handed back a signed resetToken. That token, not merely "this email verified something a moment
+// ago", is what authorises the change: only whoever actually entered the OTP holds it.
 authRouter.post('/reset-password', async (req, res) => {
   const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
   const newPassword = typeof req.body?.newPassword === 'string' ? req.body.newPassword : '';
+  const resetToken = typeof req.body?.resetToken === 'string' ? req.body.resetToken : '';
   const NOT_VERIFIED_MESSAGE = 'กรุณายืนยันรหัส OTP ก่อนตั้งรหัสผ่านใหม่';
 
   if (!email || newPassword.length < 6) {
     return res.status(400).json({ message: 'รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัวอักษร' });
   }
+  const proof = resetToken ? verifyResetToken(resetToken, email) : null;
+  if (!proof) {
+    return res.status(400).json({ message: NOT_VERIFIED_MESSAGE });
+  }
 
   try {
     const [rows] = await pool.query<OtpRow[]>(
-      'SELECT * FROM password_reset_otp WHERE email = ? AND verified = 1 AND expires_at > ? ORDER BY id DESC LIMIT 1',
-      [email, nowBangkokDateTime()]
+      'SELECT * FROM password_reset_otp WHERE id = ? AND email = ? AND verified = 1 AND expires_at > ? LIMIT 1',
+      [proof.otpRowId, email, nowBangkokDateTime()]
     );
     const row = rows[0];
     if (!row) {

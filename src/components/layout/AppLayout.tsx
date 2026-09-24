@@ -1,11 +1,13 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, Suspense, useEffect, useRef, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { ArrowLeft, ChevronRight, Folder, Home } from 'lucide-react';
 import { useAppData } from '../../context/AppDataContext';
 import Header from './Header';
 import Sidebar, { NAV_ITEMS } from './Sidebar';
 import NotificationToast from './NotificationToast';
+import AppErrorToast from './AppErrorToast';
 import Tooltip from '../Tooltip';
+import ErrorBoundary from '../ErrorBoundary';
 import { STATUS_LABEL, STATUS_PILL, STATUS_ICON } from '../projectBoard/statusMeta';
 import { canManageEmployees } from '../../lib/permissions';
 
@@ -220,11 +222,18 @@ export default function AppLayout() {
         </div>
 
         <main className="flex-1 overflow-y-auto bg-[#F6F6F6] print:overflow-visible print:p-0 p-4 sm:p-6 lg:px-8 lg:pt-3.75 lg:pb-4">
-          <Outlet />
+          {/* Keyed by route so moving to another page clears a crash on the previous one; Suspense
+              covers the lazily-loaded page chunks (see App.tsx). */}
+          <ErrorBoundary key={pathname}>
+            <Suspense fallback={<div role="status" aria-label="กำลังโหลด" className="flex items-center justify-center min-h-[40vh] text-sm text-[#6F6F6F]">กำลังโหลด…</div>}>
+              <Outlet />
+            </Suspense>
+          </ErrorBoundary>
         </main>
       </div>
 
       <NotificationToast />
+      <AppErrorToast />
     </div>
   );
 }
