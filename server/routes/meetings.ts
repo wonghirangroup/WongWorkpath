@@ -3,6 +3,7 @@ import type { RowDataPacket } from 'mysql2';
 import { pool } from '../db.ts';
 import { nowBangkokDateTime } from '../lib/datetime.ts';
 import { newId } from '../lib/ids.ts';
+import { isEmployeeManagerActor } from '../lib/ownership.ts';
 
 export const meetingsRouter = Router();
 
@@ -178,6 +179,14 @@ meetingsRouter.put('/:id', async (req, res) => {
 
 meetingsRouter.delete('/:id', async (req, res) => {
   try {
+    // The app cancels a meeting by updating its status and never calls this route, so it can be strict:
+    // only whoever created the meeting, or an admin / Super Admin / ผู้บริหาร, may remove one outright.
+    const [[existing]] = await pool.query<RowDataPacket[]>('SELECT created_by FROM meeting WHERE id = ?', [req.params.id]);
+    if (!existing) return res.status(404).json({ message: 'ไม่พบการประชุมนี้' });
+    const isCreator = Boolean(existing.created_by) && existing.created_by === req.actorId;
+    if (!isCreator && !(await isEmployeeManagerActor(req.actorId))) {
+      return res.status(403).json({ message: 'ลบการประชุมได้เฉพาะผู้สร้างนัดหรือแอดมิน' });
+    }
     await pool.query('DELETE FROM meeting WHERE id = ?', [req.params.id]);
     res.status(204).end();
   } catch (err) {

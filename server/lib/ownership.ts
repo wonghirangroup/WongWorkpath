@@ -42,6 +42,11 @@ export async function isEmployeeManagerActor(actorId: string | undefined | null)
   return row?.account_type === 'admin' || row?.account_type === 'superadmin' || row?.account_type === 'executive';
 }
 
+// Mirrors the client's canDeleteProject: only admin / Super Admin / ผู้บริหาร are ever offered a delete
+// button for a project (a plain employee who owns one is not), so the server refuses everyone else too
+// instead of relying on the button being hidden. Same set of accounts as isEmployeeManagerActor.
+export const isProjectDeleterActor = isEmployeeManagerActor;
+
 // Narrower than isEmployeeManagerActor — mirrors the client's canEditOrgStructure. A plain Admin
 // can view the org chart but not add/rename/delete divisions or sections; only Super Admin and
 // ผู้บริหาร can (see server/routes/org-structure.ts).

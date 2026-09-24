@@ -199,7 +199,16 @@ changeRequestsRouter.put('/:id/decide', async (req, res) => {
     );
 
     const [[row]] = await pool.query<ChangeRequestRowDb[]>(`SELECT ${SELECT_FIELDS} FROM change_request WHERE id = ?`, [req.params.id]);
-    res.json(toChangeRequest(row));
+    // Approving a delete removes the project/task together with every request about it — this one
+    // included — so there can be nothing left to read back. Answer with what the row would have said
+    // (the caller only needs the decision), instead of failing after the delete has already happened.
+    res.json(toChangeRequest(row ?? {
+      ...existing,
+      status: b.decision === 'approve' ? 'approved' : 'rejected',
+      decided_by: b.decidedBy || null,
+      decided_at: now,
+      decision_note: b.note?.trim() || null,
+    }));
   } catch (err) {
     console.error('PUT /api/change-requests/:id/decide failed:', err);
     res.status(500).json({ message: 'เกิดข้อผิดพลาดในระบบ กรุณาลองใหม่อีกครั้ง' });
