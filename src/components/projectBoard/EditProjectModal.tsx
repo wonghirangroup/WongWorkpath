@@ -21,6 +21,7 @@ import { isOwner, resolveValidIds } from '../../lib/ownership';
 import { useConfirm } from '../../context/ConfirmContext';
 import Dropdown from '../Dropdown';
 import Tooltip from '../Tooltip';
+import DeadlineReminderField, { useSavedReminder } from '../DeadlineReminderField';
 
 interface EditProjectModalProps {
   isOpen: boolean;
@@ -163,6 +164,8 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
   };
 
   const chosenMembers = employees.filter((e) => memberIds.includes(e.id));
+  // My own reminder for this project's end date — saved immediately, never part of the edit/approval flow.
+  const savedReminder = useSavedReminder('project', row.id);
 
   return createPortal(
     <AnimatePresence>
@@ -382,20 +385,35 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
                       )}
                     </div>
 
-                    <div>
-                      <label className="block text-[#272220] font-bold text-[11px] mb-1">งบประมาณ (บาท)</label>
-                      <div className="relative">
-                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-[#767676]">฿</span>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          placeholder="เช่น 500,000"
-                          value={formatThousands(budget)}
-                          onChange={(e) => setBudget(e.target.value.replace(/[^\d]/g, ''))}
-                          className={`${inputClass} pl-6`}
+                    {/* Budget and my own end-date reminder share one row — a separate row for the reminder
+                        pushed this column past what fits on a short screen without scrolling. */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[#272220] font-bold text-[11px] mb-1">งบประมาณ (บาท)</label>
+                        <div className="relative">
+                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-[#767676]">฿</span>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            placeholder="เช่น 500,000"
+                            value={formatThousands(budget)}
+                            onChange={(e) => setBudget(e.target.value.replace(/[^\d]/g, ''))}
+                            className={`${inputClass} pl-6`}
+                          />
+                        </div>
+                      </div>
+                      <div className="min-w-0">
+                        <label className="block text-[#272220] font-bold text-[11px] mb-1">เตือนฉันก่อนสิ้นสุด</label>
+                        <DeadlineReminderField
+                          {...savedReminder}
+                          deadlineWord="วันสิ้นสุดโครงการ"
+                          note="บันทึกทันที ไม่ต้องรออนุมัติ"
                         />
                       </div>
                     </div>
+                    {!(ownerIds.includes(currentUserId) || memberIds.includes(currentUserId)) && (
+                      <p className="-mt-1.5 text-[11px] text-amber-700">คุณไม่ได้อยู่ในโครงการนี้ จึงจะไม่ได้รับการเตือนวันสิ้นสุด</p>
+                    )}
 
                     <div>
                       <div className="grid grid-cols-2 gap-3">

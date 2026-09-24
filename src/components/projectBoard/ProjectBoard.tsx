@@ -577,9 +577,7 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
           const next = (seqNumbers.length ? Math.max(...seqNumbers) : 0) + 1;
           return `${abbreviation}-${yy}-${type}-${String(next).padStart(3, '0')}`;
         }}
-        onCreate={async (payload) => {
-          await handleAddProject({ ...payload, createdBy: currentUserId });
-        }}
+        onCreate={(payload) => handleAddProject({ ...payload, createdBy: currentUserId })}
         onCreated={(title, folderCreated) =>
           showActionToast(
             folderCreated

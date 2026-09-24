@@ -33,7 +33,7 @@ export default function DashboardPage() {
       projectTasks={projectTasks}
       employees={employees}
       currentUser={currentUser}
-      onCreateProject={async (payload) => { await handleAddProject({ ...payload, createdBy: currentUser?.id ?? '' }); }}
+      onCreateProject={(payload) => handleAddProject({ ...payload, createdBy: currentUser?.id ?? '' })}
       onCreateFolder={handleCreateFolder}
       customProjectStatuses={customProjectStatuses}
       customProjectTypes={customProjectTypes}

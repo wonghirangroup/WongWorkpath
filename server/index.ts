@@ -14,6 +14,7 @@ import { changeRequestsRouter } from './routes/change-requests.ts';
 import { documentsRouter } from './routes/documents.ts';
 import { orgStructureRouter } from './routes/org-structure.ts';
 import { auditLogsRouter } from './routes/audit-logs.ts';
+import { deadlineRemindersRouter } from './routes/deadline-reminders.ts';
 import { assertDbConnection } from './db.ts';
 import { requireAuth } from './lib/auth.ts';
 
@@ -55,6 +56,7 @@ app.use('/api/change-requests', changeRequestsRouter);
 app.use('/api/documents', documentsRouter);
 app.use('/api/org-structure', orgStructureRouter);
 app.use('/api/audit-logs', auditLogsRouter);
+app.use('/api/deadline-reminders', deadlineRemindersRouter);
 
 // Last resort for anything a route didn't catch itself (Express 4 never forwards a rejected async
 // handler here on its own, but a sync throw or an explicit next(err) lands in this).

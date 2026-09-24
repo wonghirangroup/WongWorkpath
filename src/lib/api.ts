@@ -1,6 +1,7 @@
 import { Employee, CredentialItem, Meeting, Notification, NotificationCategory, LinkedDoc, AuditLog } from '../types';
 import type { ProjectRow, ProjectTaskItem, CustomProjectStatus, CustomProjectType } from '../components/projectBoard/types';
 import type { OrgDivisionData } from '../data/orgStructure';
+import type { ReminderEntityType } from './deadlineReminders';
 
 // Vite only exposes env vars prefixed VITE_ to client code — set in .env,
 // separate from the server-only DB_* vars that server/db.ts reads.
@@ -810,4 +811,36 @@ export async function createAuditLog(entry: AuditLog): Promise<AuditLog> {
     throw new ApiError(data.message ?? 'บันทึกกิจกรรมไม่สำเร็จ', res.status);
   }
   return data as AuditLog;
+}
+
+// "เตือนก่อนกำหนด" — my own reminder lead times for one project or task (server/routes/
+// deadline-reminders.ts). Personal to the logged-in person; no approval flow involved.
+export interface DeadlineReminderRow {
+  entityType: ReminderEntityType;
+  entityId: string;
+  leadDays: number[];
+}
+
+export async function fetchDeadlineReminders(): Promise<DeadlineReminderRow[]> {
+  const res = await authFetch(`${API_BASE_URL}/api/deadline-reminders`);
+  if (!res.ok) throw new Error(`Failed to fetch deadline reminders: ${res.status}`);
+  return res.json();
+}
+
+// leadDays = [] means "don't remind me ahead of time"; null removes my choice (back to the default).
+export async function setDeadlineReminderRemote(entityType: ReminderEntityType, entityId: string, leadDays: number[] | null): Promise<void> {
+  let res: Response;
+  try {
+    res = await authFetch(`${API_BASE_URL}/api/deadline-reminders/${entityType}/${encodeURIComponent(entityId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ leadDays }),
+    });
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(data.message ?? 'บันทึกการเตือนไม่สำเร็จ', res.status);
+  }
 }

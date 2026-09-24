@@ -27,7 +27,7 @@ interface DashboardProps {
   projectTasks: ProjectTaskItem[];
   employees: Employee[];
   currentUser: Employee | null;
-  onCreateProject: (payload: Omit<CreateProjectPayload, 'createdBy'>) => Promise<void>;
+  onCreateProject: (payload: Omit<CreateProjectPayload, 'createdBy'>) => Promise<{ id: string }>;
   onCreateFolder: (name: string, parentId: string | null, taskId: string | undefined, projectId: string) => Promise<string>;
   customProjectStatuses: CustomProjectStatus[];
   customProjectTypes: CustomProjectType[];
@@ -231,9 +231,7 @@ export default function Dashboard({
         isOpen={isCreateProjectOpen}
         onClose={() => setIsCreateProjectOpen(false)}
         getNextCodePreview={getNextCodePreview}
-        onCreate={async (payload) => {
-          await onCreateProject(payload);
-        }}
+        onCreate={(payload) => onCreateProject(payload)}
         onCreated={(title, folderCreated) =>
           setActionToast(
             folderCreated

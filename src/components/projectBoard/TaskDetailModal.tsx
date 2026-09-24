@@ -8,6 +8,8 @@ import { displayName, PRIORITY_OPTIONS } from './CreateProjectModal';
 import { getAvatarColor } from '../../lib/avatarColor';
 import { getItemVisual } from '../DocVault';
 import { useEscapeToClose } from '../../lib/useEscapeToClose';
+import { useAppData } from '../../context/AppDataContext';
+import DeadlineReminderField, { useSavedReminder } from '../DeadlineReminderField';
 
 function PersonRow({ label, employee }: { label: string; employee: Employee | undefined }) {
   return (
@@ -107,6 +109,8 @@ interface TaskDetailModalProps {
 // (long description, etc.) can still be read in full without leaving the table.
 export default function TaskDetailModal({ task, employees, documents, onClose, projectTitle, onGoToProject }: TaskDetailModalProps) {
   useEscapeToClose(Boolean(task), onClose);
+  const { currentUser } = useAppData();
+  const savedReminder = useSavedReminder('task', task?.id);
   const assignees = task ? employees.filter((e) => task.assigneeEmployeeIds.includes(e.id)) : [];
   const creator = task?.creatorEmployeeId ? employees.find((e) => e.id === task.creatorEmployeeId) : undefined;
   const reviewers = task ? employees.filter((e) => (task.reviewerEmployeeIds ?? []).includes(e.id)) : [];
@@ -258,6 +262,20 @@ export default function TaskDetailModal({ task, employees, documents, onClose, p
                   )}
                 </div>
               </div>
+
+              {/* My own reminder for this task — personal, saved on the spot, no approval involved. Only
+                  worth showing while the task still has a due date and isn't finished. */}
+              {task.dueDateISO && task.status !== 'done' && (
+                <div>
+                  <p className="text-[#767676] text-[11px] mb-1">เตือนฉันก่อนกำหนดส่ง</p>
+                  <DeadlineReminderField
+                    {...savedReminder}
+                    deadlineWord="กำหนดส่ง"
+                    note="บันทึกทันที"
+                    warning={currentUser && task.assigneeEmployeeIds.includes(currentUser.id) ? undefined : 'คุณไม่ได้เป็นผู้รับผิดชอบงานนี้ จึงจะไม่ได้รับการเตือน'}
+                  />
+                </div>
+              )}
 
               {(task.submissionNote || submissionFiles.length > 0) && (
                 <div>

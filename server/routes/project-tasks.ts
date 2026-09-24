@@ -290,6 +290,10 @@ export async function deleteTaskCascade(taskId: string): Promise<void> {
       `DELETE FROM change_request WHERE entity_type = 'project_task' AND entity_id IN (${doomedIds.map(() => '?').join(',')})`,
       doomedIds
     );
+    await conn.query(
+      `DELETE FROM deadline_reminder WHERE entity_type = 'task' AND entity_id IN (${doomedIds.map(() => '?').join(',')})`,
+      doomedIds
+    );
     await conn.query('DELETE FROM project_task WHERE id = ?', [taskId]);
   });
 

@@ -8,8 +8,19 @@ import {
   AuditLog,
 } from '../types';
 import { DEFAULT_ORG_DIVISIONS, OrgDivisionData } from '../data/orgStructure';
-import { ApiError, fetchCurrentUser, getAuthToken, clearAuthToken, setSessionExpiredHandler, fetchEmployees, createEmployee, updateEmployeeRemote, changeSelfPassword, deleteEmployeeRemote, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote, fetchProjects, createProject, updateProjectRemote, deleteProjectRemote, CreateProjectPayload, fetchMeetings, createMeeting, updateMeetingRemote, fetchProjectTasks, createProjectTask, updateProjectTaskRemote, deleteProjectTaskRemote, fetchProjectCustomStatuses, createProjectCustomStatus, deleteProjectCustomStatusRemote, fetchNotifications, createNotification, markNotificationRead, markAllNotificationsRead, CreateNotificationPayload, fetchChangeRequests, createChangeRequest, decideChangeRequest, ChangeRequest, fetchDocuments, createDocument, updateDocumentRemote, deleteDocumentRemote, fetchOrgStructure, addOrgDivision, renameOrgDivision, deleteOrgDivision, addOrgSection, renameOrgSection, deleteOrgSection, fetchAuditLogs, createAuditLog, fetchProjectCustomTypes, createProjectCustomType } from '../lib/api';
+import { ApiError, fetchCurrentUser, getAuthToken, clearAuthToken, setSessionExpiredHandler, fetchEmployees, createEmployee, updateEmployeeRemote, changeSelfPassword, deleteEmployeeRemote, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote, fetchProjects, createProject, updateProjectRemote, deleteProjectRemote, CreateProjectPayload, fetchMeetings, createMeeting, updateMeetingRemote, fetchProjectTasks, createProjectTask, updateProjectTaskRemote, deleteProjectTaskRemote, fetchProjectCustomStatuses, createProjectCustomStatus, deleteProjectCustomStatusRemote, fetchNotifications, createNotification, markNotificationRead, markAllNotificationsRead, CreateNotificationPayload, fetchChangeRequests, createChangeRequest, decideChangeRequest, ChangeRequest, fetchDocuments, createDocument, updateDocumentRemote, deleteDocumentRemote, fetchOrgStructure, addOrgDivision, renameOrgDivision, deleteOrgDivision, addOrgSection, renameOrgSection, deleteOrgSection, fetchAuditLogs, createAuditLog, fetchProjectCustomTypes, createProjectCustomType, fetchDeadlineReminders, setDeadlineReminderRemote } from '../lib/api';
 import { nowTimestamp, formatThaiDateShort } from '../lib/datetime';
+import {
+  ReminderMap,
+  ReminderEntityType,
+  pickReminderLead,
+  reminderKey,
+  reminderLeadsFor,
+  dueSoonNotificationId,
+  overdueNotificationId,
+  closestRemindedLead,
+} from '../lib/deadlineReminders';
+import { isResponsibleForProject } from '../lib/ownership';
 import type { ProjectRow, ProjectTaskItem, CustomProjectStatus, CustomProjectType } from '../components/projectBoard/types';
 import { registerCustomStatusLabels, registerCustomTypeLabels } from '../components/projectBoard/statusMeta';
 
@@ -153,6 +164,9 @@ interface AppDataContextValue {
   // App-wide "something went wrong" message (failed data load, refused change) — see AppErrorToast.
   appError: string | null;
   dismissAppError: () => void;
+  // My own reminder lead times per project/task (set in each one's modal) — see lib/deadlineReminders.ts.
+  deadlineReminders: ReminderMap;
+  handleSetDeadlineReminder: (entityType: ReminderEntityType, entityId: string, leadDays: number[] | null) => void;
 
   // Org chart structure (โครงสร้างองค์กร) — admin-editable from Employee Management's
   // โครงสร้างองค์กร tab. `orgSections` is every section flattened, in division order, for the
@@ -194,6 +208,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [credentials, setCredentials] = useState<CredentialItem[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  // The deadline-reminder scan below must know what this person already received (notifications) and
+  // which lead times they chose for each item (deadlineReminders) before it decides anything —
+  // otherwise it would announce with the defaults and re-send what's already in the inbox.
+  const [notificationsLoaded, setNotificationsLoaded] = useState(false);
+  const [deadlineReminders, setDeadlineReminders] = useState<ReminderMap>({});
+  const [deadlineRemindersReady, setDeadlineRemindersReady] = useState(false);
   const [notificationToast, setNotificationToast] = useState<{ notification: Notification; moreCount: number } | null>(null);
   // Every notification id this session has already seen — null until the first fetch for the
   // logged-in user lands, which only records the existing backlog instead of announcing it.
@@ -360,6 +380,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     seenNotificationIds.current = null;
     setNotificationToast(null);
+    setNotificationsLoaded(false);
     if (!userId) {
       setNotifications([]);
       return;
@@ -374,6 +395,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           if (seenNotificationIds.current) announceNewNotifications(list);
           else seenNotificationIds.current = new Set(list.map((n) => n.id));
           setNotifications(list);
+          setNotificationsLoaded(true);
         })
         .catch((err) => console.warn('Could not load notifications from the API:', err));
     };
@@ -394,8 +416,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   // see server/routes/notifications.ts. Only the logged-in user's own items are scanned: there's
   // no server-side scheduler, so nobody else's client can be reached from here.
   const scannedNotificationIds = useRef(new Set<string>());
+  // The scan below reads the latest loaded notifications without re-running every time the 45s poll
+  // brings new ones in.
+  const notificationsRef = useRef(notifications);
+  notificationsRef.current = notifications;
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || !notificationsLoaded || !deadlineRemindersReady) return;
     const me = currentUser.id;
 
     const attempt = (id: string, payload: Omit<CreateNotificationPayload, 'targetEmployeeId' | 'id'>) => {
@@ -404,12 +430,23 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       pushNotification({ ...payload, id, targetEmployeeId: me });
     };
 
+    // Ids of everything already in this person's inbox — lets the scan skip what it (or an older
+    // version of it) has announced before.
+    const existingIds = notificationsRef.current.map((n) => n.id);
+
+    // How far ahead to remind about each task/project is this person's OWN choice for that item, set in
+    // its modal (deadlineReminders); nothing chosen = the app default. One reminder per chosen lead
+    // time: the smallest one that still covers the days left (see pickReminderLead), so opening the
+    // app late never fires every threshold at once — and never again for one already announced at an
+    // equal or closer lead. Overdue alerts always fire, whatever was chosen.
     projectTasks
       .filter((t) => t.status !== 'done' && t.assigneeEmployeeIds.includes(me) && t.daysUntilDue !== undefined)
       .forEach((t) => {
         const projectTitle = projects.find((p) => p.id === t.projectId)?.title ?? 'โครงการ';
-        if (t.daysUntilDue! < 0) {
-          attempt(`notif_overdue_${t.id}`, {
+        const daysLeft = t.daysUntilDue!;
+        if (daysLeft < 0) {
+          if (existingIds.includes(`notif_overdue_${t.id}`)) return; // announced before ids named the recipient
+          attempt(overdueNotificationId(me, t.id), {
             title: 'งานเลยกำหนดส่งแล้ว',
             category: 'deadline',
             message: `งาน "${t.title}" ในโครงการ ${projectTitle} เลยกำหนดส่งแล้ว`,
@@ -417,16 +454,43 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
             linkType: 'project',
             linkId: t.projectId,
           });
-        } else if (t.daysUntilDue! <= 2) {
-          attempt(`notif_duesoon_${t.id}`, {
-            title: 'งานใกล้ครบกำหนด',
-            category: 'deadline',
-            message: `งาน "${t.title}" ในโครงการ ${projectTitle} ครบกำหนดในอีก ${t.daysUntilDue} วัน`,
-            type: 'warning',
-            linkType: 'project',
-            linkId: t.projectId,
-          });
+          return;
         }
+        const lead = pickReminderLead(daysLeft, reminderLeadsFor(deadlineReminders, 'task', t.id));
+        if (lead === null) return;
+        const dueISO = t.dueDateISO ?? '';
+        const alreadyAt = closestRemindedLead(existingIds, 'task', me, t.id, dueISO);
+        if (alreadyAt !== null && alreadyAt <= lead) return;
+        attempt(dueSoonNotificationId('task', me, t.id, lead, dueISO), {
+          title: 'งานใกล้ครบกำหนด',
+          category: 'deadline',
+          message: `งาน "${t.title}" ในโครงการ ${projectTitle} ${daysLeft === 0 ? 'ครบกำหนดวันนี้' : `ครบกำหนดในอีก ${daysLeft} วัน`}`,
+          type: 'warning',
+          linkType: 'project',
+          linkId: t.projectId,
+        });
+      });
+
+    // Project end dates — everyone who owns or belongs to the project, unless it's already finished or
+    // cancelled. (No "overdue" alert here: a project past its end date without being closed is common
+    // and would announce every old one at once the first time this runs.)
+    projects
+      .filter((p) => isResponsibleForProject(p, me) && p.status !== 'completed' && p.status !== 'cancelled' && p.daysUntilDue !== undefined && p.daysUntilDue >= 0)
+      .forEach((p) => {
+        const daysLeft = p.daysUntilDue!;
+        const lead = pickReminderLead(daysLeft, reminderLeadsFor(deadlineReminders, 'project', p.id));
+        if (lead === null) return;
+        const endISO = p.endDateISO ?? '';
+        const alreadyAt = closestRemindedLead(existingIds, 'project', me, p.id, endISO);
+        if (alreadyAt !== null && alreadyAt <= lead) return;
+        attempt(dueSoonNotificationId('project', me, p.id, lead, endISO), {
+          title: 'โครงการใกล้สิ้นสุด',
+          category: 'deadline',
+          message: `โครงการ "${p.title}" ${daysLeft === 0 ? 'สิ้นสุดวันนี้' : `จะสิ้นสุดในอีก ${daysLeft} วัน`}`,
+          type: 'warning',
+          linkType: 'project',
+          linkId: p.id,
+        });
       });
 
     // Local calendar dates, not toISOString() (which is UTC — between midnight and 07:00 in Thailand
@@ -448,7 +512,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           linkId: m.projectId,
         });
       });
-  }, [currentUser, projectTasks, meetings, projects]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser, projectTasks, meetings, projects, deadlineReminders, notificationsLoaded, deadlineRemindersReady]);
 
   // One-time cleanup of domains that used to live in localStorage and are now real, shared
   // backend tables (or, for unityspace_tasks/unityspace_leaves/unityspace_notifications, are gone
@@ -478,6 +543,48 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   // โครงสร้างองค์กร (ฝ่าย/แผนก) — a real, shared table (server/routes/org-structure.ts). Falls back
   // to keeping the DEFAULT_ORG_DIVISIONS the state started with if the API is unreachable.
   useLoadOnLogin(userId, 'org structure', fetchOrgStructure, setOrgDivisions, () => setOrgDivisions(DEFAULT_ORG_DIVISIONS), reportLoadFailure);
+
+  // "เตือนก่อนกำหนด" — my own reminder lead times per project/task, chosen in their modals. Only marked
+  // ready once actually loaded: if this fails the scan stays off for the session (with the usual
+  // load-failure toast) rather than guessing with defaults that may contradict what was chosen.
+  const applyDeadlineReminders = (rows: { entityType: ReminderEntityType; entityId: string; leadDays: number[] }[]) => {
+    setDeadlineReminders(Object.fromEntries(rows.map((r) => [reminderKey(r.entityType, r.entityId), r.leadDays])));
+    setDeadlineRemindersReady(true);
+  };
+  useLoadOnLogin(
+    userId,
+    'deadline reminders',
+    fetchDeadlineReminders,
+    applyDeadlineReminders,
+    () => {
+      setDeadlineReminders({});
+      setDeadlineRemindersReady(false);
+    },
+    reportLoadFailure
+  );
+
+  // Saves are queued so quick successive taps land in order; on a failure the whole map is re-read
+  // from the server so the screen never shows a choice that wasn't kept.
+  const reminderSaveQueue = useRef<Promise<void>>(Promise.resolve());
+  const handleSetDeadlineReminder = (entityType: ReminderEntityType, entityId: string, leadDays: number[] | null) => {
+    const key = reminderKey(entityType, entityId);
+    setDeadlineReminders((prev) => {
+      const next = { ...prev };
+      if (leadDays === null) delete next[key];
+      else next[key] = leadDays;
+      return next;
+    });
+    reminderSaveQueue.current = reminderSaveQueue.current
+      .then(() => setDeadlineReminderRemote(entityType, entityId, leadDays))
+      .catch(async (err) => {
+        reportActionFailure(err, 'บันทึกการเตือนไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+        try {
+          applyDeadlineReminders(await fetchDeadlineReminders());
+        } catch {
+          /* the failure toast above already told the person */
+        }
+      });
+  };
 
   // Restore the login session after a page reload: the stored token is checked with the server (an
   // expired or revoked one is dropped) rather than trusting a user id saved in the browser.
@@ -1323,6 +1430,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     dismissNotificationToast,
     appError,
     dismissAppError,
+    deadlineReminders,
+    handleSetDeadlineReminder,
     orgDivisions,
     orgSections,
     handleAddDivision,

@@ -57,7 +57,7 @@ const MENU_GROUPS: { label: string; items: { id: SettingsSection; label: string;
 const SECTION_META: Record<SettingsSection, { title: string; description: string }> = {
   profile: { title: 'โปรไฟล์', description: 'รูป ชื่อ และช่องทางติดต่อของคุณที่แสดงในระบบ' },
   password: { title: 'เปลี่ยนรหัสผ่าน', description: `เปลี่ยนได้วันละ 1 ครั้ง · อย่างน้อย ${MIN_PASSWORD_LENGTH} ตัวอักษร` },
-  notifications: { title: 'การแจ้งเตือน', description: 'เปิด/ปิดทีละประเภท — ประเภทที่ปิดจะไม่แสดงในระบบ และกลับมาแสดงเมื่อเปิดอีกครั้ง' },
+  notifications: { title: 'การแจ้งเตือน', description: 'เปิด/ปิดทีละประเภท — ประเภทที่ปิดจะไม่แสดงในระบบ และกลับมาแสดงเมื่อเปิดอีกครั้ง · ตั้งช่วงเตือนก่อนกำหนดของแต่ละงาน/โครงการได้ในหน้าต่างของงาน/โครงการนั้น' },
 };
 
 function Field({ label, htmlFor, error, children }: { label: string; htmlFor: string; error?: string; children: ReactNode }) {
@@ -359,11 +359,13 @@ export default function SettingsView({ currentUser, changeRequests, onUpdateEmpl
   const meta = SECTION_META[section];
 
   return (
-    <div className="flex flex-col lg:flex-row lg:items-stretch lg:min-h-full gap-4 lg:gap-6 pb-8 lg:pb-0" id="settings-page">
+    <div className="flex flex-col lg:flex-row lg:items-stretch lg:h-full lg:min-h-0 gap-4 lg:gap-6 pb-8 lg:pb-0" id="settings-page">
       {/* Menu Zone — one entry per setting, grouped under the two zones (บัญชีของฉัน / การแจ้งเตือน).
           On narrow screens the group labels drop away and the entries become a scrolling pill row.
-          On desktop both cards stretch to the bottom of the content area (min-h-full above), which
-          lands exactly on the Sidebar's own bottom edge — <main>'s lg:pb-4 matches its my-4. */}
+          On desktop the page is exactly as tall as the content area (lg:h-full above) and both cards
+          stretch to its bottom, which lands on the Sidebar's own bottom edge — <main>'s lg:pb-4
+          matches its my-4. The menu card stays put; only the Work Space card scrolls when its form
+          is taller than the screen (lg:overflow-y-auto below). */}
       <nav
         aria-label="เมนูการตั้งค่า"
         className="lg:w-72 lg:shrink-0 lg:bg-white lg:rounded-2xl lg:border lg:border-[#EDEEEF] lg:shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] lg:p-3"
@@ -407,7 +409,7 @@ export default function SettingsView({ currentUser, changeRequests, onUpdateEmpl
 
       {/* Work Space — the selected entry's form. All drafts live in this component's state, so
           switching entries never loses what someone was halfway through typing. */}
-      <section className={`${CARD_CLASS} w-full min-w-0 lg:flex-1`} aria-labelledby="settings-section-title">
+      <section className={`${CARD_CLASS} w-full min-w-0 lg:flex-1 lg:min-h-0 lg:overflow-y-auto`} aria-labelledby="settings-section-title">
         <div className="px-6 pt-6 flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 id="settings-section-title" className="text-[15px] font-bold text-[#272220]">{meta.title}</h2>

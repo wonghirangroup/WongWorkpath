@@ -15,6 +15,9 @@ import EmployeeAvatar from '../EmployeeAvatar';
 import ThaiDatePicker from '../ThaiDatePicker';
 import Dropdown from '../Dropdown';
 import { useEscapeToClose } from '../../lib/useEscapeToClose';
+import { useAppData } from '../../context/AppDataContext';
+import DeadlineReminderField from '../DeadlineReminderField';
+import { DEFAULT_DEADLINE_REMINDER_DAYS } from '../../lib/deadlineReminders';
 
 // Re-exported for backward compatibility — every other file that formats a Thai date already
 // imports this from here; the implementation itself now lives in lib/datetime.ts so ThaiDatePicker
@@ -301,7 +304,8 @@ function SummaryRow({ label, value }: { label: string; value: ReactNode }) {
 interface CreateProjectModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreate: (payload: Omit<CreateProjectPayload, 'createdBy'>) => Promise<void>;
+  // Resolves with the created project — its id is needed to save this person's own "เตือนก่อนวันสิ้นสุด" choice.
+  onCreate: (payload: Omit<CreateProjectPayload, 'createdBy'>) => Promise<{ id: string }>;
   onCreated: (title: string, folderCreated: boolean) => void;
   onCreateFolder: (name: string, parentId: string | null, taskId: string | undefined, projectId: string) => Promise<string>;
   // Best-effort preview only — the real code (and its sequence number) is always generated
@@ -377,6 +381,9 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
   const [memberDuties, setMemberDuties] = useState<Record<string, string>>({});
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  // My own "เตือนก่อนวันสิ้นสุด" choice — held here (null = the default) until the project exists.
+  const [pendingReminder, setPendingReminder] = useState<number[] | null>(null);
+  const { handleSetDeadlineReminder, currentUser } = useAppData();
   const [createFolder, setCreateFolder] = useState(true);
   const [folderName, setFolderName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -417,6 +424,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
     setMemberDuties({});
     setStartDate('');
     setEndDate('');
+    setPendingReminder(null);
     setCreateFolder(true);
     setFolderName('');
     setFormError('');
@@ -467,7 +475,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
       const willCreateFolder = createFolder && folderName.trim() !== '';
       const newProjectId = willCreateFolder ? `PROJ_${Date.now()}` : undefined;
       const newFolderId = willCreateFolder && newProjectId ? await onCreateFolder(folderName.trim(), null, undefined, newProjectId) : undefined;
-      await onCreate({
+      const createdProject = await onCreate({
         id: newProjectId,
         title: finalTitle,
         description: description.trim() || undefined,
@@ -486,6 +494,8 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
         startDate: startDate || undefined,
         endDate: endDate || undefined,
       });
+      // Only a choice the person actually made is saved — untouched means "use the default".
+      if (pendingReminder !== null) handleSetDeadlineReminder('project', createdProject.id, pendingReminder);
       onCreated(finalTitle, willCreateFolder);
       resetAndClose();
     } catch (err) {
@@ -769,6 +779,22 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                         {!dateOrderValid && (
                           <p className="text-xs text-red-600 mt-1.5">วันที่สิ้นสุดต้องไม่อยู่ก่อนวันที่เริ่ม</p>
                         )}
+                      </div>
+
+                      <div>
+                        <label className="block text-[#272220] font-bold text-[11px] mb-1">เตือนฉันก่อนวันสิ้นสุดโครงการ</label>
+                        <DeadlineReminderField
+                          days={pendingReminder ?? DEFAULT_DEADLINE_REMINDER_DAYS}
+                          isDefault={pendingReminder === null}
+                          onChange={setPendingReminder}
+                          deadlineWord="วันสิ้นสุดโครงการ"
+                          note="จะบันทึกพร้อมกับโครงการนี้"
+                          warning={
+                            currentUser && (ownerIds.includes(currentUser.id) || assigneeIds.includes(currentUser.id))
+                              ? undefined
+                              : 'เตือนเฉพาะผู้รับผิดชอบโครงการ — คุณยังไม่ได้อยู่ในรายชื่อ'
+                          }
+                        />
                       </div>
                     </div>
                     <div className="space-y-3 min-w-0">

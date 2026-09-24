@@ -327,6 +327,12 @@ export async function deleteProjectCascade(projectId: string): Promise<void> {
           OR (entity_type = 'project_task' AND entity_id IN (SELECT id FROM project_task WHERE project_id = ?))`,
       [projectId, projectId]
     );
+    await conn.query(
+      `DELETE FROM deadline_reminder
+       WHERE (entity_type = 'project' AND entity_id = ?)
+          OR (entity_type = 'task' AND entity_id IN (SELECT id FROM project_task WHERE project_id = ?))`,
+      [projectId, projectId]
+    );
     await conn.query('DELETE FROM document WHERE project_id = ?', [projectId]);
     await conn.query(
       `UPDATE credential SET scope = 'ส่วนตัว', project_id = NULL, team = NULL, updated_at = ? WHERE scope = 'โครงการ' AND project_id = ?`,

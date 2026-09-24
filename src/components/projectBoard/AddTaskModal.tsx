@@ -15,6 +15,9 @@ import EmployeeAvatar from '../EmployeeAvatar';
 import ThaiDatePicker from '../ThaiDatePicker';
 import { useEscapeToClose } from '../../lib/useEscapeToClose';
 import { useConfirm } from '../../context/ConfirmContext';
+import { useAppData } from '../../context/AppDataContext';
+import DeadlineReminderField, { useSavedReminder } from '../DeadlineReminderField';
+import { DEFAULT_DEADLINE_REMINDER_DAYS } from '../../lib/deadlineReminders';
 
 // 'topic' ("หัวข้อ") is not a separate stored entity — it's the exact same ProjectTaskItem as
 // 'task', just created through a differently-labeled tab for a task the user intends to hold
@@ -112,6 +115,12 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
   const [reviewerIds, setReviewerIds] = useState<string[]>([]);
   const [startDate, setStartDate] = useState('');
   const [dueDate, setDueDate] = useState('');
+  // My own "เตือนก่อนกำหนดส่ง" choice for this task. While CREATING it is held here (null = default) and
+  // saved once the task exists; while EDITING it is saved straight away (see useSavedReminder) since
+  // it's a personal preference that never goes through the approval flow.
+  const [pendingReminder, setPendingReminder] = useState<number[] | null>(null);
+  const savedReminder = useSavedReminder('task', editingTask?.id);
+  const { handleSetDeadlineReminder } = useAppData();
   const [createFolder, setCreateFolder] = useState(false);
   const [folderName, setFolderName] = useState('');
   // Tracks whether the user has typed into the folder-name field themselves — while untouched, it
@@ -181,6 +190,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
       setStartDate('');
       setDueDate('');
     }
+    setPendingReminder(null);
     setCreateFolder(true);
     setFolderName('');
     setFolderNameTouched(false);
@@ -343,6 +353,8 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
             parentTaskId: parentTask?.id ?? null,
             ...taskFields,
           });
+          // Only a choice the person actually made is saved — untouched means "use the default".
+          if (pendingReminder !== null) handleSetDeadlineReminder('task', createdTask.id, pendingReminder);
           // Folder creation is create-only — re-offering it on every edit-save would spawn a fresh
           // duplicate folder each time, since there's no "already created" flag to check against.
           let newFolderId: string | undefined;
@@ -749,6 +761,27 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                         {taskDateOrderValid && (!taskStartInRange || !taskDueInRange) && projectRangeLabel && (
                           <p className="sm:col-span-2 -mt-1.5 text-xs text-red-600">วันที่ของงาน{projectRangeLabel}</p>
                         )}
+
+                        <div className="sm:col-span-2">
+                          <label className="block text-[#272220] font-bold text-[11px] mb-1">เตือนฉันก่อนกำหนดส่ง</label>
+                          {isEditing ? (
+                            <DeadlineReminderField
+                              {...savedReminder}
+                              deadlineWord="กำหนดส่ง"
+                              note="บันทึกทันที ไม่ต้องรออนุมัติ"
+                              warning={assigneeIds.includes(currentUserId) ? undefined : 'คุณไม่ได้เป็นผู้รับผิดชอบงานนี้ จึงจะไม่ได้รับการเตือน'}
+                            />
+                          ) : (
+                            <DeadlineReminderField
+                              days={pendingReminder ?? DEFAULT_DEADLINE_REMINDER_DAYS}
+                              isDefault={pendingReminder === null}
+                              onChange={setPendingReminder}
+                              deadlineWord="กำหนดส่ง"
+                              note="จะบันทึกพร้อมกับงานนี้"
+                              warning={assigneeIds.includes(currentUserId) ? undefined : 'เตือนเฉพาะผู้รับผิดชอบงาน — คุณยังไม่ได้อยู่ในรายชื่อผู้รับผิดชอบ'}
+                            />
+                          )}
+                        </div>
                     </>
                   ) : (
                     <>
