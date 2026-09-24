@@ -2,6 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, KeyboardEvent, Rea
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { ChevronDown } from 'lucide-react';
+import { computePanelPlacement, PANEL_MAX_HEIGHT, PanelPlacement } from '../lib/floatingPanel';
 
 interface DropdownProps<T extends string> {
   value: T;
@@ -36,29 +37,21 @@ export default function Dropdown<T extends string>({ value, options, onChange, p
     : { padding: 'px-3.5 py-2', text: 'text-sm' };
   const [isOpen, setIsOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
-  const [panelRect, setPanelRect] = useState<{ left: number; width: number; top?: number; bottom?: number; openUpward: boolean }>({
-    left: 0, width: 0, openUpward: false,
+  const [panelRect, setPanelRect] = useState<PanelPlacement>({
+    left: 0, width: 0, openUpward: false, maxHeight: PANEL_MAX_HEIGHT,
   });
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const listboxId = useId();
 
   // Flips the panel above the trigger instead of below it whenever there isn't room to open
-  // downward (e.g. a field near the bottom of a tall scrollable modal) but there IS room above —
-  // otherwise the panel's own max-h-60 would render partly off-screen with no way to reach the
-  // lower options. `panelMaxHeight` mirrors the panel's own `max-h-60` (15rem = 240px).
+  // downward (e.g. a field near the bottom of a tall scrollable modal) but there IS more room
+  // above, keeps a gap from the viewport edge, and shrinks to the room left when neither side has
+  // the full height to spare — see computePanelPlacement in lib/floatingPanel.ts (shared with
+  // EmployeeMultiSelect so both floating lists follow identical rules).
   useLayoutEffect(() => {
     if (!isOpen || !triggerRef.current) return;
-    const rect = triggerRef.current.getBoundingClientRect();
-    const panelMaxHeight = 240;
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const spaceAbove = rect.top;
-    const openUpward = spaceBelow < panelMaxHeight && spaceAbove > spaceBelow;
-    setPanelRect(
-      openUpward
-        ? { bottom: window.innerHeight - rect.top + 2, left: rect.left, width: rect.width, openUpward }
-        : { top: rect.bottom + 2, left: rect.left, width: rect.width, openUpward }
-    );
+    setPanelRect(computePanelPlacement(triggerRef.current.getBoundingClientRect()));
   }, [isOpen]);
 
   useEffect(() => {
@@ -172,8 +165,9 @@ export default function Dropdown<T extends string>({ value, options, onChange, p
                 bottom: panelRect.bottom,
                 left: panelRect.left,
                 width: panelRect.width,
+                maxHeight: panelRect.maxHeight,
               }}
-              className={`z-60 bg-white shadow-xl overflow-y-auto max-h-60 ${
+              className={`z-60 bg-white shadow-xl overflow-y-auto ${
                 panelRect.openUpward ? 'origin-bottom rounded-b-none rounded-t-2xl' : 'origin-top rounded-t-none rounded-b-2xl'
               }`}
             >

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, FormEvent, KeyboardEvent, ReactNode } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, FormEvent, KeyboardEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { X, Check, Folder, Pencil, CalendarClock, ArrowRight, Plus } from 'lucide-react';
@@ -9,6 +9,7 @@ import { getAvatarColor } from '../../lib/avatarColor';
 import { ApiError, CreateProjectPayload } from '../../lib/api';
 import { formatThaiDateShort } from '../../lib/datetime';
 import { formatThousands } from '../../lib/numberFormat';
+import { computePanelPlacement, PanelPlacement } from '../../lib/floatingPanel';
 import Tooltip from '../Tooltip';
 import EmployeeAvatar from '../EmployeeAvatar';
 import ThaiDatePicker from '../ThaiDatePicker';
@@ -62,6 +63,10 @@ function EmployeeOptionRow({ emp }: { emp: Employee }) {
   );
 }
 
+// The suggestion list's own max height before it scrolls (10rem — three avatar+role rows), same as
+// the old absolute panel's `max-h-40`.
+const MULTISELECT_PANEL_MAX_HEIGHT = 160;
+
 // Same search-to-add pattern, but keeps a running list of picked employees as removable chips
 // below the input instead of collapsing to a single value.
 export function EmployeeMultiSelect({
@@ -77,15 +82,49 @@ export function EmployeeMultiSelect({
 }) {
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
+  const [placement, setPlacement] = useState<PanelPlacement | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // The suggestion list renders through a portal with fixed positioning (same as Dropdown) instead
+  // of as an absolute child of the field: inside a modal, an in-flow absolute panel was clipped by
+  // the form body's own overflow and hidden behind the footer buttons whenever the field sat near
+  // the bottom. Placement (flip above / shrink to fit) is shared with Dropdown via floatingPanel.ts.
+  const reposition = () => {
+    if (inputRef.current) setPlacement(computePanelPlacement(inputRef.current.getBoundingClientRect(), MULTISELECT_PANEL_MAX_HEIGHT));
+  };
+  useLayoutEffect(() => {
+    if (isOpen) reposition();
+  }, [isOpen]);
 
   useEffect(() => {
+    // The panel now lives outside `ref` (it's portaled to <body>), so a mousedown inside it must
+    // count as "inside" too — otherwise picking an option would close the list before the click lands.
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setIsOpen(false);
+      const target = e.target as Node;
+      if (ref.current?.contains(target) || panelRef.current?.contains(target)) return;
+      setIsOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  // Re-anchor (rather than close) when the page/modal scrolls or the window resizes while open —
+  // focusing a field near an edge can itself trigger a scroll, which must not slam the list shut.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onMove = (e: Event) => {
+      if (panelRef.current && e.target instanceof Node && panelRef.current.contains(e.target)) return;
+      reposition();
+    };
+    window.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
+    return () => {
+      window.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
+    };
+  }, [isOpen]);
 
   const selectedEmployees = employees.filter((e) => valueIds.includes(e.id));
   const filtered = employees.filter((e) => !valueIds.includes(e.id) && displayName(e).toLowerCase().includes(query.toLowerCase()));
@@ -94,6 +133,7 @@ export function EmployeeMultiSelect({
     <div>
       <div className="relative" ref={ref}>
         <input
+          ref={inputRef}
           type="text"
           placeholder={placeholder}
           value={query}
@@ -104,8 +144,19 @@ export function EmployeeMultiSelect({
           }}
           className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
         />
-        {isOpen && (
-          <div className="absolute z-10 left-0 right-0 top-full mt-1 max-h-40 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg py-1">
+        {isOpen && placement && createPortal(
+          <div
+            ref={panelRef}
+            style={{
+              position: 'fixed',
+              top: placement.top,
+              bottom: placement.bottom,
+              left: placement.left,
+              width: placement.width,
+              maxHeight: placement.maxHeight,
+            }}
+            className="z-60 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg py-1"
+          >
             {filtered.length === 0 ? (
               <p className="px-3 py-2 text-xs text-slate-400">
                 {employees.length === valueIds.length ? 'เลือกครบทุกคนแล้ว' : 'ไม่พบพนักงาน'}
@@ -126,7 +177,8 @@ export function EmployeeMultiSelect({
                 </button>
               ))
             )}
-          </div>
+          </div>,
+          document.body
         )}
       </div>
       {selectedEmployees.length > 0 && (
@@ -166,7 +218,7 @@ const STEP_META: { step: 1 | 2 | 3; icon: typeof Pencil; label: string }[] = [
 
 function StepIndicator({ step }: { step: 1 | 2 | 3 }) {
   return (
-    <div className="flex items-start px-5 pt-5 pb-1">
+    <div className="flex items-start px-5 pt-4 pb-1 w-full max-w-2xl mx-auto">
       {STEP_META.map((s, idx) => {
         const isDone = s.step <= step;
         const isCurrent = s.step === step;
@@ -202,8 +254,8 @@ function StepIndicator({ step }: { step: 1 | 2 | 3 }) {
 
 function SummarySection({ title, dotColor, onEdit, children }: { title: string; dotColor: string; onEdit: () => void; children: ReactNode }) {
   return (
-    <div className="bg-white border border-slate-100 rounded-xl overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+    <div className="bg-white border border-slate-100 rounded-xl overflow-hidden h-full flex flex-col">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 shrink-0">
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: dotColor }} />
           <h4 className="text-sm font-bold text-[#272220]">{title}</h4>
@@ -213,7 +265,26 @@ function SummarySection({ title, dotColor, onEdit, children }: { title: string; 
           แก้ไข
         </button>
       </div>
-      <div className="px-4 py-3 space-y-3">{children}</div>
+      {/* flex column (not space-y) so a child can claim the card's leftover height — see the
+          รายละเอียด block on the summary step. */}
+      <div className="px-4 py-3 flex flex-col gap-3 flex-1 min-h-0">{children}</div>
+    </div>
+  );
+}
+
+// A summary field whose value is free text that deserves the room — fills whatever height the card
+// has left below the plain rows instead of being squeezed onto one right-aligned line. The text sits
+// in an absolutely-positioned scroller, so a very long description scrolls inside its own box and
+// never makes the card (and with it the whole modal) taller than the card beside it.
+function SummaryTextBlock({ label, text }: { label: string; text: string }) {
+  return (
+    <div className="flex flex-col flex-1 min-h-28 lg:min-h-16 gap-1">
+      <span className="text-xs text-[#A0A0A0]">{label}</span>
+      <div className="relative flex-1 min-h-0">
+        <p className="absolute inset-0 overflow-y-auto text-xs font-medium leading-normal text-[#272220] whitespace-pre-wrap wrap-break-word">
+          {text.trim() ? text : <span className="font-semibold">ไม่ระบุ</span>}
+        </p>
+      </div>
     </div>
   );
 }
@@ -471,7 +542,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ type: 'spring', stiffness: 300, damping: 24, mass: 0.9 }}
-            className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-lg mx-4 max-h-[85vh] overflow-hidden flex flex-col"
+            className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-lg lg:max-w-5xl mx-4 max-h-[94vh] overflow-hidden flex flex-col"
           >
             <div className="flex justify-between items-center px-5 pt-5 pb-2 shrink-0">
               <div>
@@ -495,7 +566,10 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
             <form onSubmit={handleSubmit} onKeyDown={handleWizardKeyDown} className="flex flex-col flex-1 min-h-0">
               <div className="flex-1 min-h-0 overflow-y-auto px-5 pt-4 pb-1 space-y-3">
                 {step === 1 && (
-                  <>
+                  // Two columns from lg up (what it is / how it's coded), one column below — see the
+                  // matching comment on AddTaskModal: this wizard is meant to fit without a scrollbar.
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-3 items-stretch">
+                    <div className="space-y-3 min-w-0">
                     <div>
                       <label className="block text-[#272220] font-bold text-[11px] mb-1">
                         ชื่อโครงการ <span className="text-[#FF6537]">*</span>
@@ -623,158 +697,171 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                       />
                       <p className="text-[10px] text-[#A0A0A0] mt-1">ใช้ประกอบรหัสโครงการ (เช่น GS-69-P-001) — จำเป็นต้องกรอก</p>
                     </div>
-                    <div>
+                    </div>
+                    {/* Right column is just the description, stretched to the same height as the
+                        three stacked fields beside it — so the two columns always end together
+                        however many optional fields (custom type, parent project) the left shows. */}
+                    <div className="flex flex-col min-w-0">
                       <label className="block text-[#272220] font-bold text-[11px] mb-1">รายละเอียด</label>
                       <textarea
                         rows={3}
                         placeholder="อธิบายเป้าหมายหรือขอบเขตของโครงการ..."
                         value={description}
                         onChange={(e) => setDescription(e.target.value)}
-                        className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                        className="w-full flex-1 min-h-24 resize-none p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
                       />
                     </div>
-                  </>
+                  </div>
                 )}
 
                 {step === 2 && (
-                  <>
-                    <div>
-                      <div className="flex items-baseline justify-between mb-1">
-                        <label className="block text-[#272220] font-bold text-[11px]">ผู้รับผิดชอบหลัก</label>
-                        <span className="text-[10px] text-[#6F6F6F]">เลือกได้หลายคน สิทธิ์เท่ากันทุกคน</span>
-                      </div>
-                      <EmployeeMultiSelect
-                        employees={employees.filter((emp) => !assigneeIds.includes(emp.id))}
-                        valueIds={ownerIds}
-                        onChange={handleOwnersChange}
-                        placeholder="ค้นหาแล้วเลือกเพิ่มได้หลายคน..."
-                      />
-                    </div>
-
-                    <div>
-                      <div className="flex items-baseline justify-between mb-1">
-                        <label className="block text-[#272220] font-bold text-[11px]">ระดับความสำคัญ</label>
-                        <span className="text-[10px] text-[#A0A0A0]">1 = สำคัญที่สุด, 5 = สำคัญน้อยที่สุด</span>
-                      </div>
-                      <div className="flex gap-2">
-                        {PRIORITY_OPTIONS.map((p) => (
-                          <button
-                            key={p.value}
-                            type="button"
-                            onClick={() => setPriority((current) => (current === p.value ? null : p.value))}
-                            className={`flex-1 h-9 rounded-lg text-xs font-semibold border cursor-pointer transition-colors ${
-                              priority === p.value ? p.activeClass : 'border-[#E5E5E5] text-[#6F6F6F] hover:bg-slate-50'
-                            }`}
-                          >
-                            {p.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
+                  // Two independent columns, with the fields ordered so each left/right pair is the same
+                  // height when empty (people / priority + status + budget / dates + folder). A shared
+                  // row grid lined them up too, but left a big hole under one side whenever the other
+                  // grew (e.g. assignee duty rows) — independent columns just let the taller one grow down.
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-3 items-start">
+                    <div className="space-y-3 min-w-0">
                       <div>
-                        <label className="block text-[#272220] font-bold text-[11px] mb-1">สถานะ</label>
-                        <Dropdown<string>
-                          value={status}
-                          onChange={setStatus}
-                          options={[
-                            ...STATUS_OPTIONS.map((s) => ({ value: s, label: STATUS_LABEL[s] })),
-                            ...customStatuses.map((s) => ({ value: s.id, label: s.label })),
-                          ]}
+                        <div className="flex items-baseline justify-between mb-1">
+                          <label className="block text-[#272220] font-bold text-[11px]">ผู้รับผิดชอบหลัก</label>
+                          <span className="text-[10px] text-[#6F6F6F]">เลือกได้หลายคน สิทธิ์เท่ากันทุกคน</span>
+                        </div>
+                        <EmployeeMultiSelect
+                          employees={employees.filter((emp) => !assigneeIds.includes(emp.id))}
+                          valueIds={ownerIds}
+                          onChange={handleOwnersChange}
+                          placeholder="ค้นหาแล้วเลือกเพิ่มได้หลายคน..."
                         />
                       </div>
 
                       <div>
-                        <label className="block text-[#272220] font-bold text-[11px] mb-1">งบประมาณ (บาท)</label>
-                        <div className="relative">
-                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-[#B0B0B0]">฿</span>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            placeholder="เช่น 500,000"
-                            value={formatThousands(budget)}
-                            onChange={(e) => setBudget(e.target.value.replace(/[^\d]/g, ''))}
-                            className="w-full p-2.5 pl-6 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
-                          />
+                        <div className="flex items-baseline justify-between mb-1">
+                          <label className="block text-[#272220] font-bold text-[11px]">ระดับความสำคัญ</label>
+                          <span className="text-[10px] text-[#A0A0A0]">1 = สำคัญที่สุด, 5 = สำคัญน้อยที่สุด</span>
                         </div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-[#272220] font-bold text-[11px] mb-1">ผู้รับผิดชอบงาน</label>
-                      <EmployeeMultiSelect
-                        employees={employees.filter((emp) => !ownerIds.includes(emp.id))}
-                        valueIds={assigneeIds}
-                        onChange={setAssigneeIds}
-                        placeholder="ค้นหาแล้วเลือกเพิ่มได้หลายคน..."
-                      />
-                      {assigneeEmps.length > 0 && (
-                        <div className="mt-2 space-y-1.5">
-                          {assigneeEmps.map((emp) => (
-                            <div key={emp.id} className="flex items-center gap-2">
-                              <Tooltip content={displayName(emp)}>
-                                <span className="text-[11px] text-[#6F6F6F] w-20 truncate shrink-0">
-                                  {displayName(emp)}
-                                </span>
-                              </Tooltip>
-                              <input
-                                type="text"
-                                placeholder="หน้าที่ในโครงการนี้..."
-                                value={memberDuties[emp.id] ?? ''}
-                                onChange={(e) => setMemberDuties((prev) => ({ ...prev, [emp.id]: e.target.value }))}
-                                className="flex-1 p-1.5 text-xs border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
-                              />
-                            </div>
+                        <div className="flex gap-2">
+                          {PRIORITY_OPTIONS.map((p) => (
+                            <button
+                              key={p.value}
+                              type="button"
+                              onClick={() => setPriority((current) => (current === p.value ? null : p.value))}
+                              className={`flex-1 h-10 rounded-lg text-xs font-semibold border cursor-pointer transition-colors ${
+                                priority === p.value ? p.activeClass : 'border-[#E5E5E5] text-[#6F6F6F] hover:bg-slate-50'
+                              }`}
+                            >
+                              {p.label}
+                            </button>
                           ))}
                         </div>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[#272220] font-bold text-[11px] mb-1">วันที่เริ่ม</label>
-                        <ThaiDatePicker value={startDate} onChange={setStartDate} />
                       </div>
+
                       <div>
-                        <label className="block text-[#272220] font-bold text-[11px] mb-1">วันที่สิ้นสุด</label>
-                        <ThaiDatePicker value={endDate} onChange={setEndDate} min={startDate || undefined} hasError={!dateOrderValid} />
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[#272220] font-bold text-[11px] mb-1">วันที่เริ่ม</label>
+                            <ThaiDatePicker value={startDate} onChange={setStartDate} />
+                          </div>
+                          <div>
+                            <label className="block text-[#272220] font-bold text-[11px] mb-1">วันที่สิ้นสุด</label>
+                            <ThaiDatePicker value={endDate} onChange={setEndDate} min={startDate || undefined} hasError={!dateOrderValid} />
+                          </div>
+                        </div>
+                        {!dateOrderValid && (
+                          <p className="text-xs text-red-600 mt-1.5">วันที่สิ้นสุดต้องไม่อยู่ก่อนวันที่เริ่ม</p>
+                        )}
                       </div>
                     </div>
-                    {!dateOrderValid && (
-                      <p className="text-xs text-red-600 -mt-1.5">วันที่สิ้นสุดต้องไม่อยู่ก่อนวันที่เริ่ม</p>
-                    )}
+                    <div className="space-y-3 min-w-0">
+                      <div>
+                        <label className="block text-[#272220] font-bold text-[11px] mb-1">ผู้รับผิดชอบงาน</label>
+                        <EmployeeMultiSelect
+                          employees={employees.filter((emp) => !ownerIds.includes(emp.id))}
+                          valueIds={assigneeIds}
+                          onChange={setAssigneeIds}
+                          placeholder="ค้นหาแล้วเลือกเพิ่มได้หลายคน..."
+                        />
+                        {assigneeEmps.length > 0 && (
+                          <div className="mt-2 space-y-1.5">
+                            {assigneeEmps.map((emp) => (
+                              <div key={emp.id} className="flex items-center gap-2">
+                                <Tooltip content={displayName(emp)}>
+                                  <span className="text-[11px] text-[#6F6F6F] w-20 truncate shrink-0">
+                                    {displayName(emp)}
+                                  </span>
+                                </Tooltip>
+                                <input
+                                  type="text"
+                                  placeholder="หน้าที่ในโครงการนี้..."
+                                  value={memberDuties[emp.id] ?? ''}
+                                  onChange={(e) => setMemberDuties((prev) => ({ ...prev, [emp.id]: e.target.value }))}
+                                  className="flex-1 p-1.5 text-xs border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
 
-                    <div className="border-t border-slate-100 pt-3">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={createFolder}
-                          onChange={(e) => {
-                            const checked = e.target.checked;
-                            setCreateFolder(checked);
-                            if (checked && !folderName.trim()) setFolderName(title.trim());
-                          }}
-                          className="rounded border-[#E5E5E5] text-[#FF6537] focus:ring-[#FF6537] cursor-pointer"
-                        />
-                        <Folder size={14} className="text-[#6F6F6F]" />
-                        <span className="text-[#272220] font-bold text-[11px]">สร้างโฟลเดอร์เอกสารใน "เอกสาร Drive"</span>
-                      </label>
-                      {createFolder && (
-                        <input
-                          type="text"
-                          placeholder="ชื่อโฟลเดอร์"
-                          value={folderName}
-                          onChange={(e) => setFolderName(e.target.value)}
-                          className="w-full mt-2 p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
-                        />
-                      )}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[#272220] font-bold text-[11px] mb-1">สถานะ</label>
+                          <Dropdown<string>
+                            value={status}
+                            onChange={setStatus}
+                            options={[
+                              ...STATUS_OPTIONS.map((s) => ({ value: s, label: STATUS_LABEL[s] })),
+                              ...customStatuses.map((s) => ({ value: s.id, label: s.label })),
+                            ]}
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[#272220] font-bold text-[11px] mb-1">งบประมาณ (บาท)</label>
+                          <div className="relative">
+                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-[#B0B0B0]">฿</span>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              placeholder="เช่น 500,000"
+                              value={formatThousands(budget)}
+                              onChange={(e) => setBudget(e.target.value.replace(/[^\d]/g, ''))}
+                              className="w-full p-2.5 pl-6 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="flex items-center gap-2 cursor-pointer mb-1">
+                          <input
+                            type="checkbox"
+                            checked={createFolder}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setCreateFolder(checked);
+                              if (checked && !folderName.trim()) setFolderName(title.trim());
+                            }}
+                            className="rounded border-[#E5E5E5] text-[#FF6537] focus:ring-[#FF6537] cursor-pointer"
+                          />
+                          <Folder size={14} className="text-[#6F6F6F]" />
+                          <span className="text-[#272220] font-bold text-[11px]">สร้างโฟลเดอร์เอกสารใน "เอกสาร Drive"</span>
+                        </label>
+                        {createFolder && (
+                          <input
+                            type="text"
+                            placeholder="ชื่อโฟลเดอร์"
+                            value={folderName}
+                            onChange={(e) => setFolderName(e.target.value)}
+                            className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                          />
+                        )}
+                      </div>
                     </div>
-                  </>
+                  </div>
                 )}
 
                 {step === 3 && (
-                  <>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch">
                     <SummarySection title="ข้อมูลโครงการ" dotColor="#FF6537" onEdit={() => setStep(1)}>
                       <SummaryRow label="ชื่อโครงการ" value={title} />
                       <SummaryRow
@@ -792,16 +879,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                           value={topLevelProjects.find((p) => p.id === parentProjectId)?.title ?? 'ไม่ระบุ'}
                         />
                       )}
-                      <SummaryRow
-                        label="รายละเอียด"
-                        value={
-                          description ? (
-                            <Tooltip content={description}>
-                              <span className="line-clamp-2 break-all">{description}</span>
-                            </Tooltip>
-                          ) : 'ไม่ระบุ'
-                        }
-                      />
+                      <SummaryTextBlock label="รายละเอียด" text={description} />
                     </SummarySection>
 
                     <SummarySection title="รายละเอียดเพิ่มเติม" dotColor="#94A3B8" onEdit={() => setStep(2)}>
@@ -916,13 +994,13 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                     </SummarySection>
 
                     {formError && (
-                      <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{formError}</p>
+                      <p className="lg:col-span-2 text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{formError}</p>
                     )}
-                  </>
+                  </div>
                 )}
               </div>
 
-              <div className="shrink-0 px-5 pt-4 pb-5 flex items-center gap-3">
+              <div className="shrink-0 px-5 pt-3 pb-4 flex items-center gap-3">
                 {step > 1 && (
                   <button
                     type="button"

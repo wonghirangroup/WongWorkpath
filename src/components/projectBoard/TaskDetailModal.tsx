@@ -1,6 +1,6 @@
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
-import { X, Clock, Download, ExternalLink } from 'lucide-react';
+import { X, Clock, Download, ExternalLink, ArrowUpRight } from 'lucide-react';
 import { Employee, LinkedDoc } from '../../types';
 import { ProjectTaskItem } from './types';
 import { TASK_STATUS_LABEL, TASK_STATUS_COLOR } from './statusMeta';
@@ -65,16 +65,47 @@ function PeopleRow({ label, employees }: { label: string; employees: Employee[] 
   );
 }
 
+// One clickable file/link row — shared by the "ไฟล์แนบ" and "ไฟล์ที่ส่ง" lists below so both
+// open/download identically (a link opens in a new tab, a real file downloads).
+function DocRow({ doc }: { doc: LinkedDoc }) {
+  const { Icon, color } = getItemVisual(doc);
+  const isLink = doc.kind === 'link';
+  return (
+    <a
+      href={isLink ? doc.url : doc.fileDataUrl}
+      download={isLink ? undefined : doc.name}
+      target={isLink ? '_blank' : undefined}
+      rel={isLink ? 'noopener noreferrer' : undefined}
+      className="flex items-center gap-2.5 p-2.5 border border-slate-200 rounded-xl bg-white hover:bg-slate-50 transition-colors"
+    >
+      <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center shrink-0">
+        <Icon size={16} className={color} />
+      </div>
+      <span className="truncate flex-1 text-xs font-medium text-[#272220]">{doc.name}</span>
+      {isLink ? (
+        <ExternalLink size={13} className="text-[#A0A0A0] shrink-0" />
+      ) : (
+        <Download size={13} className="text-[#A0A0A0] shrink-0" />
+      )}
+    </a>
+  );
+}
+
 interface TaskDetailModalProps {
   task: ProjectTaskItem | null;
   employees: Employee[];
   documents: LinkedDoc[];
   onClose: () => void;
+  // Optional context for callers that open this from OUTSIDE the task's own project (e.g. the
+  // calendar's day popover) — a task's detail view doesn't otherwise say which project it's in.
+  // Callers already inside that project's page simply omit both and see no change.
+  projectTitle?: string;
+  onGoToProject?: () => void;
 }
 
 // Read-only — opened from the "การกระทำ" column's "ดูรายละเอียด" button so a truncated row
 // (long description, etc.) can still be read in full without leaving the table.
-export default function TaskDetailModal({ task, employees, documents, onClose }: TaskDetailModalProps) {
+export default function TaskDetailModal({ task, employees, documents, onClose, projectTitle, onGoToProject }: TaskDetailModalProps) {
   useEscapeToClose(Boolean(task), onClose);
   const assignees = task ? employees.filter((e) => task.assigneeEmployeeIds.includes(e.id)) : [];
   const creator = task?.creatorEmployeeId ? employees.find((e) => e.id === task.creatorEmployeeId) : undefined;
@@ -87,6 +118,30 @@ export default function TaskDetailModal({ task, employees, documents, onClose }:
   const submissionFiles = (task?.submissionFileIds ?? [])
     .map((id) => documents.find((d) => d.id === id))
     .filter((d): d is LinkedDoc => Boolean(d));
+
+  // Files/links attached to the task itself — the ones added in AddTaskModal at creation time, or
+  // dropped into the task's own Drive folder afterwards. These are tagged with LinkedDoc.taskId
+  // (or simply sit inside the task's folder) rather than listed in submissionFileIds, so they need
+  // their own list here. A file nested under another task's folder (e.g. a subtask's, since a
+  // subtask's folder lives inside its parent's) belongs to that task, not this one — not descended
+  // into. Anything already shown under "ไฟล์ที่ส่ง" is left out so it never appears twice.
+  const attachedFiles: LinkedDoc[] = (() => {
+    if (!task) return [];
+    const submittedIds = new Set(task.submissionFileIds ?? []);
+    const inTaskFolder = new Set<string>();
+    const queue = documents.filter((d) => d.kind === 'folder' && d.taskId === task.id).map((d) => d.id);
+    while (queue.length > 0) {
+      const folderId = queue.shift() as string;
+      documents.filter((d) => d.parentId === folderId).forEach((child) => {
+        if (child.taskId && child.taskId !== task.id) return;
+        if (child.kind === 'folder') queue.push(child.id);
+        else inTaskFolder.add(child.id);
+      });
+    }
+    return documents.filter(
+      (d) => d.kind !== 'folder' && !submittedIds.has(d.id) && (d.taskId === task.id || inTaskFolder.has(d.id))
+    );
+  })();
 
   return createPortal(
     <AnimatePresence>
@@ -124,6 +179,9 @@ export default function TaskDetailModal({ task, employees, documents, onClose }:
                   )}
                 </div>
                 <h3 className="text-base font-bold text-slate-800 mt-2 break-words">{task.title}</h3>
+                {projectTitle && (
+                  <p className="text-xs text-[#6F6F6F] mt-1 wrap-break-word">โครงการ: <span className="font-medium text-[#272220]">{projectTitle}</span></p>
+                )}
               </div>
               <button onClick={onClose} className="text-slate-400 hover:text-slate-600 cursor-pointer shrink-0" type="button">
                 <X size={18} />
@@ -135,6 +193,15 @@ export default function TaskDetailModal({ task, employees, documents, onClose }:
                 <div>
                   <p className="text-[#A0A0A0] text-[11px] mb-1">รายละเอียด</p>
                   <p className="text-sm text-[#272220] whitespace-pre-wrap break-words">{task.description}</p>
+                </div>
+              )}
+
+              {attachedFiles.length > 0 && (
+                <div>
+                  <p className="text-[#A0A0A0] text-[11px] mb-1.5">ไฟล์แนบ/ลิงก์ประกอบ ({attachedFiles.length})</p>
+                  <div className="space-y-1.5">
+                    {attachedFiles.map((doc) => <DocRow key={doc.id} doc={doc} />)}
+                  </div>
                 </div>
               )}
 
@@ -205,30 +272,7 @@ export default function TaskDetailModal({ task, employees, documents, onClose }:
                 <div>
                   <p className="text-[#A0A0A0] text-[11px] mb-1.5">ไฟล์ที่ส่ง ({submissionFiles.length})</p>
                   <div className="space-y-1.5">
-                    {submissionFiles.map((doc) => {
-                      const { Icon, color } = getItemVisual(doc);
-                      const isLink = doc.kind === 'link';
-                      return (
-                        <a
-                          key={doc.id}
-                          href={isLink ? doc.url : doc.fileDataUrl}
-                          download={isLink ? undefined : doc.name}
-                          target={isLink ? '_blank' : undefined}
-                          rel={isLink ? 'noopener noreferrer' : undefined}
-                          className="flex items-center gap-2.5 p-2.5 border border-slate-200 rounded-xl bg-white hover:bg-slate-50 transition-colors"
-                        >
-                          <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center shrink-0">
-                            <Icon size={16} className={color} />
-                          </div>
-                          <span className="truncate flex-1 text-xs font-medium text-[#272220]">{doc.name}</span>
-                          {isLink ? (
-                            <ExternalLink size={13} className="text-[#A0A0A0] shrink-0" />
-                          ) : (
-                            <Download size={13} className="text-[#A0A0A0] shrink-0" />
-                          )}
-                        </a>
-                      );
-                    })}
+                    {submissionFiles.map((doc) => <DocRow key={doc.id} doc={doc} />)}
                   </div>
                 </div>
               )}
@@ -252,14 +296,24 @@ export default function TaskDetailModal({ task, employees, documents, onClose }:
               )}
             </div>
 
-            <div className="px-5 pb-5">
+            <div className="px-5 pb-5 flex items-center gap-2">
               <button
                 type="button"
                 onClick={onClose}
-                className="w-full h-10 text-sm font-semibold text-[#6F6F6F] hover:bg-slate-50 rounded-lg border border-[#E5E5E5] cursor-pointer"
+                className={`h-10 text-sm font-semibold text-[#6F6F6F] hover:bg-slate-50 rounded-lg border border-[#E5E5E5] cursor-pointer ${onGoToProject ? 'px-5' : 'w-full'}`}
               >
                 ปิด
               </button>
+              {onGoToProject && (
+                <button
+                  type="button"
+                  onClick={onGoToProject}
+                  className="flex-1 h-10 inline-flex items-center justify-center gap-1.5 text-sm font-bold text-white bg-[#FF6537] hover:bg-[#e6572c] rounded-lg cursor-pointer transition-colors"
+                >
+                  <ArrowUpRight size={15} />
+                  ไปที่โครงการ
+                </button>
+              )}
             </div>
           </motion.div>
         </motion.div>

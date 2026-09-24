@@ -50,9 +50,75 @@ interface TaskSummaryTableProps {
 // table of projects (which is all `ProjectSummaryTable` would otherwise show for a single-project
 // filter). No status/responsible-person filters here by design — the project filter above already
 // narrowed the scope once; a second layer of filtering on top of that just added clicks.
+// One indent step per nesting level, and the x of the vertical guide inside a level's gutter.
+const TREE_INDENT_PX = 18;
+const guideX = (level: number) => (level - 1) * TREE_INDENT_PX + 8;
+
+interface TaskRow {
+  task: ProjectTaskItem;
+  depth: number;
+  parentTitle?: string;
+  subtaskCount: number;
+  // Tree guides for a งานย่อย row: `hasNextSibling` decides whether its own vertical guide runs on
+  // through the row (more siblings below) or stops at the elbow (last one); `throughLevels` lists
+  // the ancestor levels whose guide must keep running straight past this row.
+  hasNextSibling: boolean;
+  throughLevels: number[];
+}
+
 export default function TaskSummaryTable({ tasks, employees, projectTitle, onSelectTask }: TaskSummaryTableProps) {
   const employeeById = new Map(employees.map((e) => [e.id, e]));
-  const sorted = [...tasks].sort((a, b) => (a.daysUntilDue ?? Infinity) - (b.daysUntilDue ?? Infinity));
+
+  // งานย่อย sit directly under their งานแม่ (nested to any depth) instead of being scattered by due
+  // date among unrelated tasks, so it's always clear which task each one belongs to. The old
+  // "closest deadline first" order is kept, but applied to each whole family: a group is ranked by
+  // the most urgent due date anywhere inside it, so a parent with no date of its own whose
+  // subtask is due tomorrow still floats to the top instead of sinking to the bottom.
+  const taskById = new Map(tasks.map((t) => [t.id, t]));
+  const childrenByParent = new Map<string, ProjectTaskItem[]>();
+  tasks.forEach((t) => {
+    if (t.parentTaskId && taskById.has(t.parentTaskId)) {
+      const list = childrenByParent.get(t.parentTaskId) ?? [];
+      list.push(t);
+      childrenByParent.set(t.parentTaskId, list);
+    }
+  });
+  const urgencyCache = new Map<string, number>();
+  const urgencyOf = (t: ProjectTaskItem, trail: Set<string> = new Set()): number => {
+    const cached = urgencyCache.get(t.id);
+    if (cached !== undefined) return cached;
+    if (trail.has(t.id)) return Infinity; // defensive: a parent loop can't exist in the DB, but never recurse forever
+    trail.add(t.id);
+    const value = Math.min(t.daysUntilDue ?? Infinity, ...(childrenByParent.get(t.id) ?? []).map((c) => urgencyOf(c, trail)));
+    urgencyCache.set(t.id, value);
+    return value;
+  };
+  const byUrgency = (a: ProjectTaskItem, b: ProjectTaskItem) => urgencyOf(a) - urgencyOf(b);
+
+  const rows: TaskRow[] = [];
+  const visited = new Set<string>();
+  const visit = (t: ProjectTaskItem, depth: number, hasNextSibling: boolean, throughLevels: number[]) => {
+    if (visited.has(t.id)) return;
+    visited.add(t.id);
+    const kids = [...(childrenByParent.get(t.id) ?? [])].sort(byUrgency);
+    rows.push({
+      task: t,
+      depth,
+      parentTitle: depth > 0 && t.parentTaskId ? taskById.get(t.parentTaskId)?.title : undefined,
+      subtaskCount: kids.length,
+      hasNextSibling,
+      throughLevels,
+    });
+    // This row's own level keeps a guide running past its children only if it has later siblings.
+    const nextThrough = depth > 0 && hasNextSibling ? [...throughLevels, depth] : throughLevels;
+    kids.forEach((kid, idx) => visit(kid, depth + 1, idx < kids.length - 1, nextThrough));
+  };
+  tasks
+    .filter((t) => !t.parentTaskId || !taskById.has(t.parentTaskId))
+    .sort(byUrgency)
+    .forEach((root) => visit(root, 0, false, []));
+  // Anything left over could only be part of a parent loop — still show it rather than drop a task.
+  tasks.forEach((t) => visit(t, 0, false, []));
 
   return (
     <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] h-full flex flex-col">
@@ -61,7 +127,7 @@ export default function TaskSummaryTable({ tasks, employees, projectTitle, onSel
         <p className="text-xs text-[#6F6F6F]">งานทั้งหมดของโครงการ "{projectTitle}"</p>
       </div>
 
-      {sorted.length === 0 ? (
+      {rows.length === 0 ? (
         <div className="flex-1 flex items-center justify-center text-xs text-[#A0A0A0] py-6">ยังไม่มีงานในโครงการนี้</div>
       ) : (
         <div className="flex-1 overflow-auto max-h-90">
@@ -76,7 +142,7 @@ export default function TaskSummaryTable({ tasks, employees, projectTitle, onSel
               </tr>
             </thead>
             <tbody>
-              {sorted.map((t) => {
+              {rows.map(({ task: t, depth, parentTitle, subtaskCount, hasNextSibling, throughLevels }) => {
                 const assignees = t.assigneeEmployeeIds.map((id) => employeeById.get(id)).filter((e): e is Employee => Boolean(e));
                 const firstAssignee = assignees[0];
                 const overdue = t.daysUntilDue !== undefined && t.daysUntilDue < 0;
@@ -87,10 +153,43 @@ export default function TaskSummaryTable({ tasks, employees, projectTitle, onSel
                     onClick={() => onSelectTask?.(t)}
                     className={`border-b border-slate-50 last:border-0 transition-colors ${onSelectTask ? 'hover:bg-slate-50 cursor-pointer' : ''}`}
                   >
-                    <td className="py-2.5 pr-3 max-w-40">
-                      <Tooltip content={t.title}>
-                        <p className="font-medium text-[#272220] truncate">{t.title}</p>
-                      </Tooltip>
+                    <td className="relative py-2.5 pr-3 max-w-40">
+                      {/* Tree connector for a งานย่อย — same light grey as the Gantt's own parent→subtask
+                          line. Ancestor levels that still have siblings below keep their
+                          guide running straight through this row; this row's own level runs the full
+                          height when more siblings follow, or stops at the elbow when it's the last. */}
+                      {throughLevels.map((level) => (
+                        <span key={level} aria-hidden className="absolute top-0 bottom-0 w-px bg-slate-300" style={{ left: guideX(level) }} />
+                      ))}
+                      {depth > 0 && (
+                        <>
+                          <span
+                            aria-hidden
+                            className="absolute top-0 w-px bg-slate-300"
+                            style={{ left: guideX(depth), bottom: hasNextSibling ? 0 : '50%' }}
+                          />
+                          <span
+                            aria-hidden
+                            className="absolute top-1/2 h-px bg-slate-300"
+                            style={{ left: guideX(depth), width: 10 }}
+                          />
+                        </>
+                      )}
+                      <div className="min-w-0" style={{ paddingLeft: depth > 0 ? depth * TREE_INDENT_PX + 6 : 0 }}>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <Tooltip content={t.title}>
+                            <p className="font-medium text-[#272220] truncate">{t.title}</p>
+                          </Tooltip>
+                          {subtaskCount > 0 && (
+                            <span className="text-[10px] font-medium text-[#A0A0A0] bg-slate-100 rounded-full px-1.5 py-0.5 shrink-0">
+                              งานย่อย {subtaskCount}
+                            </span>
+                          )}
+                        </div>
+                        {parentTitle && (
+                          <p className="text-[10px] text-[#A0A0A0] truncate">งานย่อยของ: {parentTitle}</p>
+                        )}
+                      </div>
                     </td>
                     <td className="py-2.5 pr-3">
                       {firstAssignee ? (

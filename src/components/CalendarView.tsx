@@ -10,14 +10,17 @@ import {
   Users2,
   Briefcase,
   Ban,
-  X
+  X,
+  Eye,
+  ArrowUpRight
 } from 'lucide-react';
 import Dropdown from './Dropdown';
 import ProjectsGanttChart from './projectBoard/ProjectsGanttChart';
 import ScheduleMeetingModal from './projectBoard/ScheduleMeetingModal';
 import CancelMeetingModal from './projectBoard/CancelMeetingModal';
 import MeetingDetailModal from './projectBoard/MeetingDetailModal';
-import { ProjectRow } from './projectBoard/types';
+import TaskDetailModal from './projectBoard/TaskDetailModal';
+import { ProjectRow, ProjectTaskItem } from './projectBoard/types';
 import { STATUS_DOT, STATUS_LABEL, STATUS_ICON, TASK_STATUS_COLOR, TASK_STATUS_LABEL } from './projectBoard/statusMeta';
 import { formatThaiDateShort, displayName } from './projectBoard/CreateProjectModal';
 import { isResponsibleForProject } from '../lib/ownership';
@@ -36,6 +39,7 @@ const FILTER_OPTIONS: { value: FilterType; label: string; icon: typeof CalIcon }
 // browsing the calendar just wants to see "what's due".
 interface CalendarTaskItem {
   id: string;
+  taskId: string; // the real project_task id (id above is a prefixed calendar key) — used to open its detail view
   title: string;
   dueDateISO: string;
   startDateISO: string | null;
@@ -84,13 +88,16 @@ function isPastMeeting(meeting: Meeting): boolean {
 }
 
 export default function CalendarView() {
-  const { orgSections, meetings, projects, projectTasks, employees, currentUser, handleAddMeeting, handleUpdateMeeting, setTaskSelectedProjectId, setTaskSelectedTab } = useAppData();
+  const { orgSections, meetings, projects, projectTasks, documents, employees, currentUser, handleAddMeeting, handleUpdateMeeting, setTaskSelectedProjectId, setTaskSelectedTab } = useAppData();
   const navigate = useNavigate();
   const [isScheduleMeetingOpen, setIsScheduleMeetingOpen] = useState(false);
   // ยกเลิกประชุม / detail view for a meeting with no project to navigate into — see the render
   // below for how a meeting click branches between the two.
   const [cancellingMeeting, setCancellingMeeting] = useState<Meeting | null>(null);
   const [viewingMeeting, setViewingMeeting] = useState<Meeting | null>(null);
+  // A task opened from the day popover for a full read-only look (TaskDetailModal) — the popover row
+  // itself only has room for title/project/assignee.
+  const [viewingTask, setViewingTask] = useState<ProjectTaskItem | null>(null);
   // A standalone (no-project) meeting being edited from its detail view — reuses the same
   // ScheduleMeetingModal instance below rather than a second one, same as ProjectDetail.tsx does
   // for its own project-scoped meetings.
@@ -144,6 +151,10 @@ export default function CalendarView() {
   };
   // A meeting with a project navigates there (การประชุม tab); one with no project has nowhere to
   // navigate to, so it opens its own read-only detail view instead (see MeetingDetailModal).
+  const openTaskDetail = (task: CalendarTaskItem) => {
+    const real = projectTasks.find((t) => t.id === task.taskId);
+    if (real) setViewingTask(real);
+  };
   const openMeeting = (meeting: Meeting) => {
     if (meeting.projectId) goToProjectTab(meeting.projectId, 'meetings');
     else setViewingMeeting(meeting);
@@ -232,6 +243,7 @@ export default function CalendarView() {
       .filter((t) => isMineOnly(t.assigneeEmployeeIds))
       .map((t) => ({
         id: `ptask-${t.id}`,
+        taskId: t.id,
         title: t.title,
         dueDateISO: t.dueDateISO as string,
         startDateISO: t.startDateISO ?? null,
@@ -731,16 +743,42 @@ export default function CalendarView() {
                         <div className="space-y-1.5">
                           <p className="text-[10px] font-bold text-[#A0A0A0] uppercase tracking-wide px-0.5">งาน</p>
                           {hasTasks.map((task) => (
-                            <div key={task.id} className="flex items-start gap-2 p-2 rounded-lg bg-slate-50">
-                              <span className="w-6 h-6 rounded-lg bg-[#FFF1EC] text-[#FF6537] flex items-center justify-center shrink-0">
-                                <ListChecks size={12} />
-                              </span>
-                              <div className="min-w-0 text-xs">
-                                <p className="font-semibold text-[#272220] flex items-center gap-1">
-                                  {task.title}
-                                </p>
-                                <p className="text-[11px] text-[#A0A0A0] mt-0.5">โครงการ: {task.projectLabel}</p>
-                                <p className="text-[11px] text-[#A0A0A0] mt-0.5">ผู้รับผิดชอบ: {task.assigneeNames ?? 'ยังไม่ระบุ'}</p>
+                            <div key={task.id} className="p-2 rounded-lg bg-slate-50">
+                              {/* Title/project/assignee open the task's detail view; the two labelled
+                                  buttons underneath spell out both things a task here can do. */}
+                              <button
+                                type="button"
+                                onClick={() => openTaskDetail(task)}
+                                className="w-full flex items-start gap-2 text-left cursor-pointer group"
+                              >
+                                <span className="w-6 h-6 rounded-lg bg-[#FFF1EC] text-[#FF6537] flex items-center justify-center shrink-0">
+                                  <ListChecks size={12} />
+                                </span>
+                                <div className="min-w-0 flex-1 text-xs">
+                                  <p className="font-semibold text-[#272220] group-hover:text-[#FF6537]">{task.title}</p>
+                                  <p className="text-[11px] text-[#A0A0A0] mt-0.5">โครงการ: {task.projectLabel}</p>
+                                  <p className="text-[11px] text-[#A0A0A0] mt-0.5">ผู้รับผิดชอบ: {task.assigneeNames ?? 'ยังไม่ระบุ'}</p>
+                                </div>
+                              </button>
+                              <div className="flex items-center gap-1.5 mt-2 pl-8">
+                                <button
+                                  type="button"
+                                  onClick={() => openTaskDetail(task)}
+                                  className="inline-flex items-center gap-1 h-7 px-2.5 rounded-lg bg-white border border-slate-200 text-[11px] font-semibold text-[#6F6F6F] hover:text-[#FF6537] hover:border-[#FF6537] cursor-pointer transition-colors"
+                                >
+                                  <Eye size={12} />
+                                  ดูรายละเอียด
+                                </button>
+                                {task.projectId && (
+                                  <button
+                                    type="button"
+                                    onClick={() => goToProjectTab(task.projectId!, 'overview')}
+                                    className="inline-flex items-center gap-1 h-7 px-2.5 rounded-lg bg-white border border-slate-200 text-[11px] font-semibold text-[#6F6F6F] hover:text-[#FF6537] hover:border-[#FF6537] cursor-pointer transition-colors"
+                                  >
+                                    <ArrowUpRight size={12} />
+                                    ไปที่โครงการ
+                                  </button>
+                                )}
                               </div>
                             </div>
                           ))}
@@ -761,11 +799,12 @@ export default function CalendarView() {
                             return (
                               <div
                                 key={meeting.id}
-                                className={`w-full flex items-start gap-1 p-2 rounded-lg bg-slate-50 transition-colors ${isCancelled || isPast ? 'opacity-60' : 'hover:bg-purple-50'}`}
+                                className={`w-full p-2 rounded-lg bg-slate-50 transition-colors ${isCancelled || isPast ? 'opacity-60' : 'hover:bg-purple-50'}`}
                               >
+                                <div className="flex items-start gap-1">
                                 <button
                                   type="button"
-                                  onClick={() => openMeeting(meeting)}
+                                  onClick={() => setViewingMeeting(meeting)}
                                   className="flex items-start gap-2 flex-1 min-w-0 text-left cursor-pointer group"
                                 >
                                   <span className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${isCancelled ? 'bg-red-50 text-red-500' : isPast ? 'bg-slate-100 text-slate-400' : 'bg-purple-50 text-purple-600'}`}>
@@ -779,11 +818,10 @@ export default function CalendarView() {
                                       </p>
                                     ) : isPast ? (
                                       <p className="text-[11px] text-[#A0A0A0] mt-0.5">ผ่านไปแล้ว</p>
-                                    ) : project ? (
-                                      <p className="text-[11px] text-[#FF6537] font-medium mt-0.5 group-hover:underline">โครงการ: {project.title}</p>
-                                    ) : (
-                                      <p className="text-[11px] text-[#A0A0A0] group-hover:text-purple-600 mt-0.5">ไม่ได้ผูกกับโครงการ · ดูรายละเอียด</p>
-                                    )}
+                                    ) : null}
+                                    <p className="text-[11px] text-[#A0A0A0] mt-0.5">
+                                      {project ? `โครงการ: ${project.title}` : 'ไม่ได้ผูกกับโครงการ'}
+                                    </p>
                                   </div>
                                 </button>
                                 {!isCancelled && !isPast && (
@@ -798,6 +836,27 @@ export default function CalendarView() {
                                     </button>
                                   </Tooltip>
                                 )}
+                                </div>
+                                <div className="flex items-center gap-1.5 mt-2 pl-8">
+                                  <button
+                                    type="button"
+                                    onClick={() => setViewingMeeting(meeting)}
+                                    className="inline-flex items-center gap-1 h-7 px-2.5 rounded-lg bg-white border border-slate-200 text-[11px] font-semibold text-[#6F6F6F] hover:text-[#FF6537] hover:border-[#FF6537] cursor-pointer transition-colors"
+                                  >
+                                    <Eye size={12} />
+                                    ดูรายละเอียด
+                                  </button>
+                                  {meeting.projectId && (
+                                    <button
+                                      type="button"
+                                      onClick={() => goToProjectTab(meeting.projectId!, 'meetings')}
+                                      className="inline-flex items-center gap-1 h-7 px-2.5 rounded-lg bg-white border border-slate-200 text-[11px] font-semibold text-[#6F6F6F] hover:text-[#FF6537] hover:border-[#FF6537] cursor-pointer transition-colors"
+                                    >
+                                      <ArrowUpRight size={12} />
+                                      ไปที่โครงการ
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                             );
                           })}
@@ -906,11 +965,23 @@ export default function CalendarView() {
         onConfirm={handleUpdateMeeting}
       />
 
+      <TaskDetailModal
+        task={viewingTask}
+        employees={employees}
+        documents={documents}
+        projectTitle={viewingTask ? projectById.get(viewingTask.projectId)?.title : undefined}
+        onGoToProject={viewingTask ? () => { const t = viewingTask; setViewingTask(null); goToProjectTab(t.projectId, 'overview'); } : undefined}
+        onClose={() => setViewingTask(null)}
+      />
+
       <MeetingDetailModal
         meeting={viewingMeeting}
         employees={employees}
         onClose={() => setViewingMeeting(null)}
         onEdit={(m) => { setViewingMeeting(null); setEditingMeeting(m); }}
+        projectTitle={viewingMeeting?.projectId ? projectById.get(viewingMeeting.projectId)?.title : undefined}
+        taskTitle={viewingMeeting?.taskId ? projectTasks.find((t) => t.id === viewingMeeting.taskId)?.title : undefined}
+        onGoToProject={viewingMeeting?.projectId ? () => { const m = viewingMeeting; setViewingMeeting(null); goToProjectTab(m.projectId!, 'meetings'); } : undefined}
       />
 
     </div>

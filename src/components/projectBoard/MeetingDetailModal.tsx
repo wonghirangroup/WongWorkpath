@@ -1,6 +1,6 @@
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
-import { X, Clock, MapPin, Link2, Ban, Pencil } from 'lucide-react';
+import { X, Clock, MapPin, Link2, Ban, Pencil, ArrowUpRight, ListChecks } from 'lucide-react';
 import { Employee, Meeting } from '../../types';
 import { displayName, formatThaiDateShort } from './CreateProjectModal';
 import { getAvatarColor } from '../../lib/avatarColor';
@@ -12,6 +12,12 @@ interface MeetingDetailModalProps {
   employees: Employee[];
   onClose: () => void;
   onEdit: (meeting: Meeting) => void;
+  // Optional context for callers opening this away from the meeting's own project (the calendar):
+  // which project it belongs to (with a way to jump there) and which task, if any, it is tied to.
+  // A standalone meeting simply omits them and looks exactly as before.
+  projectTitle?: string;
+  onGoToProject?: () => void;
+  taskTitle?: string;
 }
 
 // Detail view for a meeting that isn't tied to any project — those only ever showed up as an
@@ -20,7 +26,7 @@ interface MeetingDetailModalProps {
 // go. This gives them a real destination: time, description, location/link spelled out in full
 // (mirroring TaskDetailModal's own read-only pattern), plus an edit entry point since a standalone
 // meeting has no project page where that could otherwise happen.
-export default function MeetingDetailModal({ meeting, employees, onClose, onEdit }: MeetingDetailModalProps) {
+export default function MeetingDetailModal({ meeting, employees, onClose, onEdit, projectTitle, onGoToProject, taskTitle }: MeetingDetailModalProps) {
   useEscapeToClose(Boolean(meeting), onClose);
   const attendees = meeting ? employees.filter((e) => meeting.attendeeIds.includes(e.id)) : [];
   const creator = meeting?.createdBy ? employees.find((e) => e.id === meeting.createdBy) : undefined;
@@ -56,6 +62,9 @@ export default function MeetingDetailModal({ meeting, employees, onClose, onEdit
                   </span>
                 )}
                 <h3 className={`text-base font-bold text-slate-800 break-words ${isCancelled ? 'line-through' : ''}`}>{meeting.title}</h3>
+                {projectTitle && (
+                  <p className="text-xs text-[#6F6F6F] mt-1 wrap-break-word">โครงการ: <span className="font-medium text-[#272220]">{projectTitle}</span></p>
+                )}
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 {!isCancelled && (
@@ -82,6 +91,16 @@ export default function MeetingDetailModal({ meeting, employees, onClose, onEdit
                   {formatThaiDateShort(meeting.date)} · {meeting.startTime}{meeting.endTime ? ` - ${meeting.endTime}` : ''}
                 </p>
               </div>
+
+              {taskTitle && (
+                <div>
+                  <p className="text-[#A0A0A0] text-[11px] mb-1">ผูกกับงาน</p>
+                  <p className="text-sm text-[#272220] flex items-center gap-1.5 wrap-break-word">
+                    <ListChecks size={14} className="text-[#A0A0A0] shrink-0" />
+                    {taskTitle}
+                  </p>
+                </div>
+              )}
 
               {meeting.description && (
                 <div>
@@ -191,6 +210,26 @@ export default function MeetingDetailModal({ meeting, employees, onClose, onEdit
                 </div>
               )}
             </div>
+
+            {onGoToProject && (
+              <div className="px-5 pb-5 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-5 h-10 text-sm font-semibold text-[#6F6F6F] hover:bg-slate-50 rounded-lg border border-[#E5E5E5] cursor-pointer"
+                >
+                  ปิด
+                </button>
+                <button
+                  type="button"
+                  onClick={onGoToProject}
+                  className="flex-1 h-10 inline-flex items-center justify-center gap-1.5 text-sm font-bold text-white bg-[#FF6537] hover:bg-[#e6572c] rounded-lg cursor-pointer transition-colors"
+                >
+                  <ArrowUpRight size={15} />
+                  ไปที่โครงการ
+                </button>
+              </div>
+            )}
           </motion.div>
         </motion.div>
       )}

@@ -411,7 +411,9 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
   const creatorField = (
     <div>
       <label className="block text-[#272220] font-bold text-[11px] mb-1">ผู้สร้าง</label>
-      <div className="flex items-center gap-2.5 p-2 text-sm border border-[#E5E5E5] rounded-lg bg-slate-50">
+      {/* Fixed to the same 42px as every text input beside it (the 28px avatar plus padding made this
+          one 4px taller, which pushed the whole row below it out of line with the other column). */}
+      <div className="flex items-center gap-2.5 h-10.5 px-2.5 text-sm border border-[#E5E5E5] rounded-lg bg-slate-50">
         {creator?.avatar ? (
           <img src={creator.avatar} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
         ) : (
@@ -439,7 +441,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ type: 'spring', stiffness: 300, damping: 24, mass: 0.9 }}
-            className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-2xl mx-4 max-h-[88vh] overflow-hidden flex flex-col"
+            className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-2xl lg:max-w-6xl mx-4 max-h-[94vh] overflow-hidden flex flex-col"
           >
             <div className="flex justify-between items-center px-6 pt-5 pb-2 shrink-0">
               <div>
@@ -507,169 +509,222 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
 
             <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
               <div className="flex-1 min-h-0 overflow-y-auto px-6 pt-4 pb-1">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
-                <div className="sm:col-span-2">
-                  <label className="block text-[#272220] font-bold text-[11px] mb-1">
-                    {mode === 'task' ? 'ชื่องาน' : mode === 'topic' ? 'ชื่อหัวข้อ' : 'ชื่อการประชุม'} <span className="text-[#FF6537]">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    autoFocus
-                    placeholder={mode === 'task' ? 'เช่น ออกแบบหน้าร้านใหม่' : mode === 'topic' ? 'เช่น เบิกทุน NIA' : 'เช่น ประชุมทบทวนความคืบหน้าโครงการ'}
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
-                  />
-                </div>
-
-                {needsProjectPicker && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-3 items-stretch">
+                {/* Left column: what the thing is (title/description) plus the status/folder bits tied to it.
+                    Right column: who and when. Stacks into one column below lg, where the body scrolls instead.
+                    The left column is a flex column whose รายละเอียด box absorbs any height the right column
+                    has extra (the meeting form's right side is a good deal taller), so both columns end
+                    together in every mode instead of the left trailing off into empty space. */}
+                <div className="flex flex-col gap-3 min-w-0">
                   <div className="sm:col-span-2">
                     <label className="block text-[#272220] font-bold text-[11px] mb-1">
-                      โครงการ <span className="text-[#FF6537]">*</span>
+                      {mode === 'task' ? 'ชื่องาน' : mode === 'topic' ? 'ชื่อหัวข้อ' : 'ชื่อการประชุม'} <span className="text-[#FF6537]">*</span>
                     </label>
-                    <Dropdown
-                      value={pickedProjectId}
-                      onChange={(value) => { setPickedProjectId(value); setStartDate(''); setDueDate(''); }}
-                      placeholder="เลือกโครงการ..."
-                      options={(projects ?? []).map((p) => ({ value: p.id, label: p.title }))}
+                    <input
+                      type="text"
+                      autoFocus
+                      placeholder={mode === 'task' ? 'เช่น ออกแบบหน้าร้านใหม่' : mode === 'topic' ? 'เช่น เบิกทุน NIA' : 'เช่น ประชุมทบทวนความคืบหน้าโครงการ'}
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
                     />
                   </div>
-                )}
 
-                <div className="sm:col-span-2">
-                  <label className="block text-[#272220] font-bold text-[11px] mb-1">รายละเอียด (ไม่บังคับ)</label>
-                  <textarea
-                    rows={3}
-                    placeholder="อธิบายรายละเอียดของงานนี้..."
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
-                  />
+                  {needsProjectPicker && (
+                    <div className="sm:col-span-2">
+                      <label className="block text-[#272220] font-bold text-[11px] mb-1">
+                        โครงการ <span className="text-[#FF6537]">*</span>
+                      </label>
+                      <Dropdown
+                        value={pickedProjectId}
+                        onChange={(value) => { setPickedProjectId(value); setStartDate(''); setDueDate(''); }}
+                        placeholder="เลือกโครงการ..."
+                        options={(projects ?? []).map((p) => ({ value: p.id, label: p.title }))}
+                      />
+                    </div>
+                  )}
+
+                  <div className="flex flex-col flex-1 min-h-0">
+                    <label className="block text-[#272220] font-bold text-[11px] mb-1">รายละเอียด (ไม่บังคับ)</label>
+                    <textarea
+                      rows={2}
+                      placeholder="อธิบายรายละเอียดของงานนี้..."
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      className="w-full flex-1 min-h-20 lg:min-h-16 resize-none p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                    />
+                  </div>
+                  {mode !== 'meeting' ? (
+                    <>
+                        {isEditing && editingTask && (
+                          <div className="sm:col-span-2 flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
+                            <div>
+                              <p className="text-[#272220] font-bold text-[11px] mb-1">สถานะงาน</p>
+                              <p className="text-[10px] text-[#A0A0A0]">
+                                {hasSubtasks
+                                  ? 'งานนี้มีงานย่อยแล้ว — สถานะคำนวณอัตโนมัติจากงานย่อยทั้งหมด (ดำเนินการอยู่จนกว่างานย่อยทุกงานจะเสร็จ) ไม่สามารถแก้ไขเองได้'
+                                  : 'เปลี่ยนตามขั้นตอนอัตโนมัติ — ยังไม่เริ่ม/กำลังทำตามผู้รับผิดชอบ, รอตรวจ/เสร็จแล้วผ่านการ "ส่งงาน"/"ตรวจงาน"'}
+                              </p>
+                            </div>
+                            {(() => {
+                              const previewStatus = hasSubtasks ? editingTask.status : computeTaskStatus(editingTask.status, assigneeIds, blocked);
+                              const color = TASK_STATUS_COLOR[previewStatus];
+                              return (
+                                <span
+                                  className="text-[11px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap shrink-0"
+                                  style={{ backgroundColor: `${color}1A`, color }}
+                                >
+                                  {TASK_STATUS_LABEL[previewStatus]}
+                                </span>
+                              );
+                            })()}
+                          </div>
+                        )}
+
+                        {isEditing && !hasSubtasks && editingTask?.status !== 'done' && (
+                          <div className="sm:col-span-2">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={blocked}
+                                onChange={(e) => setBlocked(e.target.checked)}
+                                className="rounded border-[#E5E5E5] text-[#FF6537] focus:ring-[#FF6537] cursor-pointer"
+                              />
+                              <span className="text-[#272220] font-bold text-[11px]">ติดปัญหา</span>
+                              <span className="text-[10px] text-[#A0A0A0]">— ทุกคนที่เกี่ยวข้องกับโปรเจคนี้จะได้รับแจ้งเตือน</span>
+                            </label>
+                            {blocked && (
+                              <textarea
+                                rows={2}
+                                autoFocus
+                                value={blockedReason}
+                                onChange={(e) => setBlockedReason(e.target.value)}
+                                placeholder="ติดปัญหาอะไร? (บังคับกรอก — จะโชว์ให้คนอื่นเห็นด้วย)"
+                                className="w-full mt-2 p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                              />
+                            )}
+                          </div>
+                        )}
+
+                        {isEditing && pendingRequest && (
+                          <p className="sm:col-span-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                            มีคำขอแก้ไขรออนุมัติอยู่แล้ว โดย {(() => {
+                              const requester = employees.find((e) => e.id === pendingRequest.requestedBy);
+                              return requester ? displayName(requester) : 'ไม่ทราบผู้ใช้งาน';
+                            })()}
+                            {' — เหตุผล: '}{pendingRequest.reason}
+                          </p>
+                        )}
+
+                        {isEditing && !pendingRequest && !canEditDirectly && (
+                          <div className="sm:col-span-2">
+                            <label className="block text-[#272220] font-bold text-[11px] mb-1">
+                              เหตุผลที่ขอแก้ไข <span className="text-[#FF6537]">*</span>
+                            </label>
+                            <textarea
+                              rows={2}
+                              value={reason}
+                              onChange={(e) => setReason(e.target.value)}
+                              placeholder="งานนี้มีผู้รับผิดชอบแล้ว ระบุเหตุผลเพื่อขออนุมัติแก้ไข..."
+                              className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                            />
+                          </div>
+                        )}
+
+                        {!isEditing && (
+                        <div>
+                          <label className="flex items-center gap-2 cursor-pointer mb-1">
+                            <input
+                              type="checkbox"
+                              checked={createFolder}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                setCreateFolder(checked);
+                                if (checked && !folderNameTouched) setFolderName(title.trim());
+                              }}
+                              className="rounded border-[#E5E5E5] text-[#FF6537] focus:ring-[#FF6537] cursor-pointer"
+                            />
+                            <Folder size={14} className="text-[#6F6F6F]" />
+                            <span className="text-[#272220] font-bold text-[11px]">
+                              {effectiveProjectDocFolderId ? 'สร้างโฟลเดอร์เอกสารในโครงการนี้ (ไม่บังคับ)' : 'สร้างโฟลเดอร์เอกสารใน "เอกสาร Drive" (ไม่บังคับ)'}
+                            </span>
+                          </label>
+                          {createFolder && (
+                            <input
+                              type="text"
+                              placeholder="ชื่อโฟลเดอร์"
+                              value={folderName}
+                              onChange={(e) => { setFolderName(e.target.value); setFolderNameTouched(true); }}
+                              className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                            />
+                          )}
+                        </div>
+                        )}
+                    </>
+                  ) : (
+                    <>
+                        {tasksForMeetingPicker.length > 0 && (
+                          <div className="sm:col-span-2">
+                            <label className="block text-[#272220] font-bold text-[11px] mb-1">ผูกกับงาน (ไม่บังคับ)</label>
+                            <Dropdown
+                              value={meetingTaskId}
+                              onChange={setMeetingTaskId}
+                              placeholder="ไม่ผูกกับงานใดเป็นการเฉพาะ — ประชุมของทั้งโครงการ"
+                              options={tasksForMeetingPicker.map((t) => ({ value: t.id, label: t.title }))}
+                            />
+                          </div>
+                        )}
+                    </>
+                  )}
                 </div>
 
-                {mode !== 'meeting' ? (
-                  <>
-                    {creatorField}
+                <div className="grid grid-cols-1 sm:grid-cols-2 content-start gap-x-4 gap-y-3 min-w-0">
+                  {mode !== 'meeting' ? (
+                    <>
+                        {creatorField}
 
-                    <div>
-                      <label className="block text-[#272220] font-bold text-[11px] mb-1">ผู้รับผิดชอบ (เลือกได้มากกว่า 1)</label>
-                      <EmployeeMultiSelect
-                        employees={selectableEmployees(assigneeIds)}
-                        valueIds={assigneeIds}
-                        onChange={setAssigneeIds}
-                        placeholder="ค้นหาหรือเลือกพนักงาน..."
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[#272220] font-bold text-[11px] mb-1">ผู้ตรวจงาน (ไม่บังคับ, เลือกได้มากกว่า 1)</label>
-                      <EmployeeMultiSelect
-                        employees={selectableEmployees(reviewerIds)}
-                        valueIds={reviewerIds}
-                        onChange={setReviewerIds}
-                        placeholder="ค้นหาหรือเลือกพนักงาน..."
-                      />
-                      <p className="text-[10px] text-[#A0A0A0] mt-1">ผู้ตรวจคนใดคนหนึ่งกดผ่าน/ตีกลับก็มีผลทันที ถ้ายังไม่เลือกตอนนี้ เลือกได้อีกครั้งตอนกด "ส่งงาน"</p>
-                    </div>
-
-                    <div>
-                      <label className="block text-[#272220] font-bold text-[11px] mb-1">ระดับความสำคัญ (ไม่บังคับ)</label>
-                      <div className="flex gap-2">
-                        {PRIORITY_OPTIONS.map((p) => (
-                          <button
-                            key={p.value}
-                            type="button"
-                            onClick={() => setPriority((current) => (current === p.value ? null : p.value))}
-                            className={`flex-1 h-9 rounded-lg text-xs font-semibold border cursor-pointer transition-colors ${
-                              priority === p.value ? p.activeClass : 'border-[#E5E5E5] text-[#6F6F6F] hover:bg-slate-50'
-                            }`}
-                          >
-                            {p.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {isEditing && editingTask && (
-                      <div className="sm:col-span-2 flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
                         <div>
-                          <p className="text-[#272220] font-bold text-[11px] mb-1">สถานะงาน</p>
-                          <p className="text-[10px] text-[#A0A0A0]">
-                            {hasSubtasks
-                              ? 'งานนี้มีงานย่อยแล้ว — สถานะคำนวณอัตโนมัติจากงานย่อยทั้งหมด (ดำเนินการอยู่จนกว่างานย่อยทุกงานจะเสร็จ) ไม่สามารถแก้ไขเองได้'
-                              : 'เปลี่ยนตามขั้นตอนอัตโนมัติ — ยังไม่เริ่ม/กำลังทำตามผู้รับผิดชอบ, รอตรวจ/เสร็จแล้วผ่านการ "ส่งงาน"/"ตรวจงาน"'}
-                          </p>
+                          <label className="block text-[#272220] font-bold text-[11px] mb-1">ผู้รับผิดชอบ (เลือกได้มากกว่า 1)</label>
+                          <EmployeeMultiSelect
+                            employees={selectableEmployees(assigneeIds)}
+                            valueIds={assigneeIds}
+                            onChange={setAssigneeIds}
+                            placeholder="ค้นหาหรือเลือกพนักงาน..."
+                          />
                         </div>
-                        {(() => {
-                          const previewStatus = hasSubtasks ? editingTask.status : computeTaskStatus(editingTask.status, assigneeIds, blocked);
-                          const color = TASK_STATUS_COLOR[previewStatus];
-                          return (
-                            <span
-                              className="text-[11px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap shrink-0"
-                              style={{ backgroundColor: `${color}1A`, color }}
-                            >
-                              {TASK_STATUS_LABEL[previewStatus]}
-                            </span>
-                          );
-                        })()}
-                      </div>
-                    )}
 
-                    {isEditing && !hasSubtasks && editingTask?.status !== 'done' && (
-                      <div className="sm:col-span-2">
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={blocked}
-                            onChange={(e) => setBlocked(e.target.checked)}
-                            className="rounded border-[#E5E5E5] text-[#FF6537] focus:ring-[#FF6537] cursor-pointer"
-                          />
-                          <span className="text-[#272220] font-bold text-[11px]">ติดปัญหา</span>
-                          <span className="text-[10px] text-[#A0A0A0]">— ทุกคนที่เกี่ยวข้องกับโปรเจคนี้จะได้รับแจ้งเตือน</span>
-                        </label>
-                        {blocked && (
-                          <textarea
-                            rows={2}
-                            autoFocus
-                            value={blockedReason}
-                            onChange={(e) => setBlockedReason(e.target.value)}
-                            placeholder="ติดปัญหาอะไร? (บังคับกรอก — จะโชว์ให้คนอื่นเห็นด้วย)"
-                            className="w-full mt-2 p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
-                          />
-                        )}
-                      </div>
-                    )}
-
-                    {isEditing && pendingRequest && (
-                      <p className="sm:col-span-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                        มีคำขอแก้ไขรออนุมัติอยู่แล้ว โดย {(() => {
-                          const requester = employees.find((e) => e.id === pendingRequest.requestedBy);
-                          return requester ? displayName(requester) : 'ไม่ทราบผู้ใช้งาน';
-                        })()}
-                        {' — เหตุผล: '}{pendingRequest.reason}
-                      </p>
-                    )}
-
-                    {isEditing && !pendingRequest && !canEditDirectly && (
-                      <div className="sm:col-span-2">
-                        <label className="block text-[#272220] font-bold text-[11px] mb-1">
-                          เหตุผลที่ขอแก้ไข <span className="text-[#FF6537]">*</span>
-                        </label>
-                        <textarea
-                          rows={2}
-                          value={reason}
-                          onChange={(e) => setReason(e.target.value)}
-                          placeholder="งานนี้มีผู้รับผิดชอบแล้ว ระบุเหตุผลเพื่อขออนุมัติแก้ไข..."
-                          className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
-                        />
-                      </div>
-                    )}
-
-                    <div className="sm:col-span-2">
-                      <label className="block text-[#272220] font-bold text-[11px] mb-1">ระยะเวลา</label>
-                      <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-[#A0A0A0] text-[10px] mb-1">วันที่เริ่ม</label>
+                          <label className="block text-[#272220] font-bold text-[11px] mb-1">ผู้ตรวจงาน (ไม่บังคับ, เลือกได้มากกว่า 1)</label>
+                          <EmployeeMultiSelect
+                            employees={selectableEmployees(reviewerIds)}
+                            valueIds={reviewerIds}
+                            onChange={setReviewerIds}
+                            placeholder="ค้นหาหรือเลือกพนักงาน..."
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[#272220] font-bold text-[11px] mb-1">ระดับความสำคัญ (ไม่บังคับ)</label>
+                          <div className="flex gap-2">
+                            {PRIORITY_OPTIONS.map((p) => (
+                              <button
+                                key={p.value}
+                                type="button"
+                                onClick={() => setPriority((current) => (current === p.value ? null : p.value))}
+                                className={`flex-1 h-10.5 rounded-lg text-xs font-semibold border cursor-pointer transition-colors ${
+                                  priority === p.value ? p.activeClass : 'border-[#E5E5E5] text-[#6F6F6F] hover:bg-slate-50'
+                                }`}
+                              >
+                                {p.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <p className="sm:col-span-2 -mt-1.5 text-[10px] text-[#A0A0A0]">ผู้ตรวจคนใดคนหนึ่งกดผ่าน/ตีกลับก็มีผลทันที ถ้ายังไม่เลือกตอนนี้ เลือกได้อีกครั้งตอนกด "ส่งงาน"</p>
+
+                        <div>
+                          <label className="block text-[#272220] font-bold text-[11px] mb-1">วันที่เริ่ม</label>
                           <ThaiDatePicker
                             value={startDate}
                             onChange={setStartDate}
@@ -679,7 +734,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                           />
                         </div>
                         <div>
-                          <label className="block text-[#A0A0A0] text-[10px] mb-1">กำหนดส่ง</label>
+                          <label className="block text-[#272220] font-bold text-[11px] mb-1">กำหนดส่ง</label>
                           <ThaiDatePicker
                             value={dueDate}
                             onChange={setDueDate}
@@ -688,52 +743,114 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                             hasError={!taskDateOrderValid || !taskDueInRange}
                           />
                         </div>
-                      </div>
-                      {!taskDateOrderValid && (
-                        <p className="text-xs text-red-600 mt-1.5">กำหนดส่งต้องไม่อยู่ก่อนวันที่เริ่ม</p>
-                      )}
-                      {taskDateOrderValid && (!taskStartInRange || !taskDueInRange) && projectRangeLabel && (
-                        <p className="text-xs text-red-600 mt-1.5">วันที่ของงาน{projectRangeLabel}</p>
-                      )}
-                    </div>
+                        {!taskDateOrderValid && (
+                          <p className="sm:col-span-2 -mt-1.5 text-xs text-red-600">กำหนดส่งต้องไม่อยู่ก่อนวันที่เริ่ม</p>
+                        )}
+                        {taskDateOrderValid && (!taskStartInRange || !taskDueInRange) && projectRangeLabel && (
+                          <p className="sm:col-span-2 -mt-1.5 text-xs text-red-600">วันที่ของงาน{projectRangeLabel}</p>
+                        )}
+                    </>
+                  ) : (
+                    <>
+                        <div className="sm:col-span-2 grid grid-cols-3 gap-3">
+                          <div>
+                            <label className="block text-[#272220] font-bold text-[11px] mb-1">วันที่ <span className="text-[#FF6537]">*</span></label>
+                            <ThaiDatePicker
+                              value={meetingDate}
+                              onChange={setMeetingDate}
+                              min={effectiveProjectStartDate || undefined}
+                              max={effectiveProjectEndDate || undefined}
+                              hasError={!meetingDateInRange}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[#272220] font-bold text-[11px] mb-1">เวลาเริ่ม <span className="text-[#FF6537]">*</span></label>
+                            <input
+                              type="time"
+                              value={meetingStartTime}
+                              onChange={(e) => setMeetingStartTime(e.target.value)}
+                              className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg focus:outline-none focus:border-[#FF6537]"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[#272220] font-bold text-[11px] mb-1">เวลาสิ้นสุด</label>
+                            <input
+                              type="time"
+                              value={meetingEndTime}
+                              onChange={(e) => setMeetingEndTime(e.target.value)}
+                              className={`w-full p-2.5 text-sm border rounded-lg focus:outline-none focus:border-[#FF6537] ${
+                                meetingTimeOrderValid ? 'border-[#E5E5E5]' : 'border-red-400'
+                              }`}
+                            />
+                          </div>
+                        </div>
+                        {!meetingTimeOrderValid && (
+                          <p className="sm:col-span-2 -mt-1.5 text-xs text-red-600">เวลาสิ้นสุดต้องไม่อยู่ก่อนเวลาเริ่ม</p>
+                        )}
+                        {meetingTimeOrderValid && !meetingDateInRange && projectRangeLabel && (
+                          <p className="sm:col-span-2 -mt-1.5 text-xs text-red-600">วันที่ประชุม{projectRangeLabel}</p>
+                        )}
 
-                    {!isEditing && (
-                    <div className="sm:col-span-2 border-t border-slate-100 pt-3">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={createFolder}
-                          onChange={(e) => {
-                            const checked = e.target.checked;
-                            setCreateFolder(checked);
-                            if (checked && !folderNameTouched) setFolderName(title.trim());
-                          }}
-                          className="rounded border-[#E5E5E5] text-[#FF6537] focus:ring-[#FF6537] cursor-pointer"
-                        />
-                        <Folder size={14} className="text-[#6F6F6F]" />
-                        <span className="text-[#272220] font-bold text-[11px]">
-                          {effectiveProjectDocFolderId ? 'สร้างโฟลเดอร์เอกสารในโครงการนี้ (ไม่บังคับ)' : 'สร้างโฟลเดอร์เอกสารใน "เอกสาร Drive" (ไม่บังคับ)'}
-                        </span>
-                      </label>
-                      {createFolder && (
-                        <input
-                          type="text"
-                          placeholder="ชื่อโฟลเดอร์"
-                          value={folderName}
-                          onChange={(e) => { setFolderName(e.target.value); setFolderNameTouched(true); }}
-                          className="w-full mt-2 p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
-                        />
-                      )}
-                    </div>
-                    )}
+                        {creatorField}
 
+                        <div>
+                          <label className="block text-[#272220] font-bold text-[11px] mb-1">ผู้เข้าร่วมประชุม (ไม่บังคับ)</label>
+                          <EmployeeMultiSelect
+                            employees={selectableEmployees(attendeeIds)}
+                            valueIds={attendeeIds}
+                            onChange={setAttendeeIds}
+                            placeholder="ค้นหาหรือเลือกพนักงาน..."
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[#272220] font-bold text-[11px] mb-1">สถานที่ (ไม่บังคับ)</label>
+                          <input
+                            type="text"
+                            placeholder="เช่น ห้องประชุมชั้น 3"
+                            value={location}
+                            onChange={(e) => setLocation(e.target.value)}
+                            className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[#272220] font-bold text-[11px] mb-1">ลิงก์แผนที่ (ไม่บังคับ)</label>
+                          <input
+                            type="text"
+                            placeholder="เช่น https://maps.google.com/..."
+                            value={locationLink}
+                            onChange={(e) => setLocationLink(e.target.value)}
+                            className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-2">
+                          <label className="block text-[#272220] font-bold text-[11px] mb-1">ลิงก์ประชุมออนไลน์ (ไม่บังคับ)</label>
+                          <input
+                            type="text"
+                            placeholder="เช่น https://meet.google.com/..."
+                            value={meetingLink}
+                            onChange={(e) => setMeetingLink(e.target.value)}
+                            className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                          />
+                        </div>
+                    </>
+                  )}
+                </div>
+
+                {mode !== 'meeting' && (
+                  <>
                     {!isEditing && (
-                    <div className="sm:col-span-2 border-t border-slate-100 pt-3">
+                    <div className="lg:col-span-2 border-t border-slate-100 pt-3">
                       <label className="block text-[#272220] font-bold text-[11px] mb-1">
                         ไฟล์แนบ/ลิงก์ประกอบ (ไม่บังคับ) <span className="font-normal text-[#A0A0A0]">— ไม่เกิน {formatFileSize(MAX_FILE_BYTES)} ต่อไฟล์</span>
                       </label>
+                      {/* File picker and link field sit side by side (stacked below sm) so this
+                          row costs one line of height instead of two. */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 lg:gap-x-6">
                       <div className="flex gap-2">
-                        <label className="flex-1 flex items-center gap-2 justify-center p-3 border border-dashed border-[#E5E5E5] rounded-lg cursor-pointer hover:bg-slate-50 text-xs text-[#6F6F6F]">
+                        <label className="flex-1 flex items-center gap-2 justify-center h-10 px-3 border border-dashed border-[#E5E5E5] rounded-lg cursor-pointer hover:bg-slate-50 text-xs text-[#6F6F6F]">
                           <Paperclip size={14} />
                           แนบไฟล์
                           <input
@@ -742,12 +859,14 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                             className="hidden"
                             onChange={(e) => {
                               setFileError('');
-                              const fileList = e.target.files;
+                              // Copy into a plain array BEFORE resetting the input — e.target.files is a
+                              // live FileList, so clearing value first empties it and nothing gets attached.
+                              const pickedNow = e.target.files ? Array.from(e.target.files) : [];
                               e.target.value = '';
-                              if (!fileList) return;
+                              if (pickedNow.length === 0) return;
                               const oversized: string[] = [];
                               const accepted: globalThis.File[] = [];
-                              Array.from(fileList).forEach((f) => {
+                              pickedNow.forEach((f) => {
                                 if (f.size > MAX_FILE_BYTES) oversized.push(f.name);
                                 else accepted.push(f);
                               });
@@ -757,9 +876,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                           />
                         </label>
                       </div>
-                      {fileError && <p className="text-xs text-red-600 mt-1.5">{fileError}</p>}
-
-                      <div className="flex gap-2 mt-2">
+                      <div className="flex gap-2">
                         <input
                           type="url"
                           value={linkUrl}
@@ -789,20 +906,23 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                           <Link2 size={15} />
                         </button>
                       </div>
+                      </div>
+                      {fileError && <p className="text-xs text-red-600 mt-1.5">{fileError}</p>}
 
                       {(pickedFiles.length > 0 || pickedLinks.length > 0) && (
-                        <div className="space-y-1.5 mt-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 lg:gap-x-6 mt-2">
                           {pickedFiles.map((f, idx) => {
                             const { Icon, color } = getItemVisual({ kind: 'file', name: f.name, fileMimeType: f.type });
                             return (
-                              <div key={`file-${idx}`} className="flex items-center gap-2.5 p-2.5 border border-[#FFD9C7] rounded-xl bg-[#FFF1EC]">
-                                <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center shrink-0">
-                                  <Icon size={16} className={color} />
+                              <div key={`file-${idx}`} className="flex items-center gap-2 px-2 py-1.5 border border-[#FFD9C7] rounded-xl bg-[#FFF1EC]">
+                                <div className="w-7 h-7 rounded-lg bg-white flex items-center justify-center shrink-0">
+                                  <Icon size={15} className={color} />
                                 </div>
-                                <div className="min-w-0 flex-1">
-                                  <p className="truncate text-xs font-medium text-[#272220]">{f.name}</p>
-                                  <p className="text-[11px] text-[#A0A0A0]">{formatFileSize(f.size)}</p>
-                                </div>
+                                {/* Name and size share one line — a second line per chip is what pushed
+                                    a handful of attachments past the modal's no-scroll height. */}
+                                <p className="min-w-0 flex-1 truncate text-xs font-medium text-[#272220]">
+                                  {f.name} <span className="font-normal text-[11px] text-[#A0A0A0]">{formatFileSize(f.size)}</span>
+                                </p>
                                 <button
                                   type="button"
                                   onClick={() => setPickedFiles((prev) => prev.filter((_, i) => i !== idx))}
@@ -816,14 +936,13 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                           {pickedLinks.map((link, idx) => {
                             const { Icon, color } = getItemVisual({ kind: 'link', name: link.name });
                             return (
-                              <div key={`link-${idx}`} className="flex items-center gap-2.5 p-2.5 border border-[#FFD9C7] rounded-xl bg-[#FFF1EC]">
-                                <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center shrink-0">
-                                  <Icon size={16} className={color} />
+                              <div key={`link-${idx}`} className="flex items-center gap-2 px-2 py-1.5 border border-[#FFD9C7] rounded-xl bg-[#FFF1EC]">
+                                <div className="w-7 h-7 rounded-lg bg-white flex items-center justify-center shrink-0">
+                                  <Icon size={15} className={color} />
                                 </div>
-                                <div className="min-w-0 flex-1">
-                                  <p className="truncate text-xs font-medium text-[#272220]">{link.name}</p>
-                                  <p className="truncate text-[11px] text-[#A0A0A0]">{link.url}</p>
-                                </div>
+                                <p className="min-w-0 flex-1 truncate text-xs font-medium text-[#272220]" title={link.url}>
+                                  {link.name} <span className="font-normal text-[11px] text-[#A0A0A0]">{link.url}</span>
+                                </p>
                                 <button
                                   type="button"
                                   onClick={() => setPickedLinks((prev) => prev.filter((_, i) => i !== idx))}
@@ -839,118 +958,15 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                     </div>
                     )}
                   </>
-                ) : (
-                  <>
-                    {tasksForMeetingPicker.length > 0 && (
-                      <div className="sm:col-span-2">
-                        <label className="block text-[#272220] font-bold text-[11px] mb-1">ผูกกับงาน (ไม่บังคับ)</label>
-                        <Dropdown
-                          value={meetingTaskId}
-                          onChange={setMeetingTaskId}
-                          placeholder="ไม่ผูกกับงานใดเป็นการเฉพาะ — ประชุมของทั้งโครงการ"
-                          options={tasksForMeetingPicker.map((t) => ({ value: t.id, label: t.title }))}
-                        />
-                      </div>
-                    )}
-
-                    <div className="sm:col-span-2">
-                      <label className="block text-[#272220] font-bold text-[11px] mb-1">
-                        วัน-เวลานัดประชุม <span className="text-[#FF6537]">*</span>
-                      </label>
-                      <div className="grid grid-cols-3 gap-3">
-                        <div className="col-span-1">
-                          <label className="block text-[#A0A0A0] text-[10px] mb-1">วันที่</label>
-                          <ThaiDatePicker
-                            value={meetingDate}
-                            onChange={setMeetingDate}
-                            min={effectiveProjectStartDate || undefined}
-                            max={effectiveProjectEndDate || undefined}
-                            hasError={!meetingDateInRange}
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[#A0A0A0] text-[10px] mb-1">เวลาเริ่ม</label>
-                          <input
-                            type="time"
-                            value={meetingStartTime}
-                            onChange={(e) => setMeetingStartTime(e.target.value)}
-                            className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg focus:outline-none focus:border-[#FF6537]"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[#A0A0A0] text-[10px] mb-1">เวลาสิ้นสุด</label>
-                          <input
-                            type="time"
-                            value={meetingEndTime}
-                            onChange={(e) => setMeetingEndTime(e.target.value)}
-                            className={`w-full p-2.5 text-sm border rounded-lg focus:outline-none focus:border-[#FF6537] ${
-                              meetingTimeOrderValid ? 'border-[#E5E5E5]' : 'border-red-400'
-                            }`}
-                          />
-                        </div>
-                      </div>
-                      {!meetingTimeOrderValid && (
-                        <p className="text-xs text-red-600 mt-1.5">เวลาสิ้นสุดต้องไม่อยู่ก่อนเวลาเริ่ม</p>
-                      )}
-                      {meetingTimeOrderValid && !meetingDateInRange && projectRangeLabel && (
-                        <p className="text-xs text-red-600 mt-1.5">วันที่ประชุม{projectRangeLabel}</p>
-                      )}
-                    </div>
-
-                    {creatorField}
-
-                    <div>
-                      <label className="block text-[#272220] font-bold text-[11px] mb-1">ผู้เข้าร่วมประชุม (ไม่บังคับ)</label>
-                      <EmployeeMultiSelect
-                        employees={selectableEmployees(attendeeIds)}
-                        valueIds={attendeeIds}
-                        onChange={setAttendeeIds}
-                        placeholder="ค้นหาหรือเลือกพนักงาน..."
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[#272220] font-bold text-[11px] mb-1">สถานที่ (ไม่บังคับ)</label>
-                      <input
-                        type="text"
-                        placeholder="เช่น ห้องประชุมชั้น 3"
-                        value={location}
-                        onChange={(e) => setLocation(e.target.value)}
-                        className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[#272220] font-bold text-[11px] mb-1">ลิงก์แผนที่ (ไม่บังคับ)</label>
-                      <input
-                        type="text"
-                        placeholder="เช่น https://maps.google.com/..."
-                        value={locationLink}
-                        onChange={(e) => setLocationLink(e.target.value)}
-                        className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[#272220] font-bold text-[11px] mb-1">ลิงก์ประชุมออนไลน์ (ไม่บังคับ)</label>
-                      <input
-                        type="text"
-                        placeholder="เช่น https://meet.google.com/..."
-                        value={meetingLink}
-                        onChange={(e) => setMeetingLink(e.target.value)}
-                        className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
-                      />
-                    </div>
-                  </>
                 )}
 
                 {formError && (
-                  <p className="sm:col-span-2 text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{formError}</p>
+                  <p className="lg:col-span-2 text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{formError}</p>
                 )}
               </div>
               </div>
 
-              <div className="shrink-0 px-6 pt-4 pb-5 flex items-center gap-3">
+              <div className="shrink-0 px-6 pt-3 pb-4 flex items-center gap-3">
                 <button
                   type="button"
                   onClick={resetAndClose}
