@@ -36,7 +36,7 @@ function MemberRow({ employee, highlighted }: { employee: Employee; highlighted?
       )}
       <div className="min-w-0">
         <p className="text-xs text-[#272220] truncate">{displayName(employee)}</p>
-        <p className="text-[11px] text-[#767676] truncate">{employee.role}</p>
+        <p className="text-[11px] text-[#6F6F6F] truncate">{employee.role}</p>
       </div>
     </div>
   );
@@ -73,7 +73,7 @@ function MemberChip({ employee, highlighted }: { employee: Employee; highlighted
       )}
       <div className="min-w-0">
         <p className="text-[11px] font-semibold text-[#272220] leading-tight truncate max-w-24">{displayName(employee)}</p>
-        <p className="text-[11px] text-[#767676] leading-tight truncate max-w-24">{employee.role}</p>
+        <p className="text-[11px] text-[#6F6F6F] leading-tight truncate max-w-24">{employee.role}</p>
       </div>
     </div>
   );
@@ -105,7 +105,7 @@ export function EmployeeLocateSearch({ employees, onSelect }: { employees: Emplo
   return (
     <div ref={rootRef} className="relative w-full">
       <div className="relative">
-        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
         <input
           type="text"
           value={query}
@@ -120,7 +120,7 @@ export function EmployeeLocateSearch({ employees, onSelect }: { employees: Emplo
             <button
               type="button"
               onClick={() => { setQuery(''); setIsOpen(false); }}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-800 cursor-pointer"
               aria-label="ล้างคำค้นหา"
             >
               <X size={15} />
@@ -131,7 +131,7 @@ export function EmployeeLocateSearch({ employees, onSelect }: { employees: Emplo
       {isOpen && q && (
         <div className="absolute z-30 top-full left-0 right-0 mt-1 bg-white border border-slate-100 rounded-xl shadow-lg max-h-64 overflow-y-auto">
           {results.length === 0 ? (
-            <p className="px-3 py-2.5 text-xs text-[#767676]">ไม่พบพนักงาน</p>
+            <p className="px-3 py-2.5 text-xs text-[#6F6F6F]">ไม่พบพนักงาน</p>
           ) : (
             results.map((emp) => (
               <button
@@ -152,7 +152,7 @@ export function EmployeeLocateSearch({ employees, onSelect }: { employees: Emplo
                 )}
                 <span className="min-w-0">
                   <p className="text-xs font-semibold text-[#272220] truncate">{displayName(emp)}</p>
-                  <p className="text-[11px] text-[#767676] truncate">{emp.role}</p>
+                  <p className="text-[11px] text-[#6F6F6F] truncate">{emp.role}</p>
                 </span>
               </button>
             ))
@@ -238,7 +238,7 @@ function NamePromptModal({
         >
           <div className="flex justify-between items-center mb-3">
             <h3 className="text-sm font-bold text-slate-800">{title}</h3>
-            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 cursor-pointer" type="button">
+            <button onClick={onClose} className="text-slate-500 hover:text-slate-800 cursor-pointer" type="button">
               <X size={18} />
             </button>
           </div>
@@ -311,7 +311,7 @@ function DeleteConfirmModal({
         >
           <div className="flex justify-between items-center mb-3">
             <h3 className="text-sm font-bold text-slate-800">{title}</h3>
-            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 cursor-pointer" type="button">
+            <button onClick={onClose} className="text-slate-500 hover:text-slate-800 cursor-pointer" type="button">
               <X size={18} />
             </button>
           </div>
@@ -346,7 +346,7 @@ function DeleteButton({ onClick }: { onClick: () => void }) {
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); onClick(); }}
-        className="absolute -top-2 -right-2 z-10 w-5 h-5 flex items-center justify-center rounded-full bg-white border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-200 shadow-sm cursor-pointer"
+        className="absolute -top-2 -right-2 z-10 w-5 h-5 flex items-center justify-center rounded-full bg-white border border-slate-200 text-slate-500 hover:text-rose-600 hover:border-rose-200 shadow-sm cursor-pointer"
         aria-label="ลบ"
       >
         <Trash2 size={10} />
@@ -361,7 +361,7 @@ function EditButton({ onClick }: { onClick: () => void }) {
       <button
         type="button"
         onClick={onClick}
-        className="absolute -top-2 -left-2 z-10 w-5 h-5 flex items-center justify-center rounded-full bg-white border border-slate-200 text-slate-400 hover:text-[#FF6537] hover:border-[#FF6537] shadow-sm cursor-pointer"
+        className="absolute -top-2 -left-2 z-10 w-5 h-5 flex items-center justify-center rounded-full bg-white border border-slate-200 text-slate-500 hover:text-[#FF6537] hover:border-[#FF6537] shadow-sm cursor-pointer"
         aria-label="แก้ไขชื่อ"
       >
         <Pencil size={10} />
@@ -772,7 +772,7 @@ const OrgChart = forwardRef<OrgChartHandle, OrgChartProps>(function OrgChart({
 
             {unassigned.length > 0 && (
               <div className="mt-8 pt-5 border-t border-slate-200 w-full max-w-md">
-                <p className="flex items-center gap-1.5 text-[11px] font-semibold text-[#767676] mb-2">
+                <p className="flex items-center gap-1.5 text-[11px] font-semibold text-[#6F6F6F] mb-2">
                   <Users2 size={13} /> ยังไม่ระบุฝ่าย
                 </p>
                 <div className="flex flex-wrap gap-1.5">

@@ -22,6 +22,7 @@ import { useConfirm } from '../../context/ConfirmContext';
 import Dropdown from '../Dropdown';
 import Tooltip from '../Tooltip';
 import DeadlineReminderField, { useSavedReminder } from '../DeadlineReminderField';
+import { reminderLimit } from '../../lib/deadlineReminders';
 
 interface EditProjectModalProps {
   isOpen: boolean;
@@ -49,7 +50,7 @@ interface EditProjectModalProps {
   ) => Promise<void>;
 }
 
-const inputClass = 'w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]';
+const inputClass = 'w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]';
 
 // Single-screen edit form (not the create wizard's 3 steps) — editing an existing project should
 // show every field at once rather than re-running a step-by-step flow each time. Only fields the
@@ -198,7 +199,7 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
                 </div>
                 <p className="text-[11px] text-[#6F6F6F] mt-0.5">ปรับข้อมูลโครงการแล้วกดบันทึกเพื่อยืนยัน</p>
               </div>
-              <button onClick={onClose} className="text-slate-400 hover:text-slate-600 cursor-pointer" type="button" aria-label="ปิดหน้าต่างแก้ไขโครงการ">
+              <button onClick={onClose} className="text-slate-500 hover:text-slate-800 cursor-pointer" type="button" aria-label="ปิดหน้าต่างแก้ไขโครงการ">
                 <X size={18} />
               </button>
             </div>
@@ -265,7 +266,7 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
                           tabIndex={-1}
                           value={type ?? ''}
                           placeholder="เลือกประเภทก่อน"
-                          className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg bg-slate-50 text-[#6F6F6F] placeholder:text-[#B0B0B0] cursor-default focus:outline-none"
+                          className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg bg-slate-50 text-[#6F6F6F] placeholder:text-[#767676] cursor-default focus:outline-none"
                         />
                       </div>
                     </div>
@@ -276,7 +277,7 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
                           โครงการหลัก <span className="text-[#FF6537]">*</span>
                         </label>
                         {topLevelProjects.length === 0 ? (
-                          <p className="text-xs text-[#767676] bg-slate-50 border border-[#E5E5E5] rounded-lg px-3 py-2.5">
+                          <p className="text-xs text-[#6F6F6F] bg-slate-50 border border-[#E5E5E5] rounded-lg px-3 py-2.5">
                             ยังไม่มีโครงการประเภท "โครงการ (P)" ในระบบให้เลือกเป็นโครงการหลัก
                           </p>
                         ) : (
@@ -321,7 +322,7 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
                     <div>
                       <div className="flex items-baseline justify-between mb-1">
                         <label className="block text-[#272220] font-bold text-[11px]">ระดับความสำคัญ</label>
-                        <span className="text-[11px] text-[#767676]">1 = สำคัญที่สุด, 5 = สำคัญน้อยที่สุด</span>
+                        <span className="text-[11px] text-[#6F6F6F]">1 = สำคัญที่สุด, 5 = สำคัญน้อยที่สุด</span>
                       </div>
                       <div className="flex gap-2">
                         {PRIORITY_OPTIONS.map((p) => (
@@ -377,7 +378,7 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
                                 placeholder="หน้าที่ในโครงการนี้..."
                                 value={memberDuties[emp.id] ?? ''}
                                 onChange={(e) => setMemberDuties((prev) => ({ ...prev, [emp.id]: e.target.value }))}
-                                className="flex-1 p-1.5 text-xs border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                                className="flex-1 p-1.5 text-xs border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                               />
                             </div>
                           ))}
@@ -391,7 +392,7 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
                       <div>
                         <label className="block text-[#272220] font-bold text-[11px] mb-1">งบประมาณ (บาท)</label>
                         <div className="relative">
-                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-[#767676]">฿</span>
+                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-[#6F6F6F]">฿</span>
                           <input
                             type="text"
                             inputMode="numeric"
@@ -406,6 +407,7 @@ export default function EditProjectModal({ isOpen, onClose, row, employees, onSa
                         <label className="block text-[#272220] font-bold text-[11px] mb-1">เตือนฉันก่อนสิ้นสุด</label>
                         <DeadlineReminderField
                           {...savedReminder}
+                          limit={reminderLimit(startDate, endDate)}
                           deadlineWord="วันสิ้นสุดโครงการ"
                           note="บันทึกทันที ไม่ต้องรออนุมัติ"
                         />

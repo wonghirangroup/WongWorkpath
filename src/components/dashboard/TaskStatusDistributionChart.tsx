@@ -49,7 +49,7 @@ export default function TaskStatusDistributionChart({ tasks, projectTitle }: Tas
       </div>
 
       {total === 0 ? (
-        <div className="flex-1 flex items-center justify-center text-xs text-[#767676]">ยังไม่มีงานในโครงการนี้</div>
+        <div className="flex-1 flex items-center justify-center text-xs text-[#6F6F6F]">ยังไม่มีงานในโครงการนี้</div>
       ) : (
         <div className="flex-1 flex items-center gap-6 flex-wrap justify-center pt-2">
           <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90 shrink-0">

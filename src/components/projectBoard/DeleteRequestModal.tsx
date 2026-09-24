@@ -71,7 +71,7 @@ export default function DeleteRequestModal({ target, onClose }: DeleteRequestMod
                   <p className="text-[11px] text-[#6F6F6F] mt-0.5 truncate">{target.itemLabel}</p>
                 )}
               </div>
-              <button onClick={onClose} className="text-slate-400 hover:text-slate-600 cursor-pointer shrink-0" type="button">
+              <button onClick={onClose} className="text-slate-500 hover:text-slate-800 cursor-pointer shrink-0" type="button">
                 <X size={18} />
               </button>
             </div>
@@ -87,7 +87,7 @@ export default function DeleteRequestModal({ target, onClose }: DeleteRequestMod
                   placeholder="ระบุเหตุผล..."
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
-                  className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                  className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                 />
               </div>
 

@@ -61,9 +61,53 @@ export type ReminderEntityType = 'project' | 'task';
 export type ReminderMap = Record<string, number[]>;
 export const reminderKey = (type: ReminderEntityType, id: string) => `${type}:${id}`;
 
-// What applies to one item for the current person: their own choice for it, else the app default.
-export function reminderLeadsFor(map: ReminderMap, type: ReminderEntityType, id: string): number[] {
-  return map[reminderKey(type, id)] ?? DEFAULT_DEADLINE_REMINDER_DAYS;
+// --- Limits: a reminder can't reach back further than the item's own time frame ---------------------
+// A task that runs 24–30 Sep (6 days) can't sensibly be reminded "1 month before" its deadline, so a
+// person's own choice may not exceed the days between the item's start date and its deadline.
+const isoDayNumber = (iso: string): number | null => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  return m ? Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) / 86400000 : null;
+};
+
+// Whole days from one yyyy-mm-dd date to another (negative if it goes backwards); null if either is missing.
+export function daysBetweenISO(fromISO: string | null | undefined, toISO: string | null | undefined): number | null {
+  if (!fromISO || !toISO) return null;
+  const a = isoDayNumber(fromISO);
+  const b = isoDayNumber(toISO);
+  return a === null || b === null ? null : b - a;
+}
+
+export function localTodayISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+export interface ReminderLimit {
+  maxDays: number; // the longest lead time that still fits inside the time frame (0 = none does)
+  fromToday: boolean; // no start date was set, so the frame is counted from today
+}
+
+// The limit for an item with this start date and deadline. null = no deadline, so there's nothing to
+// remind about yet. (No start date → counted from today: you can't be reminded before now.)
+export function reminderLimit(startISO: string | null | undefined, deadlineISO: string | null | undefined): ReminderLimit | null {
+  const span = daysBetweenISO(startISO || localTodayISO(), deadlineISO);
+  return span === null ? null : { maxDays: Math.max(0, span), fromToday: !startISO };
+}
+
+// What applies to one item for the current person: their own choice for it — minus anything longer than
+// the item's time frame (e.g. after its dates were shortened) — else the app default. The default is
+// never trimmed: it's the system's, not the person's, and short tasks have always been reminded by it.
+export function effectiveReminderLeads(
+  map: ReminderMap,
+  type: ReminderEntityType,
+  id: string,
+  startISO: string | null | undefined,
+  deadlineISO: string | null | undefined
+): number[] {
+  const chosen = map[reminderKey(type, id)];
+  if (!chosen) return DEFAULT_DEADLINE_REMINDER_DAYS;
+  const span = daysBetweenISO(startISO, deadlineISO);
+  return span === null ? chosen : chosen.filter((n) => n <= span);
 }
 
 // Short text for a list of lead times, e.g. "7 วัน, 1 เดือน" — used on the picker's trigger button.

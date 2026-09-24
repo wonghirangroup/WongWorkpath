@@ -50,7 +50,7 @@ function TaskStatusPill({ status, blockedReason }: { status: ProjectTaskStatus; 
 // Shows the first person + "+N" when there's more than one — a task can now have several
 // assignees/reviewers, and a table cell doesn't have room to stack every avatar+name pair.
 function PersonCell({ employees }: { employees: Employee[] }) {
-  if (employees.length === 0) return <span className="text-[#767676]">ยังไม่มี</span>;
+  if (employees.length === 0) return <span className="text-[#6F6F6F]">ยังไม่มี</span>;
   const [first, ...rest] = employees;
   const name = displayName(first);
   return (
@@ -206,7 +206,7 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
       <div className="flex-1 min-h-0 overflow-y-auto">
         {activeTab === 'my_tasks' && (
           myTasks.length === 0 ? (
-            <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-400 text-sm">
+            <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-500 text-sm">
               ยังไม่มีงานที่คุณรับผิดชอบ
             </div>
           ) : (
@@ -233,7 +233,7 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
                           <button
                             type="button"
                             onClick={() => project && onSelectProject(project.id)}
-                            className="text-[#FF6537] font-medium hover:underline cursor-pointer disabled:no-underline disabled:text-[#767676] disabled:cursor-default"
+                            className="text-[#FF6537] font-medium hover:underline cursor-pointer disabled:no-underline disabled:text-[#6F6F6F] disabled:cursor-default"
                             disabled={!project}
                           >
                             {project?.title ?? 'ไม่ทราบโครงการ'}
@@ -242,7 +242,7 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
                         <td className="px-4 py-4 font-medium text-[#272220] max-w-60">
                           <p className="truncate">{task.title}</p>
                           {task.parentTaskId && (
-                            <p className="text-[11px] font-normal text-[#767676] truncate mt-0.5">
+                            <p className="text-[11px] font-normal text-[#6F6F6F] truncate mt-0.5">
                               งานย่อยของ: {projectTasks.find((t) => t.id === task.parentTaskId)?.title ?? 'ไม่ทราบงาน'}
                             </p>
                           )}
@@ -262,7 +262,7 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
                             <button
                               type="button"
                               onClick={() => setViewingTask(task)}
-                              className="inline-flex items-center gap-1.5 text-[#767676] hover:text-[#FF6537] text-xs font-medium cursor-pointer transition-colors"
+                              className="inline-flex items-center gap-1.5 text-[#6F6F6F] hover:text-[#FF6537] text-xs font-medium cursor-pointer transition-colors"
                             >
                               <Eye size={13} /> ดู
                             </button>
@@ -288,7 +288,7 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
 
         {activeTab === 'to_review' && (
           tasksToReview.length === 0 ? (
-            <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-400 text-sm">
+            <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-500 text-sm">
               ยังไม่มีงานที่รอให้คุณตรวจ
             </div>
           ) : (
@@ -313,7 +313,7 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
                           <button
                             type="button"
                             onClick={() => project && onSelectProject(project.id)}
-                            className="text-[#FF6537] font-medium hover:underline cursor-pointer disabled:no-underline disabled:text-[#767676] disabled:cursor-default"
+                            className="text-[#FF6537] font-medium hover:underline cursor-pointer disabled:no-underline disabled:text-[#6F6F6F] disabled:cursor-default"
                             disabled={!project}
                           >
                             {project?.title ?? 'ไม่ทราบโครงการ'}
@@ -342,7 +342,7 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
 
         {activeTab === 'my_approvals' && (
           myApprovalRequests.length === 0 ? (
-            <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-400 text-sm">
+            <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-500 text-sm">
               ยังไม่มีคำขอที่รอให้คุณอนุมัติ
             </div>
           ) : (
@@ -369,7 +369,7 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
 
         {activeTab === 'my_projects' && (
           myProjects.length === 0 ? (
-            <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-400 text-sm">
+            <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-500 text-sm">
               ยังไม่มีโครงการที่คุณดูแลหรือเป็นสมาชิก
             </div>
           ) : (
@@ -426,7 +426,7 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
                           <button
                             type="button"
                             onClick={() => onSelectProject(project.id)}
-                            className="inline-flex items-center gap-1.5 text-[#767676] hover:text-[#FF6537] text-xs font-medium cursor-pointer transition-colors"
+                            className="inline-flex items-center gap-1.5 text-[#6F6F6F] hover:text-[#FF6537] text-xs font-medium cursor-pointer transition-colors"
                           >
                             <Eye size={13} /> ดูรายละเอียด
                           </button>
@@ -442,7 +442,7 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
 
         {activeTab === 'gantt' && (
           myTasks.length === 0 ? (
-            <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-400 text-sm flex items-center justify-center gap-2">
+            <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-500 text-sm flex items-center justify-center gap-2">
               <CalendarIcon size={16} /> ยังไม่มีงานที่มีกำหนดส่งสำหรับแสดง Timeline
             </div>
           ) : (

@@ -93,14 +93,14 @@ export default function ReviewTaskModal({ task, employees, documents, onReview, 
                 <h3 className="text-sm font-bold text-slate-800">ตรวจงาน</h3>
                 <p className="text-[11px] text-[#6F6F6F] mt-0.5 truncate">{task.title}</p>
               </div>
-              <button onClick={onClose} className="text-slate-400 hover:text-slate-600 cursor-pointer shrink-0" type="button">
+              <button onClick={onClose} className="text-slate-500 hover:text-slate-800 cursor-pointer shrink-0" type="button">
                 <X size={18} />
               </button>
             </div>
 
             <div className="flex-1 min-h-0 overflow-y-auto px-5 pt-4 pb-1 space-y-3">
               <div>
-                <p className="text-[#767676] text-[11px] mb-1">ผู้ส่งงาน</p>
+                <p className="text-[#6F6F6F] text-[11px] mb-1">ผู้ส่งงาน</p>
                 {assignees.length > 0 ? (
                   <div className="space-y-1.5">
                     {assignees.map((assignee) => (
@@ -120,12 +120,12 @@ export default function ReviewTaskModal({ task, employees, documents, onReview, 
                     ))}
                   </div>
                 ) : (
-                  <span className="flex items-center gap-1.5 text-sm text-[#767676]"><User size={14} /> ไม่ทราบผู้ส่งงาน</span>
+                  <span className="flex items-center gap-1.5 text-sm text-[#6F6F6F]"><User size={14} /> ไม่ทราบผู้ส่งงาน</span>
                 )}
               </div>
 
               <div>
-                <p className="text-[#767676] text-[11px] mb-1">บันทึกจากผู้ส่งงาน</p>
+                <p className="text-[#6F6F6F] text-[11px] mb-1">บันทึกจากผู้ส่งงาน</p>
                 <p className="text-sm text-[#272220] whitespace-pre-wrap break-words">
                   {task.submissionNote || 'ไม่มีบันทึกเพิ่มเติม'}
                 </p>
@@ -133,7 +133,7 @@ export default function ReviewTaskModal({ task, employees, documents, onReview, 
 
               {submissionFiles.length > 0 && (
                 <div>
-                  <p className="text-[#767676] text-[11px] mb-1.5">ไฟล์แนบ ({submissionFiles.length})</p>
+                  <p className="text-[#6F6F6F] text-[11px] mb-1.5">ไฟล์แนบ ({submissionFiles.length})</p>
                   <div className="space-y-1.5">
                     {submissionFiles.map((doc) => {
                       const { Icon, color } = getItemVisual(doc);
@@ -152,9 +152,9 @@ export default function ReviewTaskModal({ task, employees, documents, onReview, 
                           </div>
                           <span className="truncate flex-1 text-xs font-medium text-[#272220]">{doc.name}</span>
                           {isLink ? (
-                            <ExternalLink size={13} className="text-[#767676] shrink-0" />
+                            <ExternalLink size={13} className="text-[#6F6F6F] shrink-0" />
                           ) : (
-                            <Download size={13} className="text-[#767676] shrink-0" />
+                            <Download size={13} className="text-[#6F6F6F] shrink-0" />
                           )}
                         </a>
                       );
@@ -174,7 +174,7 @@ export default function ReviewTaskModal({ task, employees, documents, onReview, 
                     placeholder="บอกผู้ส่งงานว่าต้องแก้ไขอะไร..."
                     value={rejectReason}
                     onChange={(e) => setRejectReason(e.target.value)}
-                    className="w-full p-2.5 text-sm border border-red-300 rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-red-500"
+                    className="w-full p-2.5 text-sm border border-red-300 rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-red-500"
                   />
                 </div>
               )}

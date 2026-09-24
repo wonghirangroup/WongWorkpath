@@ -10,11 +10,12 @@ import { getItemVisual } from '../DocVault';
 import { useEscapeToClose } from '../../lib/useEscapeToClose';
 import { useAppData } from '../../context/AppDataContext';
 import DeadlineReminderField, { useSavedReminder } from '../DeadlineReminderField';
+import { reminderLimit } from '../../lib/deadlineReminders';
 
 function PersonRow({ label, employee }: { label: string; employee: Employee | undefined }) {
   return (
     <div>
-      <p className="text-[#767676] text-[11px] mb-1">{label}</p>
+      <p className="text-[#6F6F6F] text-[11px] mb-1">{label}</p>
       {employee ? (
         <span className="flex items-center gap-2">
           {employee.avatar ? (
@@ -30,7 +31,7 @@ function PersonRow({ label, employee }: { label: string; employee: Employee | un
           <span className="text-sm text-[#272220]">{displayName(employee)}</span>
         </span>
       ) : (
-        <span className="text-sm text-[#767676]">ยังไม่มี</span>
+        <span className="text-sm text-[#6F6F6F]">ยังไม่มี</span>
       )}
     </div>
   );
@@ -41,7 +42,7 @@ function PersonRow({ label, employee }: { label: string; employee: Employee | un
 function PeopleRow({ label, employees }: { label: string; employees: Employee[] }) {
   return (
     <div>
-      <p className="text-[#767676] text-[11px] mb-1">{label}</p>
+      <p className="text-[#6F6F6F] text-[11px] mb-1">{label}</p>
       {employees.length > 0 ? (
         <div className="space-y-1.5">
           {employees.map((employee) => (
@@ -61,7 +62,7 @@ function PeopleRow({ label, employees }: { label: string; employees: Employee[] 
           ))}
         </div>
       ) : (
-        <span className="text-sm text-[#767676]">ยังไม่มี</span>
+        <span className="text-sm text-[#6F6F6F]">ยังไม่มี</span>
       )}
     </div>
   );
@@ -85,9 +86,9 @@ function DocRow({ doc }: { doc: LinkedDoc }) {
       </div>
       <span className="truncate flex-1 text-xs font-medium text-[#272220]">{doc.name}</span>
       {isLink ? (
-        <ExternalLink size={13} className="text-[#767676] shrink-0" />
+        <ExternalLink size={13} className="text-[#6F6F6F] shrink-0" />
       ) : (
-        <Download size={13} className="text-[#767676] shrink-0" />
+        <Download size={13} className="text-[#6F6F6F] shrink-0" />
       )}
     </a>
   );
@@ -187,7 +188,7 @@ export default function TaskDetailModal({ task, employees, documents, onClose, p
                   <p className="text-xs text-[#6F6F6F] mt-1 wrap-break-word">โครงการ: <span className="font-medium text-[#272220]">{projectTitle}</span></p>
                 )}
               </div>
-              <button onClick={onClose} className="text-slate-400 hover:text-slate-600 cursor-pointer shrink-0" type="button">
+              <button onClick={onClose} className="text-slate-500 hover:text-slate-800 cursor-pointer shrink-0" type="button">
                 <X size={18} />
               </button>
             </div>
@@ -195,14 +196,14 @@ export default function TaskDetailModal({ task, employees, documents, onClose, p
             <div className="px-5 py-4 space-y-4">
               {task.description && (
                 <div>
-                  <p className="text-[#767676] text-[11px] mb-1">รายละเอียด</p>
+                  <p className="text-[#6F6F6F] text-[11px] mb-1">รายละเอียด</p>
                   <p className="text-sm text-[#272220] whitespace-pre-wrap break-words">{task.description}</p>
                 </div>
               )}
 
               {attachedFiles.length > 0 && (
                 <div>
-                  <p className="text-[#767676] text-[11px] mb-1.5">ไฟล์แนบ/ลิงก์ประกอบ ({attachedFiles.length})</p>
+                  <p className="text-[#6F6F6F] text-[11px] mb-1.5">ไฟล์แนบ/ลิงก์ประกอบ ({attachedFiles.length})</p>
                   <div className="space-y-1.5">
                     {attachedFiles.map((doc) => <DocRow key={doc.id} doc={doc} />)}
                   </div>
@@ -210,7 +211,7 @@ export default function TaskDetailModal({ task, employees, documents, onClose, p
               )}
 
               <div>
-                <p className="text-[#767676] text-[11px] mb-1">ความคืบหน้า</p>
+                <p className="text-[#6F6F6F] text-[11px] mb-1">ความคืบหน้า</p>
                 <div className="flex items-center gap-2">
                   <div className="flex-1 h-1.5 rounded-full bg-[#F0F0F0] overflow-hidden">
                     <div className="h-full rounded-full" style={{ width: `${task.progress}%`, backgroundColor: TASK_STATUS_COLOR[task.status] }} />
@@ -232,33 +233,33 @@ export default function TaskDetailModal({ task, employees, documents, onClose, p
 
               {task.status === 'in_progress' && task.reviewNote && (
                 <div>
-                  <p className="text-[#767676] text-[11px] mb-1">เหตุผลที่ถูกตีกลับ</p>
+                  <p className="text-[#6F6F6F] text-[11px] mb-1">เหตุผลที่ถูกตีกลับ</p>
                   <p className="text-sm text-red-600 whitespace-pre-wrap break-words bg-red-50 border border-red-100 rounded-lg px-3 py-2">{task.reviewNote}</p>
                 </div>
               )}
 
               {task.status === 'blocked' && task.blockedReason && (
                 <div>
-                  <p className="text-[#767676] text-[11px] mb-1">เหตุผลที่ติดปัญหา</p>
+                  <p className="text-[#6F6F6F] text-[11px] mb-1">เหตุผลที่ติดปัญหา</p>
                   <p className="text-sm text-red-600 whitespace-pre-wrap break-words bg-red-50 border border-red-100 rounded-lg px-3 py-2">{task.blockedReason}</p>
                 </div>
               )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-[#767676] text-[11px] mb-1">ระยะเวลา</p>
+                  <p className="text-[#6F6F6F] text-[11px] mb-1">ระยะเวลา</p>
                   <p className="text-sm text-[#272220]">
                     {task.startDate ? `${task.startDate} — ${task.dueDate ?? 'ยังไม่มี'}` : task.dueDate ?? 'ยังไม่มี'}
                   </p>
                 </div>
                 <div>
-                  <p className="text-[#767676] text-[11px] mb-1">ความสำคัญ</p>
+                  <p className="text-[#6F6F6F] text-[11px] mb-1">ความสำคัญ</p>
                   {priorityMeta ? (
                     <span className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-medium border ${priorityMeta.activeClass}`}>
                       {priorityMeta.label}
                     </span>
                   ) : (
-                    <span className="text-sm text-[#767676]">ยังไม่มี</span>
+                    <span className="text-sm text-[#6F6F6F]">ยังไม่มี</span>
                   )}
                 </div>
               </div>
@@ -267,9 +268,10 @@ export default function TaskDetailModal({ task, employees, documents, onClose, p
                   worth showing while the task still has a due date and isn't finished. */}
               {task.dueDateISO && task.status !== 'done' && (
                 <div>
-                  <p className="text-[#767676] text-[11px] mb-1">เตือนฉันก่อนกำหนดส่ง</p>
+                  <p className="text-[#6F6F6F] text-[11px] mb-1">เตือนฉันก่อนกำหนดส่ง</p>
                   <DeadlineReminderField
                     {...savedReminder}
+                    limit={reminderLimit(task.startDateISO, task.dueDateISO)}
                     deadlineWord="กำหนดส่ง"
                     note="บันทึกทันที"
                     warning={currentUser && task.assigneeEmployeeIds.includes(currentUser.id) ? undefined : 'คุณไม่ได้เป็นผู้รับผิดชอบงานนี้ จึงจะไม่ได้รับการเตือน'}
@@ -279,7 +281,7 @@ export default function TaskDetailModal({ task, employees, documents, onClose, p
 
               {(task.submissionNote || submissionFiles.length > 0) && (
                 <div>
-                  <p className="text-[#767676] text-[11px] mb-1">บันทึกจากผู้ส่งงาน</p>
+                  <p className="text-[#6F6F6F] text-[11px] mb-1">บันทึกจากผู้ส่งงาน</p>
                   <p className="text-sm text-[#272220] whitespace-pre-wrap break-words">
                     {task.submissionNote || 'ไม่มีบันทึกเพิ่มเติม'}
                   </p>
@@ -288,7 +290,7 @@ export default function TaskDetailModal({ task, employees, documents, onClose, p
 
               {submissionFiles.length > 0 && (
                 <div>
-                  <p className="text-[#767676] text-[11px] mb-1.5">ไฟล์ที่ส่ง ({submissionFiles.length})</p>
+                  <p className="text-[#6F6F6F] text-[11px] mb-1.5">ไฟล์ที่ส่ง ({submissionFiles.length})</p>
                   <div className="space-y-1.5">
                     {submissionFiles.map((doc) => <DocRow key={doc.id} doc={doc} />)}
                   </div>
@@ -297,7 +299,7 @@ export default function TaskDetailModal({ task, employees, documents, onClose, p
 
               {task.checklist.length > 0 && (
                 <div>
-                  <p className="text-[#767676] text-[11px] mb-1.5">งานย่อย</p>
+                  <p className="text-[#6F6F6F] text-[11px] mb-1.5">งานย่อย</p>
                   <div className="space-y-1.5">
                     {task.checklist.map((item, idx) => (
                       <div key={idx} className="flex items-center gap-2 text-sm">
@@ -306,7 +308,7 @@ export default function TaskDetailModal({ task, employees, documents, onClose, p
                         >
                           {item.done && <span className="text-white text-[11px]">✓</span>}
                         </span>
-                        <span className={item.done ? 'text-[#767676] line-through' : 'text-[#272220]'}>{item.label}</span>
+                        <span className={item.done ? 'text-[#6F6F6F] line-through' : 'text-[#272220]'}>{item.label}</span>
                       </div>
                     ))}
                   </div>

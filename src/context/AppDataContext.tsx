@@ -15,7 +15,7 @@ import {
   ReminderEntityType,
   pickReminderLead,
   reminderKey,
-  reminderLeadsFor,
+  effectiveReminderLeads,
   dueSoonNotificationId,
   overdueNotificationId,
   closestRemindedLead,
@@ -456,7 +456,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           });
           return;
         }
-        const lead = pickReminderLead(daysLeft, reminderLeadsFor(deadlineReminders, 'task', t.id));
+        const lead = pickReminderLead(daysLeft, effectiveReminderLeads(deadlineReminders, 'task', t.id, t.startDateISO, t.dueDateISO));
         if (lead === null) return;
         const dueISO = t.dueDateISO ?? '';
         const alreadyAt = closestRemindedLead(existingIds, 'task', me, t.id, dueISO);
@@ -478,7 +478,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       .filter((p) => isResponsibleForProject(p, me) && p.status !== 'completed' && p.status !== 'cancelled' && p.daysUntilDue !== undefined && p.daysUntilDue >= 0)
       .forEach((p) => {
         const daysLeft = p.daysUntilDue!;
-        const lead = pickReminderLead(daysLeft, reminderLeadsFor(deadlineReminders, 'project', p.id));
+        const lead = pickReminderLead(daysLeft, effectiveReminderLeads(deadlineReminders, 'project', p.id, p.startDateISO, p.endDateISO));
         if (lead === null) return;
         const endISO = p.endDateISO ?? '';
         const alreadyAt = closestRemindedLead(existingIds, 'project', me, p.id, endISO);

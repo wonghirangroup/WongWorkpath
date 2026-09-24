@@ -200,7 +200,7 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
                 </h3>
                 <p className="text-[11px] text-[#6F6F6F] mt-0.5">{isEditMode ? 'ปรับข้อมูลการประชุมแล้วระบุเหตุผลที่แก้ไข' : 'กรอกรายละเอียดการประชุม'}</p>
               </div>
-              <button onClick={resetAndClose} className="text-slate-400 hover:text-slate-600 cursor-pointer" type="button">
+              <button onClick={resetAndClose} className="text-slate-500 hover:text-slate-800 cursor-pointer" type="button">
                 <X size={18} />
               </button>
             </div>
@@ -217,7 +217,7 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
                     placeholder="เช่น ประชุมทบทวนความคืบหน้าโครงการ"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                    className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                   />
                 </div>
 
@@ -249,7 +249,7 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
                     placeholder="อธิบายรายละเอียดของการประชุมนี้..."
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                    className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                   />
                 </div>
 
@@ -259,7 +259,7 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
                   </label>
                   <div className="grid grid-cols-3 gap-3">
                     <div className="col-span-1">
-                      <label className="block text-[#767676] text-[11px] mb-1">วันที่</label>
+                      <label className="block text-[#6F6F6F] text-[11px] mb-1">วันที่</label>
                       <ThaiDatePicker
                         value={meetingDate}
                         onChange={setMeetingDate}
@@ -269,7 +269,7 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
                       />
                     </div>
                     <div>
-                      <label className="block text-[#767676] text-[11px] mb-1">เวลาเริ่ม</label>
+                      <label className="block text-[#6F6F6F] text-[11px] mb-1">เวลาเริ่ม</label>
                       <input
                         type="time"
                         value={meetingStartTime}
@@ -278,7 +278,7 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
                       />
                     </div>
                     <div>
-                      <label className="block text-[#767676] text-[11px] mb-1">เวลาสิ้นสุด</label>
+                      <label className="block text-[#6F6F6F] text-[11px] mb-1">เวลาสิ้นสุด</label>
                       <input
                         type="time"
                         value={meetingEndTime}
@@ -315,7 +315,7 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
                       placeholder="เช่น ห้องประชุมชั้น 3"
                       value={location}
                       onChange={(e) => setLocation(e.target.value)}
-                      className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                      className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                     />
                   </div>
                   <div>
@@ -325,7 +325,7 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
                       placeholder="เช่น https://maps.google.com/..."
                       value={locationLink}
                       onChange={(e) => setLocationLink(e.target.value)}
-                      className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                      className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                     />
                   </div>
                 </div>
@@ -337,7 +337,7 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
                     placeholder="เช่น https://meet.google.com/..."
                     value={meetingLink}
                     onChange={(e) => setMeetingLink(e.target.value)}
-                    className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                    className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                   />
                 </div>
 
@@ -351,7 +351,7 @@ export default function ScheduleMeetingModal({ isOpen, onClose, projects, employ
                       placeholder="เช่น เปลี่ยนสถานที่ประชุมตามคำขอของทีม..."
                       value={reasonForChange}
                       onChange={(e) => setReasonForChange(e.target.value)}
-                      className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                      className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                     />
                   </div>
                 )}

@@ -55,7 +55,7 @@ export default function WidgetSettingsMenu({ prefs, onChange }: WidgetSettingsMe
             transition={{ duration: 0.15 }}
             className="absolute right-0 top-full mt-1.5 w-64 bg-white border border-slate-200 rounded-xl shadow-lg py-2 z-20"
           >
-            <p className="px-3.5 py-1 text-[11px] font-bold text-[#767676] uppercase tracking-wide">แสดง/ซ่อนวิดเจ็ต</p>
+            <p className="px-3.5 py-1 text-[11px] font-bold text-[#6F6F6F] uppercase tracking-wide">แสดง/ซ่อนวิดเจ็ต</p>
             {WIDGET_LABELS.map(({ key, label }) => (
               <label key={key} className="flex items-center gap-2 px-3.5 py-2 text-sm text-[#272220] hover:bg-[#FEFAF9] cursor-pointer">
                 <input

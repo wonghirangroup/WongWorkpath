@@ -141,7 +141,7 @@ export default function Dropdown<T extends string>({ value, options, onChange, p
           isOpen ? (panelRect.openUpward ? 'rounded-b-xl rounded-t-none' : 'rounded-t-xl rounded-b-none') : 'rounded-xl'
         }`}
       >
-        <span className={`whitespace-nowrap ${selectedLabel ? '' : 'text-slate-400'}`}>{selectedLabel || placeholder}</span>
+        <span className={`whitespace-nowrap ${selectedLabel ? '' : 'text-slate-500'}`}>{selectedLabel || placeholder}</span>
         <ChevronDown
           size={size === 'cozy' ? 16 : 14}
           className={`text-[#FF6537] transition-transform duration-150 ease-out ${isOpen ? 'rotate-180' : ''}`}

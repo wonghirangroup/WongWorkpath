@@ -51,7 +51,7 @@ function ProgressRing({ progress, color }: { progress: number; color: string }) 
 function InfoRow({ label, value, valueClassName = 'text-[#272220]' }: { label: string; value: string; valueClassName?: string }) {
   return (
     <div className="flex items-center justify-between gap-3 text-xs">
-      <span className="text-[#767676] shrink-0">{label}</span>
+      <span className="text-[#6F6F6F] shrink-0">{label}</span>
       <span className={`font-medium text-right truncate ${valueClassName}`}>{value}</span>
     </div>
   );
@@ -92,7 +92,7 @@ export default function ProjectCard({ row, employees, onViewDetail }: ProjectCar
       )}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <span className="text-[11px] text-[#767676]">{row.code}</span>
+          <span className="text-[11px] text-[#6F6F6F]">{row.code}</span>
           <h3 className="font-bold text-[#272220] truncate">{row.title}</h3>
         </div>
         <span
@@ -143,13 +143,13 @@ export default function ProjectCard({ row, employees, onViewDetail }: ProjectCar
             </span>
           </Tooltip>
         ) : (
-          <span className="text-xs text-[#767676]">ยังไม่มีผู้รับผิดชอบ</span>
+          <span className="text-xs text-[#6F6F6F]">ยังไม่มีผู้รับผิดชอบ</span>
         )}
 
         <button
           type="button"
           onClick={onViewDetail}
-          className="inline-flex items-center gap-1.5 border border-[#E5E5E5] text-[#767676] hover:text-[#FF6537] hover:border-[#FFD5C2] hover:bg-orange-50 active:text-[#e2582f] text-xs font-semibold rounded-lg px-3 py-1.5 cursor-pointer transition-colors shrink-0"
+          className="inline-flex items-center gap-1.5 border border-[#E5E5E5] text-[#6F6F6F] hover:text-[#FF6537] hover:border-[#FFD5C2] hover:bg-orange-50 active:text-[#e2582f] text-xs font-semibold rounded-lg px-3 py-1.5 cursor-pointer transition-colors shrink-0"
         >
           <Eye size={13} />
           ดูรายละเอียด

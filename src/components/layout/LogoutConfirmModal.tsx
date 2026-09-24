@@ -34,7 +34,7 @@ export default function LogoutConfirmModal({ open, onConfirm, onCancel }: Logout
           >
             <div className="flex justify-between items-center pb-2 border-b border-slate-100">
               <h3 className="text-sm font-bold text-slate-800">ออกจากระบบ</h3>
-              <button type="button" onClick={onCancel} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+              <button type="button" onClick={onCancel} className="text-slate-500 hover:text-slate-800 cursor-pointer">
                 <X size={18} />
               </button>
             </div>

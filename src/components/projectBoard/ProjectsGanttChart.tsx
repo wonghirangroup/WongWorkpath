@@ -140,7 +140,7 @@ export default function ProjectsGanttChart({ projects, projectTasks, onSelectPro
 
   if (rows.length === 0) {
     return (
-      <div className="flex-1 min-h-0 flex items-center justify-center gap-2 text-sm text-[#767676]">
+      <div className="flex-1 min-h-0 flex items-center justify-center gap-2 text-sm text-[#6F6F6F]">
         <CalendarRange size={16} />
         ยังไม่มีโครงการในระบบ
       </div>
@@ -172,12 +172,12 @@ export default function ProjectsGanttChart({ projects, projectTasks, onSelectPro
       <div className="flex-1 min-h-0 overflow-auto">
         <div className="min-w-225">
           <div className="flex border-b border-[#F4F4F4] sticky top-0 bg-white z-10">
-            <div className="w-45 shrink-0 px-4 py-2.5 text-xs font-medium text-[#767676] border-r border-[#F4F4F4]">
+            <div className="w-45 shrink-0 px-4 py-2.5 text-xs font-medium text-[#6F6F6F] border-r border-[#F4F4F4]">
               โครงการ
             </div>
             <div className="flex-1 grid grid-cols-12">
               {THAI_MONTHS_SHORT.map((label, idx) => (
-                <div key={idx} className="text-center py-2.5 text-[11px] text-[#767676] border-r border-[#F9F9F9] last:border-r-0">
+                <div key={idx} className="text-center py-2.5 text-[11px] text-[#6F6F6F] border-r border-[#F9F9F9] last:border-r-0">
                   {label}
                 </div>
               ))}
@@ -216,7 +216,7 @@ export default function ProjectsGanttChart({ projects, projectTasks, onSelectPro
                   >
                     <div className="w-45 shrink-0 px-4 py-2.5 border-r border-[#F4F4F4] min-w-0">
                       <p className="text-sm font-medium text-[#272220] truncate">{p.title}</p>
-                      <p className="text-[11px] text-[#767676] truncate">{p.code} · {STATUS_LABEL[p.status]}</p>
+                      <p className="text-[11px] text-[#6F6F6F] truncate">{p.code} · {STATUS_LABEL[p.status]}</p>
                     </div>
                     <div
                       ref={(el) => {
@@ -265,7 +265,7 @@ export default function ProjectsGanttChart({ projects, projectTasks, onSelectPro
                         )}
                         {!hasDates && (
                           <div className="flex items-center h-3 self-center" style={{ gridRow: 1, gridColumn: '1 / 4' }}>
-                            <span className="text-[11px] text-[#767676] italic ml-1">ยังไม่กำหนดวันที่</span>
+                            <span className="text-[11px] text-[#6F6F6F] italic ml-1">ยังไม่กำหนดวันที่</span>
                           </div>
                         )}
                         {months.map((monthKey, idx) => {
@@ -284,7 +284,7 @@ export default function ProjectsGanttChart({ projects, projectTasks, onSelectPro
                                 </Tooltip>
                               ))}
                               {monthTasks.length > 2 && (
-                                <div className="text-[11px] text-center text-[#767676] font-bold">+{monthTasks.length - 2} งาน</div>
+                                <div className="text-[11px] text-center text-[#6F6F6F] font-bold">+{monthTasks.length - 2} งาน</div>
                               )}
                             </div>
                           );

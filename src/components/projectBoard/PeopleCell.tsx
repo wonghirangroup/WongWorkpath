@@ -9,7 +9,7 @@ import Tooltip from '../Tooltip';
 // adds the first person's job title on its own line underneath, for denser table rows (e.g.
 // ProjectTable's "ผู้รับผิดชอบหลัก" column) where that context is worth the extra line.
 export default function PeopleCell({ people, size = 20, showRole = false }: { people: Employee[]; size?: number; showRole?: boolean }) {
-  if (people.length === 0) return <span className="text-xs text-[#767676]">ยังไม่มี</span>;
+  if (people.length === 0) return <span className="text-xs text-[#6F6F6F]">ยังไม่มี</span>;
   const [first, ...rest] = people;
   return (
     <Tooltip
@@ -33,7 +33,7 @@ export default function PeopleCell({ people, size = 20, showRole = false }: { pe
           <span className="block truncate text-xs text-[#272220]">
             {displayName(first)}{rest.length > 0 ? ` +${rest.length}` : ''}
           </span>
-          {showRole && <span className="block truncate text-[11px] text-[#767676]">{first.role}</span>}
+          {showRole && <span className="block truncate text-[11px] text-[#6F6F6F]">{first.role}</span>}
         </span>
       </span>
     </Tooltip>

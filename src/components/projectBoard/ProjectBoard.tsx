@@ -413,7 +413,7 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
               <button
                 type="button"
                 onClick={() => setSearch('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-800 cursor-pointer"
                 aria-label="ล้างคำค้นหา"
               >
                 <X size={15} />
@@ -540,7 +540,7 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
           transition={{ duration: 0.2, ease: 'easeOut' }}
         >
           {filteredRows.length === 0 ? (
-            <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-400 text-sm">
+            <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-500 text-sm">
               {projects.length === 0 ? 'ยังไม่มีโครงการในระบบ' : 'ไม่พบรายการที่ตรงกับการค้นหา'}
             </div>
           ) : view === 'list' ? (
@@ -632,7 +632,7 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
               >
                 <div className="flex justify-between items-center pb-2 border-b border-slate-100">
                   <h3 className="text-sm font-bold text-slate-800">ลบโครงการ</h3>
-                  <button type="button" onClick={closeDeleteModal} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X size={18} /></button>
+                  <button type="button" onClick={closeDeleteModal} className="text-slate-500 hover:text-slate-800 cursor-pointer"><X size={18} /></button>
                 </div>
 
                 {deletePendingRequest ? (
@@ -653,7 +653,7 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
                         value={deleteReason}
                         onChange={(e) => setDeleteReason(e.target.value)}
                         placeholder="เหตุผลที่ขอลบ..."
-                        className="w-full p-2.5 text-xs border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                        className="w-full p-2.5 text-xs border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                       />
                     )}
                   </>

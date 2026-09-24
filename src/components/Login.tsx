@@ -507,7 +507,7 @@ export default function Login({ onLogin }: LoginProps) {
                 tabIndex={-1}
                 onClick={() => setShowPassword(!showPassword)}
                 whileTap={{ scale: 0.85 }}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-800 cursor-pointer"
                 id="btn-toggle-password"
                 aria-label={showPassword ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'}
               >
@@ -570,7 +570,7 @@ export default function Login({ onLogin }: LoginProps) {
             type="button"
             onClick={handleBackToLogin}
             whileTap={{ scale: 0.85 }}
-            className="absolute left-8 top-9 text-slate-400 hover:text-slate-600 cursor-pointer"
+            className="absolute left-8 top-9 text-slate-500 hover:text-slate-800 cursor-pointer"
             id="btn-back-to-login"
             aria-label="กลับไปหน้าเข้าสู่ระบบ"
           >
@@ -626,7 +626,7 @@ export default function Login({ onLogin }: LoginProps) {
             type="button"
             onClick={handleBackToForgot}
             whileTap={{ scale: 0.85 }}
-            className="absolute left-8 top-9 text-slate-400 hover:text-slate-600 cursor-pointer"
+            className="absolute left-8 top-9 text-slate-500 hover:text-slate-800 cursor-pointer"
             id="btn-back-to-forgot"
             aria-label="กลับไปหน้ากรอกอีเมล"
           >
@@ -663,7 +663,7 @@ export default function Login({ onLogin }: LoginProps) {
           <p className="text-center text-xs text-slate-500 mt-4">
             หากไม่ได้รับรหัส?{' '}
             {resendCooldown > 0 ? (
-              <span className="text-slate-400">ส่งอีกครั้ง ( 00:{String(resendCooldown).padStart(2, '0')} )</span>
+              <span className="text-slate-500">ส่งอีกครั้ง ( 00:{String(resendCooldown).padStart(2, '0')} )</span>
             ) : (
               <button
                 type="button"
@@ -725,7 +725,7 @@ export default function Login({ onLogin }: LoginProps) {
                 tabIndex={-1}
                 onClick={() => setShowNewPassword(!showNewPassword)}
                 whileTap={{ scale: 0.85 }}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-800 cursor-pointer"
                 id="btn-toggle-new-password"
                 aria-label={showNewPassword ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'}
               >
@@ -751,7 +751,7 @@ export default function Login({ onLogin }: LoginProps) {
                 tabIndex={-1}
                 onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                 whileTap={{ scale: 0.85 }}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-800 cursor-pointer"
                 id="btn-toggle-confirm-password"
                 aria-label={showConfirmPassword ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'}
               >

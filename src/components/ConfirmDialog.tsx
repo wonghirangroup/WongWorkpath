@@ -83,7 +83,7 @@ export default function ConfirmDialog({ options, onResult }: ConfirmDialogProps)
                 <h3 id="confirm-dialog-title" className="text-sm font-bold text-slate-800">{options.title}</h3>
                 {options.message && <div className="text-xs text-[#6F6F6F] mt-1 leading-relaxed">{options.message}</div>}
               </div>
-              <button type="button" onClick={() => onResult(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer shrink-0" aria-label="ปิด">
+              <button type="button" onClick={() => onResult(false)} className="text-slate-500 hover:text-slate-800 cursor-pointer shrink-0" aria-label="ปิด">
                 <X size={18} />
               </button>
             </div>

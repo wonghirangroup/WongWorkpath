@@ -121,7 +121,7 @@ export function MenuRestrictionChecklist({ items, selectedIds, onChange }: { ite
     onChange(selectedIds.includes(id) ? selectedIds.filter((x) => x !== id) : [...selectedIds, id]);
   };
   if (items.length === 0) {
-    return <p className="text-[11px] text-slate-400">ประเภทผู้ใช้งานนี้เข้าเมนูอื่นได้ทั้งหมดอยู่แล้ว ไม่มีเมนูให้จำกัดเพิ่ม</p>;
+    return <p className="text-[11px] text-slate-500">ประเภทผู้ใช้งานนี้เข้าเมนูอื่นได้ทั้งหมดอยู่แล้ว ไม่มีเมนูให้จำกัดเพิ่ม</p>;
   }
   return (
     <div className="grid grid-cols-2 gap-1.5">

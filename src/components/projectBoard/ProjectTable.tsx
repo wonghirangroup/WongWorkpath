@@ -187,7 +187,7 @@ export default function ProjectTable({ rows, employees, onViewDetail, canDelete,
                     <button
                       type="button"
                       onClick={() => onViewDetail(row)}
-                      className="inline-flex items-center gap-1.5 text-[#767676] hover:text-[#FF6537] active:text-[#e2582f] text-xs font-medium cursor-pointer whitespace-nowrap transition-colors"
+                      className="inline-flex items-center gap-1.5 text-[#6F6F6F] hover:text-[#FF6537] active:text-[#e2582f] text-xs font-medium cursor-pointer whitespace-nowrap transition-colors"
                     >
                       <Eye size={14} />
                       ดูรายละเอียด
@@ -197,7 +197,7 @@ export default function ProjectTable({ rows, employees, onViewDetail, canDelete,
                         <button
                           type="button"
                           onClick={() => onDelete(row)}
-                          className="text-[#767676] hover:text-red-600 active:text-red-700 cursor-pointer transition-colors"
+                          className="text-[#6F6F6F] hover:text-red-600 active:text-red-700 cursor-pointer transition-colors"
                         >
                           <Trash2 size={14} />
                         </button>

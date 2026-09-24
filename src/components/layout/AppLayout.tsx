@@ -143,7 +143,7 @@ export default function AppLayout() {
       )}
       {shownTrail.map((folder, idx) => (
         <Fragment key={folder.id}>
-          <ChevronRight size={16} className="text-slate-300 shrink-0" />
+          <ChevronRight size={16} className="text-slate-500 shrink-0" />
           {idx === shownTrail.length - 1 ? (
             <span className="font-bold text-[#000000] truncate">{folder.name}</span>
           ) : (

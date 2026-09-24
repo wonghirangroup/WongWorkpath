@@ -162,7 +162,7 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
           )}
           <div className="hidden sm:block text-sm text-left">
             <p className="font-bold text-[#272220] text-[18px] whitespace-nowrap">{displayName}</p>
-            <p className="text-[13px] text-[#767676] whitespace-nowrap">{displayRole}</p>
+            <p className="text-[13px] text-[#6F6F6F] whitespace-nowrap">{displayRole}</p>
           </div>
           <ChevronDown
             size={20}
@@ -175,7 +175,7 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
           <div className="absolute right-0 top-16 bg-white border border-slate-200 w-56 rounded-2xl shadow-xl py-2 text-sm text-slate-800 z-50 animate-in fade-in slide-in-from-top-3 duration-200">
             <div className="px-4 py-2.5 border-b border-slate-100 mb-1">
               <p className="font-semibold text-slate-800 truncate">{displayName}</p>
-              <p className="text-xs text-slate-400 truncate">{displayRoleFull}</p>
+              <p className="text-xs text-slate-500 truncate">{displayRoleFull}</p>
               <div className="flex items-center gap-1.5 mt-1">
                 <span className={`inline-block text-[11px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(currentUser.department)}`}>
                   {currentUser.department}
@@ -235,7 +235,7 @@ export default function Header({ title, subtitle, isMobileMenuOpen, onToggleMobi
                     type="button"
                     onClick={handleMarkAllNotificationsRead}
                     disabled={unreadCount === 0}
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-[#E04D1D] hover:underline cursor-pointer disabled:text-[#767676] disabled:no-underline disabled:cursor-default"
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-[#E04D1D] hover:underline cursor-pointer disabled:text-[#6F6F6F] disabled:no-underline disabled:cursor-default"
                   >
                     <CheckCheck size={14} />
                     อ่านทั้งหมดแล้ว

@@ -1072,7 +1072,7 @@ export default function DocVault({
               <button
                 type="button"
                 onClick={() => setSearchTerm('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-800 cursor-pointer"
                 aria-label="ล้างคำค้นหา"
               >
                 <X size={15} />
@@ -1261,7 +1261,7 @@ export default function DocVault({
       {/* Document list — grid of folder/file/link cards, or a compact table */}
       {viewMode === 'list' ? (
         sortedDocs.length === 0 ? (
-          <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-400 text-sm">
+          <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-500 text-sm">
             {itemsHere.length === 0 ? 'โฟลเดอร์นี้ว่างเปล่า' : 'ไม่พบรายการที่ตรงกับการค้นหา'}
           </div>
         ) : (
@@ -1340,7 +1340,7 @@ export default function DocVault({
                                 type="button"
                                 onClick={(e) => { e.stopPropagation(); goToProject(ownership.project.id); }}
                                 onDoubleClick={(e) => e.stopPropagation()}
-                                className="text-[11px] text-[#767676] hover:text-[#FF6537] hover:underline leading-tight truncate max-w-65 text-left cursor-pointer"
+                                className="text-[11px] text-[#6F6F6F] hover:text-[#FF6537] hover:underline leading-tight truncate max-w-65 text-left cursor-pointer"
                               >
                                 {getOwnershipLabel(doc, ownership, true)}
                               </button>
@@ -1391,7 +1391,7 @@ export default function DocVault({
           onContextMenu={openBgContextMenu}
         >
           {sortedDocs.length === 0 ? (
-            <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-400 text-sm col-span-full">
+            <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-500 text-sm col-span-full">
               {itemsHere.length === 0 ? 'โฟลเดอร์นี้ว่างเปล่า' : 'ไม่พบรายการที่ตรงกับการค้นหา'}
             </div>
           ) : (
@@ -1466,7 +1466,7 @@ export default function DocVault({
                             type="button"
                             onClick={(e) => { e.stopPropagation(); goToProject(ownership.project.id); }}
                             onDoubleClick={(e) => e.stopPropagation()}
-                            className="text-[11px] text-[#767676] hover:text-[#FF6537] hover:underline truncate max-w-full px-2 cursor-pointer"
+                            className="text-[11px] text-[#6F6F6F] hover:text-[#FF6537] hover:underline truncate max-w-full px-2 cursor-pointer"
                           >
                             {getOwnershipLabel(doc, ownership, false)}
                           </button>
@@ -1491,7 +1491,7 @@ export default function DocVault({
                               type="button"
                               onClick={(e) => { e.stopPropagation(); goToProject(ownership.project.id); }}
                               onDoubleClick={(e) => e.stopPropagation()}
-                              className="text-[11px] text-[#767676] hover:text-[#FF6537] hover:underline truncate pl-6 text-left cursor-pointer"
+                              className="text-[11px] text-[#6F6F6F] hover:text-[#FF6537] hover:underline truncate pl-6 text-left cursor-pointer"
                             >
                               {getOwnershipLabel(doc, ownership, false)}
                             </button>
@@ -1586,7 +1586,7 @@ export default function DocVault({
                   <h3 className="text-sm font-bold text-slate-800">
                     {addMode === 'folder' ? 'สร้างโฟลเดอร์ใหม่' : addMode === 'file' ? 'อัปโหลดไฟล์' : 'แนบลิงก์เอกสาร Google Workspace, Figma หรือไฟล์อื่นๆ'}
                   </h3>
-                  <button type="button" onClick={closeAddForm} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X size={18} /></button>
+                  <button type="button" onClick={closeAddForm} className="text-slate-500 hover:text-slate-800 cursor-pointer"><X size={18} /></button>
                 </div>
 
                 {addMode === 'folder' && (
@@ -1640,7 +1640,7 @@ export default function DocVault({
                         <span className={`font-semibold px-1.5 py-0.5 rounded-full text-[11px] ${currentFolder?.scope === 'โครงการ' ? getProjectTagClass(projectById.get(currentFolder?.projectId ?? '')?.title) : 'text-slate-600 bg-slate-200'}`}>
                           {currentFolder?.scope === 'โครงการ' ? (projectById.get(currentFolder?.projectId ?? '')?.title || 'โครงการ') : 'ส่วนตัว'}
                         </span>
-                        <span className="text-slate-400">(สืบทอดจากโฟลเดอร์นี้)</span>
+                        <span className="text-slate-500">(สืบทอดจากโฟลเดอร์นี้)</span>
                       </div>
                     )}
                     <div className="flex justify-end gap-2 pt-1">
@@ -1659,7 +1659,7 @@ export default function DocVault({
                 {addMode === 'file' && (
                   <form onSubmit={handleUploadFile} className="space-y-4 text-xs">
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-500 mb-1">เลือกไฟล์ * <span className="font-normal text-slate-400">(ไม่เกิน {formatFileSize(MAX_FILE_BYTES)})</span></label>
+                      <label className="block text-[11px] font-bold text-slate-500 mb-1">เลือกไฟล์ * <span className="font-normal text-slate-500">(ไม่เกิน {formatFileSize(MAX_FILE_BYTES)})</span></label>
                       <input
                         type="file"
                         required
@@ -1667,10 +1667,10 @@ export default function DocVault({
                         className="w-full text-xs file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-[#FFF1EC] file:text-[#FF6537] file:font-bold file:cursor-pointer cursor-pointer"
                       />
                       {fileError && <p className="text-red-500 mt-1">{fileError}</p>}
-                      {pickedFile && !fileError && <p className="text-slate-400 mt-1">{formatFileSize(pickedFile.size)}</p>}
+                      {pickedFile && !fileError && <p className="text-slate-500 mt-1">{formatFileSize(pickedFile.size)}</p>}
                     </div>
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-500 mb-1">ชื่อไฟล์ * <span className="font-normal text-slate-400">(เติมให้อัตโนมัติ แก้ไขได้)</span></label>
+                      <label className="block text-[11px] font-bold text-slate-500 mb-1">ชื่อไฟล์ * <span className="font-normal text-slate-500">(เติมให้อัตโนมัติ แก้ไขได้)</span></label>
                       <input
                         type="text"
                         required
@@ -1717,7 +1717,7 @@ export default function DocVault({
                         <span className={`font-semibold px-1.5 py-0.5 rounded-full text-[11px] ${currentFolder?.scope === 'โครงการ' ? getProjectTagClass(projectById.get(currentFolder?.projectId ?? '')?.title) : 'text-slate-600 bg-slate-200'}`}>
                           {currentFolder?.scope === 'โครงการ' ? (projectById.get(currentFolder?.projectId ?? '')?.title || 'โครงการ') : 'ส่วนตัว'}
                         </span>
-                        <span className="text-slate-400">(สืบทอดจากโฟลเดอร์นี้)</span>
+                        <span className="text-slate-500">(สืบทอดจากโฟลเดอร์นี้)</span>
                       </div>
                     )}
                     <div className="flex justify-end gap-2 pt-1">
@@ -1748,7 +1748,7 @@ export default function DocVault({
                       />
                     </div>
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-500 mb-1">ชื่อเรียกเอกสาร * <span className="font-normal text-slate-400">(เติมให้อัตโนมัติ แก้ไขได้)</span></label>
+                      <label className="block text-[11px] font-bold text-slate-500 mb-1">ชื่อเรียกเอกสาร * <span className="font-normal text-slate-500">(เติมให้อัตโนมัติ แก้ไขได้)</span></label>
                       <input
                         type="text"
                         required
@@ -1795,7 +1795,7 @@ export default function DocVault({
                         <span className={`font-semibold px-1.5 py-0.5 rounded-full text-[11px] ${currentFolder?.scope === 'โครงการ' ? getProjectTagClass(projectById.get(currentFolder?.projectId ?? '')?.title) : 'text-slate-600 bg-slate-200'}`}>
                           {currentFolder?.scope === 'โครงการ' ? (projectById.get(currentFolder?.projectId ?? '')?.title || 'โครงการ') : 'ส่วนตัว'}
                         </span>
-                        <span className="text-slate-400">(สืบทอดจากโฟลเดอร์นี้)</span>
+                        <span className="text-slate-500">(สืบทอดจากโฟลเดอร์นี้)</span>
                       </div>
                     )}
                     <div className="flex justify-end gap-2 pt-1">
@@ -1841,7 +1841,7 @@ export default function DocVault({
                   <h3 className="text-sm font-bold text-slate-800">
                     แก้ไข{editDoc.kind === 'folder' ? 'โฟลเดอร์' : editDoc.kind === 'file' ? 'ไฟล์' : 'ลิงก์'}
                   </h3>
-                  <button type="button" onClick={closeEdit} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X size={18} /></button>
+                  <button type="button" onClick={closeEdit} className="text-slate-500 hover:text-slate-800 cursor-pointer"><X size={18} /></button>
                 </div>
 
                 <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
@@ -2009,7 +2009,7 @@ export default function DocVault({
                     <Tooltip content="ปิด">
                       <button
                         onClick={() => setPreviewDocId(null)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 cursor-pointer"
                         aria-label="ปิด"
                       >
                         <X size={18} />

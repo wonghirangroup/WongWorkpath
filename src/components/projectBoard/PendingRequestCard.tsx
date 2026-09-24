@@ -66,7 +66,7 @@ export default function PendingRequestCard({
             onChange={(e) => setNote(e.target.value)}
             placeholder="เหตุผลที่ไม่อนุมัติ..."
             aria-label="เหตุผลที่ไม่อนุมัติ"
-            className="w-full p-2 text-xs border border-red-300 rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-red-500"
+            className="w-full p-2 text-xs border border-red-300 rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-red-500"
           />
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => { setShowRejectField(false); setNote(''); }} disabled={isSubmitting} className="px-3 h-8 text-xs font-semibold text-[#6F6F6F] hover:bg-white rounded-lg border border-[#E5E5E5] cursor-pointer">

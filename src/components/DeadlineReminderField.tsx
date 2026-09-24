@@ -9,6 +9,7 @@ import {
   MAX_REMINDER_COUNT,
   REMINDER_PRESETS,
   REMINDER_UNIT_LABEL,
+  ReminderLimit,
   ReminderUnit,
   formatReminderLead,
   normalizeReminderDays,
@@ -31,6 +32,9 @@ interface DeadlineReminderFieldProps {
   // Shown under the trigger (amber) only when it matters — e.g. this person isn't on the item, so the
   // reminder will never reach them.
   warning?: string;
+  // The longest lead time this item's own time frame allows (see reminderLimit): choices beyond it can't
+  // be added. null = no deadline set yet, so there's nothing to remind about; undefined = no limit.
+  limit?: ReminderLimit | null;
   disabled?: boolean;
 }
 
@@ -40,13 +44,17 @@ const PANEL_WIDTH = 344;
 const chipBase = 'h-8 px-3 rounded-full text-[13px] font-semibold border transition-colors cursor-pointer inline-flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6537] focus-visible:ring-offset-1';
 const chipOn = 'bg-[#FF6537] border-[#FF6537] text-white';
 const chipOff = 'bg-white border-slate-200 text-[#6F6F6F] hover:bg-slate-50';
+const chipBlocked = 'bg-slate-50 border-slate-100 text-[#B0B0B0] cursor-not-allowed';
+// Chosen earlier but longer than the time frame allows now (its dates were shortened): it's ignored, so
+// it's shown as such and can still be taken off.
+const chipOver = 'bg-amber-50 border-amber-300 text-amber-800';
 
 // "เตือนฉันก่อนกำหนด" for ONE task or project, shown inside its own modal. It's a single input-height
 // button (so it slots into the modals' no-scroll layouts without adding a tall block) that opens a small
 // floating panel: quick choices (1 วัน … 3 เดือน, several at once), or a custom length. The choice is
 // personal — it only changes when *this person* is reminded, never anyone else's, so it needs nobody's
 // approval. Nothing chosen = the app default (a reminder when 2 days are left).
-export default function DeadlineReminderField({ days, isDefault, onChange, deadlineWord, note, warning, disabled = false }: DeadlineReminderFieldProps) {
+export default function DeadlineReminderField({ days, isDefault, onChange, deadlineWord, note, warning, limit, disabled = false }: DeadlineReminderFieldProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [placement, setPlacement] = useState<PanelPlacement>({ left: 0, width: 0, openUpward: false, maxHeight: 320 });
   const [amount, setAmount] = useState('');
@@ -109,15 +117,28 @@ export default function DeadlineReminderField({ days, isDefault, onChange, deadl
     e.stopPropagation();
   };
 
+  const noDeadline = limit === null;
+  const maxDays = limit ? limit.maxDays : undefined; // undefined = no limit
+  const isOver = (d: number) => maxDays !== undefined && d > maxDays;
+  const overMessage = maxDays !== undefined && maxDays < 1
+    ? 'ช่วงเวลาสั้นเกินไปที่จะตั้งเตือนล่วงหน้า'
+    : `ตั้งได้ไม่เกิน ${maxDays} วัน ตามช่วงวันที่ที่กำหนดไว้`;
+
+  // What's actually in force. The app default is the system's own and is never trimmed — but it isn't
+  // offered as a "choice" either when it doesn't fit, so the first pick starts from what fits.
+  const listed = isDefault ? days.filter((d) => !isOver(d)) : days;
   const presetDays = REMINDER_PRESETS.map((p) => p.days);
-  const customDays = days.filter((d) => !presetDays.includes(d));
-  const atLimit = days.length >= MAX_REMINDER_COUNT;
+  const customDays = listed.filter((d) => !presetDays.includes(d));
+  const atLimit = listed.length >= MAX_REMINDER_COUNT;
+  const hasOver = listed.some(isOver);
+  const shownSummary = summarizeReminderLeads(isDefault ? days : listed.filter((d) => !isOver(d)));
 
   const toggle = (value: number) => {
     setError('');
-    if (days.includes(value)) onChange(days.filter((d) => d !== value));
+    if (listed.includes(value)) onChange(listed.filter((d) => d !== value));
+    else if (isOver(value)) setError(overMessage);
     else if (atLimit) setError(`เลือกได้สูงสุด ${MAX_REMINDER_COUNT} ช่วง`);
-    else onChange(normalizeReminderDays([...days, value]));
+    else onChange(normalizeReminderDays([...listed, value]));
   };
 
   const addCustom = (e: FormEvent) => {
@@ -125,11 +146,12 @@ export default function DeadlineReminderField({ days, isDefault, onChange, deadl
     e.stopPropagation(); // this form lives in a portal, but React still bubbles its submit to the modal's own <form>
     const parsed = parseCustomReminder(amount, unit);
     if ('error' in parsed) return setError(parsed.error);
-    if (days.includes(parsed.days)) return setError(`มี "${formatReminderLead(parsed.days)}" อยู่แล้ว`);
+    if (isOver(parsed.days)) return setError(overMessage);
+    if (listed.includes(parsed.days)) return setError(`มี "${formatReminderLead(parsed.days)}" อยู่แล้ว`);
     if (atLimit) return setError(`เลือกได้สูงสุด ${MAX_REMINDER_COUNT} ช่วง`);
     setError('');
     setAmount('');
-    onChange(normalizeReminderDays([...days, parsed.days]));
+    onChange(normalizeReminderDays([...listed, parsed.days]));
   };
 
   return (
@@ -137,24 +159,28 @@ export default function DeadlineReminderField({ days, isDefault, onChange, deadl
       <button
         ref={triggerRef}
         type="button"
-        disabled={disabled}
+        disabled={disabled || noDeadline}
         aria-haspopup="dialog"
         aria-expanded={isOpen}
         onClick={() => setIsOpen((v) => !v)}
         className={`w-full h-10.5 flex items-center gap-2 px-3 bg-white border border-[#E5E5E5] rounded-lg text-sm text-left focus:outline-none focus:border-[#FF6537] ${
-          disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-slate-50'
+          disabled || noDeadline ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-slate-50'
         } ${isOpen ? 'border-[#FF6537]' : ''}`}
       >
         <Bell size={15} className="text-[#FF6537] shrink-0" aria-hidden />
-        <span className="flex-1 min-w-0 truncate text-slate-800">{summarizeReminderLeads(days)}</span>
-        {isDefault && <span className="shrink-0 text-[11px] font-semibold text-[#767676] bg-slate-100 rounded-full px-2 py-0.5">ค่าเริ่มต้น</span>}
-        <ChevronDown size={14} className={`text-[#FF6537] shrink-0 transition-transform duration-150 ${isOpen ? 'rotate-180' : ''}`} aria-hidden />
+        {noDeadline ? (
+          <span className="flex-1 min-w-0 truncate text-[#6F6F6F]">ใส่{deadlineWord}ก่อน จึงตั้งเตือนได้</span>
+        ) : (
+          <span className="flex-1 min-w-0 truncate text-slate-800">{shownSummary}</span>
+        )}
+        {isDefault && !noDeadline && <span className="shrink-0 text-[11px] font-semibold text-[#6F6F6F] bg-slate-100 rounded-full px-2 py-0.5">ค่าเริ่มต้น</span>}
+        {!noDeadline && <ChevronDown size={14} className={`text-[#FF6537] shrink-0 transition-transform duration-150 ${isOpen ? 'rotate-180' : ''}`} aria-hidden />}
       </button>
       {warning && <p className="text-[11px] text-amber-700 mt-1">{warning}</p>}
 
       {createPortal(
         <AnimatePresence>
-          {isOpen && (
+          {isOpen && !noDeadline && (
             <motion.div
               ref={panelRef}
               role="dialog"
@@ -175,13 +201,30 @@ export default function DeadlineReminderField({ days, isDefault, onChange, deadl
               className="z-60 bg-white rounded-2xl border border-slate-100 shadow-xl overflow-y-auto p-4"
             >
               <p className="text-[13px] font-bold text-[#272220]">เตือนฉันก่อนถึง{deadlineWord}</p>
-              <p className="text-[11px] text-[#767676] mt-0.5">เลือกได้หลายช่วง — เป็นค่าของคุณเอง ไม่กระทบคนอื่น{note ? ` · ${note}` : ''}</p>
+              <p className="text-[11px] text-[#6F6F6F] mt-0.5">เลือกได้หลายช่วง — เป็นค่าของคุณเอง ไม่กระทบคนอื่น{note ? ` · ${note}` : ''}</p>
+
+              {limit && (
+                <p className="text-[11px] font-semibold text-[#272220] mt-1">
+                  {limit.maxDays < 1
+                    ? 'ช่วงเวลาสั้นเกินไป จึงตั้งเตือนล่วงหน้าเองไม่ได้'
+                    : `ตั้งได้ไม่เกิน ${limit.maxDays} วัน — ตามช่วงตั้งแต่${limit.fromToday ? 'วันนี้' : 'วันที่เริ่ม'}ถึง${deadlineWord}`}
+                </p>
+              )}
 
               <div role="group" aria-label="ช่วงเวลาที่เตือน" className="flex flex-wrap gap-1.5 mt-3">
                 {REMINDER_PRESETS.map((p) => {
-                  const on = days.includes(p.days);
+                  const on = listed.includes(p.days);
+                  const over = isOver(p.days);
                   return (
-                    <button key={p.days} type="button" aria-pressed={on} onClick={() => toggle(p.days)} className={`${chipBase} ${on ? chipOn : chipOff}`}>
+                    <button
+                      key={p.days}
+                      type="button"
+                      aria-pressed={on}
+                      disabled={over && !on}
+                      title={over ? (on ? 'เกินช่วงวันที่ — จะไม่ถูกใช้ กดเพื่อเอาออก' : overMessage) : undefined}
+                      onClick={() => toggle(p.days)}
+                      className={`${chipBase} ${over ? (on ? chipOver : chipBlocked) : on ? chipOn : chipOff}`}
+                    >
                       {p.label}
                     </button>
                   );
@@ -191,8 +234,9 @@ export default function DeadlineReminderField({ days, isDefault, onChange, deadl
                     key={d}
                     type="button"
                     aria-label={`เอา "${formatReminderLead(d)}" ออก`}
+                    title={isOver(d) ? 'เกินช่วงวันที่ — จะไม่ถูกใช้ กดเพื่อเอาออก' : undefined}
                     onClick={() => toggle(d)}
-                    className={`${chipBase} ${chipOn}`}
+                    className={`${chipBase} ${isOver(d) ? chipOver : chipOn}`}
                   >
                     {formatReminderLead(d)}
                     <X size={13} aria-hidden />
@@ -210,7 +254,7 @@ export default function DeadlineReminderField({ days, isDefault, onChange, deadl
                   onChange={(e) => setAmount(e.target.value)}
                   placeholder="เช่น 14"
                   aria-label="จำนวนที่ต้องการให้เตือนล่วงหน้า"
-                  className="w-20 h-8 px-2.5 border border-[#E5E5E5] rounded-lg text-sm placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                  className="w-20 h-8 px-2.5 border border-[#E5E5E5] rounded-lg text-sm placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                 />
                 <div role="group" aria-label="หน่วย" className="inline-flex rounded-lg border border-[#E5E5E5] overflow-hidden">
                   {UNITS.map((u) => (
@@ -236,10 +280,11 @@ export default function DeadlineReminderField({ days, isDefault, onChange, deadl
                 </button>
               </form>
 
+              {hasOver && <p className="text-[11px] text-amber-700 mt-2">ช่วงสีเหลืองยาวเกินช่วงวันที่ตอนนี้ จึงไม่ถูกใช้เตือน — กดเพื่อเอาออกได้</p>}
               {error && <p role="alert" className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mt-3">{error}</p>}
 
               <div className="mt-3 space-y-1 text-[12px] text-[#6F6F6F]">
-                {days.length === 0 && <p>ไม่ได้เลือกช่วงใดเลย — จะไม่เตือนล่วงหน้า (ยังเตือนเมื่อเลยกำหนดแล้ว)</p>}
+                {listed.length === 0 && !isDefault && <p>ไม่ได้เลือกช่วงใดเลย — จะไม่เตือนล่วงหน้า (ยังเตือนเมื่อเลยกำหนดแล้ว)</p>}
                 {isDefault ? (
                   <p>ค่าเริ่มต้นของระบบ: เตือนเมื่อเหลือ {DEFAULT_DEADLINE_REMINDER_DAYS.map(formatReminderLead).join(', ')} — เลือกช่วงด้านบนเพื่อเปลี่ยน</p>
                 ) : (

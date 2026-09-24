@@ -24,10 +24,14 @@ import {
 } from './EmployeeFormShared';
 import Tooltip from './Tooltip';
 import ThaiDatePicker from './ThaiDatePicker';
+import Pagination from './Pagination';
 import PendingRequestCard from './projectBoard/PendingRequestCard';
 import { useEscapeToClose } from '../lib/useEscapeToClose';
 
 const DEFAULT_PASSWORD = 'Wongwork2026!';
+
+// Rows per page in the activity-log table.
+const LOG_PAGE_SIZE = 20;
 
 // Continues the seeded E01, E02, ... sequence instead of a Date.now()-based id, so ids stay
 // short and ordered. Ids longer than 4 digits (e.g. a legacy Date.now() id) are ignored when
@@ -49,7 +53,7 @@ function EmployeeCardMenu({ onView, onEdit, onDelete, deleteDisabled, editDisabl
         <button
           onClick={onView}
           aria-label="ดูรายละเอียด"
-          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+          className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 cursor-pointer"
         >
           <Eye size={15} />
         </button>
@@ -59,7 +63,7 @@ function EmployeeCardMenu({ onView, onEdit, onDelete, deleteDisabled, editDisabl
           <button
             onClick={onEdit}
             aria-label="แก้ไข"
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 cursor-pointer"
           >
             <Pencil size={15} />
           </button>
@@ -70,7 +74,7 @@ function EmployeeCardMenu({ onView, onEdit, onDelete, deleteDisabled, editDisabl
           <button
             onClick={onDelete}
             aria-label="ลบ"
-            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+            className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
           >
             <Trash2 size={15} />
           </button>
@@ -119,6 +123,12 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
   const [logDateFilter, setLogDateFilter] = useState('');
   const [logDepartmentFilter, setLogDepartmentFilter] = useState<string>('__all__');
   const [logActionFilter, setLogActionFilter] = useState<string>('__all__');
+  const [logPage, setLogPage] = useState(1);
+  const logScrollRef = useRef<HTMLDivElement>(null);
+  // Any change to what's being searched/filtered starts again from the first page.
+  useEffect(() => { setLogPage(1); }, [logSearchTerm, logDateFilter, logDepartmentFilter, logActionFilter]);
+  // …and a new page always starts at the top of the table.
+  useEffect(() => { logScrollRef.current?.scrollTo({ top: 0 }); }, [logPage]);
   // "โครงสร้างองค์กร" tab's own search/filter row now lives up here (see the toolbar block below),
   // matching every other tab, instead of inside <OrgChart> itself — its canvas still owns the
   // pan/zoom/DOM-measurement machinery, reached imperatively via orgChartRef (see OrgChartHandle).
@@ -327,6 +337,12 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
     return matchesQuery && matchesDate && matchesDepartment && matchesAction;
   });
 
+  // The log only ever renders one page of rows (the full list is already in memory, sorted newest first).
+  const totalLogPages = Math.max(1, Math.ceil(filteredLogs.length / LOG_PAGE_SIZE));
+  const currentLogPage = Math.min(logPage, totalLogPages); // the list can shrink under us (new filter)
+  const logPageStart = (currentLogPage - 1) * LOG_PAGE_SIZE;
+  const pagedLogs = filteredLogs.slice(logPageStart, logPageStart + LOG_PAGE_SIZE);
+
   return (
     <div className="space-y-6" id="employee-management-tab">
       {/* Tabs + whichever tab's search/filter row are grouped into one sticky unit so both stay
@@ -340,7 +356,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
       {activeTab === 'employees' ? (
       <div className="flex flex-col lg:flex-row gap-3 lg:items-center">
         <div className="relative w-full lg:w-137.5 lg:flex-none">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
           <input
             type="text"
             value={searchTerm}
@@ -353,7 +369,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
               <button
                 type="button"
                 onClick={() => setSearchTerm('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-800 cursor-pointer"
                 aria-label="ล้างคำค้นหา"
               >
                 <X size={15} />
@@ -408,7 +424,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
       ) : activeTab === 'logs' ? (
         <div className="flex flex-col lg:flex-row gap-3 lg:items-center">
           <div className="relative w-full lg:w-137.5 lg:flex-none">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
             <input
               type="text"
               value={logSearchTerm}
@@ -421,7 +437,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                 <button
                   type="button"
                   onClick={() => setLogSearchTerm('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-800 cursor-pointer"
                   aria-label="ล้างคำค้นหา"
                 >
                   <X size={15} />
@@ -581,7 +597,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
       <p className="font-normal text-[16px] text-[#6F6F6F] leading-none">ทั้งหมด {filteredEmployees.length} คน</p>
 
       {filteredEmployees.length === 0 ? (
-        <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-400 text-sm">
+        <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-500 text-sm">
           {employees.length === 0 ? 'ยังไม่มีพนักงานในระบบ' : 'ไม่พบรายการที่ตรงกับการค้นหา'}
         </div>
       ) : viewMode === 'grid' ? (
@@ -618,7 +634,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                     )}
                   </h4>
                   {emp.nickname && emp.nickname !== emp.name && (
-                    <p className="text-[11px] text-slate-400 truncate">{emp.name}</p>
+                    <p className="text-[11px] text-slate-500 truncate">{emp.name}</p>
                   )}
                 </div>
                 <EmployeeCardMenu
@@ -725,7 +741,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                           )}
                         </p>
                         {emp.nickname && emp.nickname !== emp.name && (
-                          <p className="text-[11px] text-slate-400 leading-tight truncate">{emp.name}</p>
+                          <p className="text-[11px] text-slate-500 leading-tight truncate">{emp.name}</p>
                         )}
                       </div>
                     </div>
@@ -739,7 +755,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                         {emp.division}
                       </span>
                     ) : (
-                      <span className="text-[#767676]">—</span>
+                      <span className="text-[#6F6F6F]">—</span>
                     )}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
@@ -748,7 +764,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                         {emp.department}
                       </span>
                     ) : (
-                      <span className="text-[#767676]">—</span>
+                      <span className="text-[#6F6F6F]">—</span>
                     )}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
@@ -785,11 +801,13 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
       ) : (
       <>
         {filteredLogs.length === 0 ? (
-          <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-400 text-sm">
+          <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-500 text-sm">
             {auditLogs.length === 0 ? 'ยังไม่มีบันทึกกิจกรรม' : 'ไม่พบรายการที่ตรงกับการค้นหา'}
           </div>
         ) : (
-          <div ref={tableWrapRef} style={{ maxHeight: tableMaxHeight }} className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] overflow-x-auto overflow-y-auto">
+          <div ref={tableWrapRef} style={{ maxHeight: tableMaxHeight }} className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] flex flex-col overflow-hidden">
+            {/* Only the rows scroll; the page bar below stays put at the card's foot. */}
+            <div ref={logScrollRef} className="flex-1 min-h-0 overflow-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-[#F9F9F9] text-[12px] font-semibold text-[#000000] border-b border-[#EDEEEF]">
@@ -801,7 +819,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                 </tr>
               </thead>
               <tbody>
-                {filteredLogs.map((log) => (
+                {pagedLogs.map((log) => (
                   <tr
                     key={log.id}
                     data-markable-id={log.id}
@@ -842,6 +860,13 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                 ))}
               </tbody>
             </table>
+            </div>
+            <div className="shrink-0 flex flex-col sm:flex-row items-center justify-between gap-2 px-4 py-2.5 border-t border-[#EDEEEF] bg-white">
+              <p className="text-[12px] text-[#6F6F6F]">
+                แสดง {logPageStart + 1}–{logPageStart + pagedLogs.length} จาก {filteredLogs.length} รายการ
+              </p>
+              {totalLogPages > 1 && <Pagination currentPage={currentLogPage} totalPages={totalLogPages} onPage={setLogPage} />}
+            </div>
           </div>
         )}
       </>
@@ -869,7 +894,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
               >
                 <div className="flex justify-between items-center pb-2 border-b border-slate-100">
                   <h3 className="text-sm font-bold text-slate-800">เพิ่มพนักงานใหม่</h3>
-                  <button type="button" onClick={resetForm} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X size={18} /></button>
+                  <button type="button" onClick={resetForm} className="text-slate-500 hover:text-slate-800 cursor-pointer"><X size={18} /></button>
                 </div>
 
                 <form onSubmit={handleCreate} className="space-y-4 text-xs">
@@ -895,7 +920,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                       />
                     </div>
                     <div>
-                      <label className="block text-[#272220] font-bold text-[11px] mb-1">ชื่อเล่น <span className="font-normal text-slate-400">(ไม่บังคับ)</span></label>
+                      <label className="block text-[#272220] font-bold text-[11px] mb-1">ชื่อเล่น <span className="font-normal text-slate-500">(ไม่บังคับ)</span></label>
                       <input
                         type="text"
                         placeholder={newName || 'เหมือนชื่อ-นามสกุล'}
@@ -906,7 +931,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                     </div>
 
                     <div>
-                      <label className="block text-[#272220] font-bold text-[11px] mb-1">อีเมล <span className="font-normal text-slate-400">(ไม่บังคับ)</span></label>
+                      <label className="block text-[#272220] font-bold text-[11px] mb-1">อีเมล <span className="font-normal text-slate-500">(ไม่บังคับ)</span></label>
                       <input
                         type="email"
                         placeholder="name@company.com"
@@ -916,7 +941,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                       />
                     </div>
                     <div>
-                      <label className="block text-[#272220] font-bold text-[11px] mb-1">เบอร์โทร <span className="font-normal text-slate-400">(ไม่บังคับ)</span></label>
+                      <label className="block text-[#272220] font-bold text-[11px] mb-1">เบอร์โทร <span className="font-normal text-slate-500">(ไม่บังคับ)</span></label>
                       <input
                         type="tel"
                         inputMode="numeric"
@@ -1002,18 +1027,18 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                         options={assignableAccountTypes(actingUser).map((t) => ({ value: t, label: ACCOUNT_TYPE_LABELS[t] }))}
                       />
                       {(newAccountType === 'admin' || newAccountType === 'superadmin') && (
-                        <p className="mt-1 text-[11px] text-slate-400">เปลี่ยน Username ของบัญชีนี้ในภายหลังไม่ได้</p>
+                        <p className="mt-1 text-[11px] text-slate-500">เปลี่ยน Username ของบัญชีนี้ในภายหลังไม่ได้</p>
                       )}
                     </div>
 
                     <div className="sm:col-span-2">
-                      <label className="block text-[#272220] font-bold text-[11px] mb-1">จำกัดสิทธิเมนู <span className="font-normal text-slate-400">(ไม่บังคับ)</span></label>
+                      <label className="block text-[#272220] font-bold text-[11px] mb-1">จำกัดสิทธิเมนู <span className="font-normal text-slate-500">(ไม่บังคับ)</span></label>
                       <MenuRestrictionChecklist items={restrictableNavItemsFor(newAccountType)} selectedIds={newRestrictedMenuIds} onChange={setNewRestrictedMenuIds} />
                     </div>
 
                     <div className="sm:col-span-2">
                       <label className="block text-[#272220] font-bold text-[11px] mb-1">
-                        รูปโปรไฟล์ <span className="font-normal text-slate-400">(ไม่บังคับ, ไม่เกิน {formatFileSize(MAX_AVATAR_BYTES)})</span>
+                        รูปโปรไฟล์ <span className="font-normal text-slate-500">(ไม่บังคับ, ไม่เกิน {formatFileSize(MAX_AVATAR_BYTES)})</span>
                       </label>
                       <div className="flex items-center gap-2.5">
                         {newAvatar.trim() ? (
@@ -1037,7 +1062,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                             <button
                               type="button"
                               onClick={() => setNewAvatar('')}
-                              className="text-slate-400 hover:text-slate-600 cursor-pointer shrink-0"
+                              className="text-slate-500 hover:text-slate-800 cursor-pointer shrink-0"
                               aria-label="ลบรูปโปรไฟล์"
                             >
                               <X size={16} />
@@ -1116,7 +1141,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
               >
                 <div className="flex justify-between items-center pb-2 border-b border-slate-100">
                   <h3 className="text-sm font-bold text-slate-800">ลบบัญชีพนักงาน</h3>
-                  <button type="button" onClick={closeDeleteModal} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X size={18} /></button>
+                  <button type="button" onClick={closeDeleteModal} className="text-slate-500 hover:text-slate-800 cursor-pointer"><X size={18} /></button>
                 </div>
 
                 <p className="text-xs text-slate-600">
@@ -1133,7 +1158,7 @@ export default function EmployeeManagement({ employees, auditLogs, currentUserId
                     placeholder="ระบุเหตุผล..."
                     value={deleteReason}
                     onChange={(e) => setDeleteReason(e.target.value)}
-                    className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                    className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                   />
                 </div>
 

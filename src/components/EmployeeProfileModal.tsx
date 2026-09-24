@@ -254,7 +254,7 @@ export default function EmployeeProfileModal({
                       <Pencil size={13} /> แก้ไขข้อมูล
                     </button>
                   )}
-                  <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X size={20} /></button>
+                  <button type="button" onClick={onClose} className="text-slate-500 hover:text-slate-800 cursor-pointer"><X size={20} /></button>
                 </div>
               </div>
 
@@ -301,7 +301,7 @@ export default function EmployeeProfileModal({
                         className={`${fieldInputClass} ${targetIsAdminLike ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}`}
                       />
                       {targetIsAdminLike && (
-                        <p className="text-[11px] text-slate-400 mt-1">ไม่สามารถเปลี่ยน Username ของบัญชี Admin/Super Admin ได้</p>
+                        <p className="text-[11px] text-slate-500 mt-1">ไม่สามารถเปลี่ยน Username ของบัญชี Admin/Super Admin ได้</p>
                       )}
                     </InfoRow>
                     <InfoRow label="เบอร์โทร" value={phone} editing={mode === 'edit'}>
@@ -380,17 +380,17 @@ export default function EmployeeProfileModal({
                       <p className="text-lg font-bold text-[#272220] leading-none">{ownedDocs.length}</p>
                       <p className="text-[11px] text-[#6F6F6F] mt-0.5">เอกสารทั้งหมด</p>
                     </div>
-                    {docsExpanded ? <ChevronDown size={16} className="text-slate-400 shrink-0" /> : <ChevronRight size={16} className="text-slate-400 shrink-0" />}
+                    {docsExpanded ? <ChevronDown size={16} className="text-slate-500 shrink-0" /> : <ChevronRight size={16} className="text-slate-500 shrink-0" />}
                   </button>
 
                   {docsExpanded && (
                     <div className="pl-2 space-y-1 max-h-40 overflow-y-auto">
                       {ownedDocs.length === 0 ? (
-                        <p className="text-xs text-slate-400">ยังไม่มีเอกสาร</p>
+                        <p className="text-xs text-slate-500">ยังไม่มีเอกสาร</p>
                       ) : ownedDocs.map((doc) => (
                         <div key={doc.id} className="flex items-center justify-between gap-2 text-xs text-[#6F6F6F] py-1 border-b border-slate-50 last:border-0">
                           <span className="truncate">{doc.name}</span>
-                          <span className="shrink-0 text-slate-400">{doc.lastUpdated}</span>
+                          <span className="shrink-0 text-slate-500">{doc.lastUpdated}</span>
                         </div>
                       ))}
                     </div>
@@ -413,14 +413,14 @@ export default function EmployeeProfileModal({
                   )}
                 </div>
                 {visibleLogs.length === 0 ? (
-                  <p className="text-xs text-slate-400">ยังไม่มีกิจกรรม</p>
+                  <p className="text-xs text-slate-500">ยังไม่มีกิจกรรม</p>
                 ) : (
                   <div className="space-y-2 max-h-56 overflow-y-auto">
                     {visibleLogs.map((log) => (
                       <div key={log.id} className="flex items-start gap-2 text-xs">
                         <span className="inline-block text-[11px] font-semibold text-[#FF6537] bg-[#FFF1EC] px-1.5 py-0.5 rounded-full shrink-0 mt-0.5 whitespace-nowrap">{log.action}</span>
                         <span className="flex-1 min-w-0 text-[#6F6F6F]">{log.details}</span>
-                        <span className="shrink-0 text-slate-400 whitespace-nowrap">{formatThaiDateTimeShort(log.timestamp)}</span>
+                        <span className="shrink-0 text-slate-500 whitespace-nowrap">{formatThaiDateTimeShort(log.timestamp)}</span>
                       </div>
                     ))}
                   </div>
@@ -444,7 +444,7 @@ export default function EmployeeProfileModal({
                       />
                     </div>
                     <div>
-                      <label className="block text-[#272220] font-bold text-[11px] mb-1">รหัสผ่านใหม่ <span className="font-normal text-slate-400">(เว้นว่างถ้าไม่เปลี่ยน)</span></label>
+                      <label className="block text-[#272220] font-bold text-[11px] mb-1">รหัสผ่านใหม่ <span className="font-normal text-slate-500">(เว้นว่างถ้าไม่เปลี่ยน)</span></label>
                       <input
                         type="text"
                         placeholder="••••••••"
@@ -455,7 +455,7 @@ export default function EmployeeProfileModal({
                     </div>
                   </div>
                   <div>
-                    <label className="block text-[#272220] font-bold text-[11px] mb-1">จำกัดสิทธิเมนู <span className="font-normal text-slate-400">(ไม่บังคับ)</span></label>
+                    <label className="block text-[#272220] font-bold text-[11px] mb-1">จำกัดสิทธิเมนู <span className="font-normal text-slate-500">(ไม่บังคับ)</span></label>
                     <MenuRestrictionChecklist items={restrictableNavItemsFor(accountType)} selectedIds={restrictedMenuIds} onChange={setRestrictedMenuIds} />
                   </div>
                 </div>

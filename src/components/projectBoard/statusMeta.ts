@@ -143,7 +143,7 @@ export const TASK_STATUS_LABEL: Record<ProjectTaskStatus, string> = {
 };
 
 export const TASK_STATUS_COLOR: Record<ProjectTaskStatus, string> = {
-  todo: '#94A3B8',
+  todo: '#5B6B82',
   in_progress: '#FF6537',
   review: '#0EA5E9',
   blocked: '#F50C0C',

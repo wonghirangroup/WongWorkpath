@@ -176,12 +176,12 @@ function CredentialCardMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete
   return (
     <div className="flex items-center gap-0.5">
       <Tooltip content="แก้ไข">
-        <button onClick={onEdit} aria-label="แก้ไข" className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer">
+        <button onClick={onEdit} aria-label="แก้ไข" className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 cursor-pointer">
           <Pencil size={15} />
         </button>
       </Tooltip>
       <Tooltip content="ลบ">
-        <button onClick={onDelete} aria-label="ลบ" className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer">
+        <button onClick={onDelete} aria-label="ลบ" className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 cursor-pointer">
           <Trash2 size={15} />
         </button>
       </Tooltip>
@@ -691,7 +691,7 @@ export default function CredentialVault({
                   <button
                     type="button"
                     onClick={() => { setSearchQuery(''); setCurrentPage(1); searchInputRef.current?.focus(); }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-800 cursor-pointer"
                     aria-label="ล้างคำค้นหา"
                   >
                     <X size={15} />
@@ -878,7 +878,7 @@ export default function CredentialVault({
                   </h3>
                   <button
                     onClick={resetCredentialForm}
-                    className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                    className="text-slate-500 hover:text-slate-800 cursor-pointer"
                   >
                     <X size={18} />
                   </button>
@@ -910,7 +910,7 @@ export default function CredentialVault({
                       onFocus={() => setIsServiceSuggestOpen(true)}
                       onKeyDown={handleServiceInputKeyDown}
                       onBlur={() => { setIsServiceSuggestOpen(false); applyUniqueLabel(newLabel); }}
-                      className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                      className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                     />
                     {renameNotice && (
                       <p className="text-xs font-semibold text-[#FF6537] mt-1.5">ℹ️ {renameNotice}</p>
@@ -949,7 +949,7 @@ export default function CredentialVault({
                       placeholder="กรุณาใส่ชื่อผู้ใช้"
                       value={newUsername}
                       onChange={(e) => setNewUsername(e.target.value)}
-                      className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                      className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                     />
                   </div>
 
@@ -964,13 +964,13 @@ export default function CredentialVault({
                         placeholder="กรุณาใส่รหัสผ่าน"
                         value={newKeyValue}
                         onChange={(e) => setNewKeyValue(e.target.value)}
-                        className="w-full p-2.5 pr-11 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                        className="w-full p-2.5 pr-11 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                       />
                       <button
                         type="button"
                         tabIndex={-1}
                         onClick={() => setShowFormPassword((prev) => !prev)}
-                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-800 cursor-pointer"
                       >
                         {showFormPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                       </button>
@@ -999,9 +999,9 @@ export default function CredentialVault({
                           {currentUserDepartment}
                         </span>
                       ) : (
-                        <span className="text-slate-400">ไม่ทราบแผนกของบัญชีนี้</span>
+                        <span className="text-slate-500">ไม่ทราบแผนกของบัญชีนี้</span>
                       )}
-                      <span className="text-slate-400">(เห็นได้เฉพาะแผนกเดียวกัน)</span>
+                      <span className="text-slate-500">(เห็นได้เฉพาะแผนกเดียวกัน)</span>
                     </div>
                   )}
 
@@ -1017,7 +1017,7 @@ export default function CredentialVault({
                         placeholder="เลือกโครงการ"
                         options={projects.map((p) => ({ value: p.id, label: p.title }))}
                       />
-                      <p className="text-[11px] text-slate-400 mt-1">เห็นได้เฉพาะผู้รับผิดชอบโครงการนี้</p>
+                      <p className="text-[11px] text-slate-500 mt-1">เห็นได้เฉพาะผู้รับผิดชอบโครงการนี้</p>
                     </div>
                   )}
 
@@ -1028,7 +1028,7 @@ export default function CredentialVault({
                       placeholder="กรุณาแนบลิงก์ URL"
                       value={newUrl}
                       onChange={(e) => setNewUrl(e.target.value)}
-                      className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                      className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                     />
                   </div>
                 </div>
@@ -1058,7 +1058,7 @@ export default function CredentialVault({
           <>
           {viewMode === 'list' ? (
             filteredCredentials.length === 0 ? (
-              <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-400 text-sm">
+              <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-500 text-sm">
                 ไม่พบรายการที่ตรงกับการค้นหา
               </div>
             ) : (
@@ -1143,7 +1143,7 @@ export default function CredentialVault({
                                 {projectById.get(item.projectId)?.title ?? 'ไม่ทราบโครงการ'}
                               </span>
                             ) : (
-                              <span className="text-[11px] text-slate-400">ส่วนตัว</span>
+                              <span className="text-[11px] text-slate-500">ส่วนตัว</span>
                             )}
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap">
@@ -1207,7 +1207,7 @@ export default function CredentialVault({
           ) : (
           <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-2">
             {filteredCredentials.length === 0 ? (
-              <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-400 text-sm lg:col-span-2">
+              <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-500 text-sm lg:col-span-2">
                 {credentials.length === 0 ? 'ยังไม่ได้สร้างรหัสผ่าน' : 'ไม่พบรายการที่ตรงกับการค้นหา'}
               </div>
             ) : (
@@ -1341,7 +1341,7 @@ export default function CredentialVault({
                       </div>
 
                       {item.notes && (
-                        <p className="text-[12px] font-medium text-slate-400 italic pt-1.5 border-t border-slate-100/70 flex items-start gap-1.5">
+                        <p className="text-[12px] font-medium text-slate-500 italic pt-1.5 border-t border-slate-100/70 flex items-start gap-1.5">
                           <StickyNote size={11} className="shrink-0 mt-0.5" />
                           <span>{item.notes}</span>
                         </p>
@@ -1428,7 +1428,7 @@ export default function CredentialVault({
               <h3 className="text-sm font-bold text-slate-800">ลบรายการนี้?</h3>
               <button
                 onClick={() => { setDeleteTarget(null); setDeleteConfirmInput(''); }}
-                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                className="text-slate-500 hover:text-slate-800 cursor-pointer"
               >
                 <X size={18} />
               </button>

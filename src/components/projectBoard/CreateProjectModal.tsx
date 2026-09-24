@@ -17,7 +17,7 @@ import Dropdown from '../Dropdown';
 import { useEscapeToClose } from '../../lib/useEscapeToClose';
 import { useAppData } from '../../context/AppDataContext';
 import DeadlineReminderField from '../DeadlineReminderField';
-import { DEFAULT_DEADLINE_REMINDER_DAYS } from '../../lib/deadlineReminders';
+import { DEFAULT_DEADLINE_REMINDER_DAYS, reminderLimit } from '../../lib/deadlineReminders';
 
 // Re-exported for backward compatibility — every other file that formats a Thai date already
 // imports this from here; the implementation itself now lives in lib/datetime.ts so ThaiDatePicker
@@ -58,7 +58,7 @@ function EmployeeOptionRow({ emp }: { emp: Employee }) {
         {/* ผู้บริหาร/หัวหน้าฝ่าย sit over a whole ฝ่าย and are exempt from needing a department (see
             employees.ts's isDepartmentExempt) — falls back to showing their division instead of a
             dangling "role · " with nothing after it. */}
-        <span className="block truncate text-[11px] text-slate-400">
+        <span className="block truncate text-[11px] text-slate-500">
           {emp.role}{(emp.department || emp.division) ? ` · ${emp.department || emp.division}` : ''}
         </span>
       </span>
@@ -145,7 +145,7 @@ export function EmployeeMultiSelect({
             setQuery(e.target.value);
             setIsOpen(true);
           }}
-          className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+          className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
         />
         {isOpen && placement && createPortal(
           <div
@@ -161,7 +161,7 @@ export function EmployeeMultiSelect({
             className="z-60 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg py-1"
           >
             {filtered.length === 0 ? (
-              <p className="px-3 py-2 text-xs text-slate-400">
+              <p className="px-3 py-2 text-xs text-slate-500">
                 {employees.length === valueIds.length ? 'เลือกครบทุกคนแล้ว' : 'ไม่พบพนักงาน'}
               </p>
             ) : (
@@ -232,14 +232,14 @@ function StepIndicator({ step }: { step: 1 | 2 | 3 }) {
             <div className="flex flex-col items-center gap-1.5 w-16 shrink-0">
               <div
                 className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 transition-all ${
-                  isDone ? 'bg-[#FF6537] text-white' : 'bg-slate-200 text-slate-400'
+                  isDone ? 'bg-[#FF6537] text-white' : 'bg-slate-200 text-slate-600'
                 }`}
               >
                 <Icon size={18} />
               </div>
               <span
                 className={`text-[11px] text-center leading-tight ${
-                  isCurrent ? 'font-bold text-[#FF6537]' : isDone ? 'font-medium text-[#272220]' : 'text-slate-400'
+                  isCurrent ? 'font-bold text-[#FF6537]' : isDone ? 'font-medium text-[#272220]' : 'text-slate-500'
                 }`}
               >
                 {s.label}
@@ -282,7 +282,7 @@ function SummarySection({ title, dotColor, onEdit, children }: { title: string; 
 function SummaryTextBlock({ label, text }: { label: string; text: string }) {
   return (
     <div className="flex flex-col flex-1 min-h-28 lg:min-h-16 gap-1">
-      <span className="text-xs text-[#767676]">{label}</span>
+      <span className="text-xs text-[#6F6F6F]">{label}</span>
       <div className="relative flex-1 min-h-0">
         <p className="absolute inset-0 overflow-y-auto text-xs font-medium leading-normal text-[#272220] whitespace-pre-wrap wrap-break-word">
           {text.trim() ? text : <span className="font-semibold">ไม่ระบุ</span>}
@@ -295,7 +295,7 @@ function SummaryTextBlock({ label, text }: { label: string; text: string }) {
 function SummaryRow({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-3 text-xs">
-      <span className="text-[#767676] shrink-0">{label}</span>
+      <span className="text-[#6F6F6F] shrink-0">{label}</span>
       <span className="text-[#272220] font-semibold text-right min-w-0">{value}</span>
     </div>
   );
@@ -494,8 +494,12 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
         startDate: startDate || undefined,
         endDate: endDate || undefined,
       });
-      // Only a choice the person actually made is saved — untouched means "use the default".
-      if (pendingReminder !== null) handleSetDeadlineReminder('project', createdProject.id, pendingReminder);
+      // Only a choice the person actually made is saved — untouched means "use the default" — and
+      // only what fits the project's own time frame (the dates may have changed since it was picked).
+      const savedLimit = reminderLimit(startDate, endDate);
+      if (pendingReminder !== null && savedLimit) {
+        handleSetDeadlineReminder('project', createdProject.id, pendingReminder.filter((d) => d <= savedLimit.maxDays));
+      }
       onCreated(finalTitle, willCreateFolder);
       resetAndClose();
     } catch (err) {
@@ -566,7 +570,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                   ตรวจสอบความถูกต้องของข้อมูลก่อนยืนยันการบันทึกเข้าสู่ระบบ
                 </p>
               </div>
-              <button onClick={resetAndClose} className="text-slate-400 hover:text-slate-600 cursor-pointer" type="button">
+              <button onClick={resetAndClose} className="text-slate-500 hover:text-slate-800 cursor-pointer" type="button">
                 <X size={18} />
               </button>
             </div>
@@ -601,7 +605,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                             setTimeout(() => setRenameNotice(''), 4000);
                           }
                         }}
-                        className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                        className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                       />
                       {renameNotice && (
                         <p className="text-xs font-semibold text-[#FF6537] mt-1.5">ℹ️ {renameNotice}</p>
@@ -634,7 +638,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                             maxLength={10}
                             value={customTypeAbbrev}
                             onChange={(e) => setCustomTypeAbbrev(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
-                            className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                            className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                           />
                         ) : (
                           <input
@@ -643,7 +647,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                             tabIndex={-1}
                             value={type ?? ''}
                             placeholder="เลือกประเภทก่อน"
-                            className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg bg-slate-50 text-[#6F6F6F] placeholder:text-[#B0B0B0] cursor-default focus:outline-none"
+                            className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg bg-slate-50 text-[#6F6F6F] placeholder:text-[#767676] cursor-default focus:outline-none"
                           />
                         )}
                       </div>
@@ -658,9 +662,9 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                           placeholder="เช่น การตลาดพิเศษ"
                           value={customTypeName}
                           onChange={(e) => setCustomTypeName(e.target.value)}
-                          className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                          className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                         />
-                        <p className="text-[11px] text-[#767676] mt-1">
+                        <p className="text-[11px] text-[#6F6F6F] mt-1">
                           ประเภทและตัวย่อนี้จะถูกบันทึกไว้ให้เลือกใช้กับโครงการอื่นได้ในครั้งถัดไป
                         </p>
                       </div>
@@ -671,7 +675,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                           โครงการหลัก <span className="text-[#FF6537]">*</span>
                         </label>
                         {topLevelProjects.length === 0 ? (
-                          <p className="text-xs text-[#767676] bg-slate-50 border border-[#E5E5E5] rounded-lg px-3 py-2.5">
+                          <p className="text-xs text-[#6F6F6F] bg-slate-50 border border-[#E5E5E5] rounded-lg px-3 py-2.5">
                             ยังไม่มีโครงการประเภท "โครงการ (P)" ในระบบให้เลือกเป็นโครงการหลัก
                           </p>
                         ) : (
@@ -682,7 +686,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                             options={topLevelProjects.map((p) => ({ value: p.id, label: `${p.title} (${p.code})` }))}
                           />
                         )}
-                        <p className="text-[11px] text-[#767676] mt-1">โครงการย่อยต้องผูกกับโครงการหลักที่เป็นประเภท "โครงการ (P)" เท่านั้น</p>
+                        <p className="text-[11px] text-[#6F6F6F] mt-1">โครงการย่อยต้องผูกกับโครงการหลักที่เป็นประเภท "โครงการ (P)" เท่านั้น</p>
                       </div>
                     )}
                     <div>
@@ -703,9 +707,9 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                           // Clearing it hands control back to the title-derived suggestion.
                           setAbbreviationTouched(next.trim() !== '');
                         }}
-                        className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                        className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                       />
-                      <p className="text-[11px] text-[#767676] mt-1">ใช้ประกอบรหัสโครงการ (เช่น GS-69-P-001) — จำเป็นต้องกรอก</p>
+                      <p className="text-[11px] text-[#6F6F6F] mt-1">ใช้ประกอบรหัสโครงการ (เช่น GS-69-P-001) — จำเป็นต้องกรอก</p>
                     </div>
                     </div>
                     {/* Right column is just the description, stretched to the same height as the
@@ -718,7 +722,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                         placeholder="อธิบายเป้าหมายหรือขอบเขตของโครงการ..."
                         value={description}
                         onChange={(e) => setDescription(e.target.value)}
-                        className="w-full flex-1 min-h-24 resize-none p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                        className="w-full flex-1 min-h-24 resize-none p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                       />
                     </div>
                   </div>
@@ -747,7 +751,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                       <div>
                         <div className="flex items-baseline justify-between mb-1">
                           <label className="block text-[#272220] font-bold text-[11px]">ระดับความสำคัญ</label>
-                          <span className="text-[11px] text-[#767676]">1 = สำคัญที่สุด, 5 = สำคัญน้อยที่สุด</span>
+                          <span className="text-[11px] text-[#6F6F6F]">1 = สำคัญที่สุด, 5 = สำคัญน้อยที่สุด</span>
                         </div>
                         <div className="flex gap-2">
                           {PRIORITY_OPTIONS.map((p) => (
@@ -787,6 +791,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                           days={pendingReminder ?? DEFAULT_DEADLINE_REMINDER_DAYS}
                           isDefault={pendingReminder === null}
                           onChange={setPendingReminder}
+                          limit={reminderLimit(startDate, endDate)}
                           deadlineWord="วันสิ้นสุดโครงการ"
                           note="จะบันทึกพร้อมกับโครงการนี้"
                           warning={
@@ -820,7 +825,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                                   placeholder="หน้าที่ในโครงการนี้..."
                                   value={memberDuties[emp.id] ?? ''}
                                   onChange={(e) => setMemberDuties((prev) => ({ ...prev, [emp.id]: e.target.value }))}
-                                  className="flex-1 p-1.5 text-xs border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                                  className="flex-1 p-1.5 text-xs border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                                 />
                               </div>
                             ))}
@@ -844,14 +849,14 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                         <div>
                           <label className="block text-[#272220] font-bold text-[11px] mb-1">งบประมาณ (บาท)</label>
                           <div className="relative">
-                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-[#767676]">฿</span>
+                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-[#6F6F6F]">฿</span>
                             <input
                               type="text"
                               inputMode="numeric"
                               placeholder="เช่น 500,000"
                               value={formatThousands(budget)}
                               onChange={(e) => setBudget(e.target.value.replace(/[^\d]/g, ''))}
-                              className="w-full p-2.5 pl-6 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                              className="w-full p-2.5 pl-6 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                             />
                           </div>
                         </div>
@@ -878,7 +883,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                             placeholder="ชื่อโฟลเดอร์"
                             value={folderName}
                             onChange={(e) => setFolderName(e.target.value)}
-                            className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                            className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                           />
                         )}
                       </div>

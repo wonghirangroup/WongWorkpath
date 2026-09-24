@@ -152,7 +152,7 @@ export default function AddResponsibleModal({
                 </h3>
                 <p className="text-[11px] text-[#6F6F6F] mt-0.5 truncate">{projectTitle}</p>
               </div>
-              <button onClick={onClose} className="text-slate-400 hover:text-slate-600 cursor-pointer shrink-0" type="button" aria-label="ปิด">
+              <button onClick={onClose} className="text-slate-500 hover:text-slate-800 cursor-pointer shrink-0" type="button" aria-label="ปิด">
                 <X size={18} />
               </button>
             </div>
@@ -193,7 +193,7 @@ export default function AddResponsibleModal({
                           placeholder="หน้าที่ในโครงการนี้..."
                           value={memberDuties[emp.id] ?? ''}
                           onChange={(e) => setMemberDuties((prev) => ({ ...prev, [emp.id]: e.target.value }))}
-                          className="flex-1 p-1.5 text-xs border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                          className="flex-1 p-1.5 text-xs border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                         />
                       </div>
                     ))}
@@ -219,7 +219,7 @@ export default function AddResponsibleModal({
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
                     placeholder="โครงการนี้มีผู้รับผิดชอบหลักแล้ว ระบุเหตุผลเพื่อขออนุมัติเพิ่ม..."
-                    className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                    className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                   />
                 </div>
               )}

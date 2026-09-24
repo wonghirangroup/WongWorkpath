@@ -17,7 +17,7 @@ import { useEscapeToClose } from '../../lib/useEscapeToClose';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useAppData } from '../../context/AppDataContext';
 import DeadlineReminderField, { useSavedReminder } from '../DeadlineReminderField';
-import { DEFAULT_DEADLINE_REMINDER_DAYS } from '../../lib/deadlineReminders';
+import { DEFAULT_DEADLINE_REMINDER_DAYS, reminderLimit } from '../../lib/deadlineReminders';
 
 // 'topic' ("หัวข้อ") is not a separate stored entity — it's the exact same ProjectTaskItem as
 // 'task', just created through a differently-labeled tab for a task the user intends to hold
@@ -353,8 +353,12 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
             parentTaskId: parentTask?.id ?? null,
             ...taskFields,
           });
-          // Only a choice the person actually made is saved — untouched means "use the default".
-          if (pendingReminder !== null) handleSetDeadlineReminder('task', createdTask.id, pendingReminder);
+          // Only a choice the person actually made is saved — untouched means "use the default" — and
+          // only what fits the task's own time frame (the dates may have changed since it was picked).
+          const savedLimit = reminderLimit(startDate, dueDate);
+          if (pendingReminder !== null && savedLimit) {
+            handleSetDeadlineReminder('task', createdTask.id, pendingReminder.filter((d) => d <= savedLimit.maxDays));
+          }
           // Folder creation is create-only — re-offering it on every edit-save would spawn a fresh
           // duplicate folder each time, since there's no "already created" flag to check against.
           let newFolderId: string | undefined;
@@ -482,7 +486,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                     : 'กรอกรายละเอียดการประชุมสำหรับโครงการนี้'}
                 </p>
               </div>
-              <button onClick={resetAndClose} className="text-slate-400 hover:text-slate-600 cursor-pointer" type="button">
+              <button onClick={resetAndClose} className="text-slate-500 hover:text-slate-800 cursor-pointer" type="button">
                 <X size={18} />
               </button>
             </div>
@@ -538,7 +542,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                       placeholder={mode === 'task' ? 'เช่น ออกแบบหน้าร้านใหม่' : mode === 'topic' ? 'เช่น เบิกทุน NIA' : 'เช่น ประชุมทบทวนความคืบหน้าโครงการ'}
                       value={title}
                       onChange={(e) => setTitle(e.target.value)}
-                      className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                      className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                     />
                   </div>
 
@@ -563,7 +567,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                       placeholder="อธิบายรายละเอียดของงานนี้..."
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
-                      className="w-full flex-1 min-h-20 lg:min-h-16 resize-none p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                      className="w-full flex-1 min-h-20 lg:min-h-16 resize-none p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                     />
                   </div>
                   {mode !== 'meeting' ? (
@@ -572,7 +576,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                           <div className="sm:col-span-2 flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
                             <div>
                               <p className="text-[#272220] font-bold text-[11px] mb-1">สถานะงาน</p>
-                              <p className="text-[11px] text-[#767676]">
+                              <p className="text-[11px] text-[#6F6F6F]">
                                 {hasSubtasks
                                   ? 'งานนี้มีงานย่อยแล้ว — สถานะคำนวณอัตโนมัติจากงานย่อยทั้งหมด (ดำเนินการอยู่จนกว่างานย่อยทุกงานจะเสร็จ) ไม่สามารถแก้ไขเองได้'
                                   : 'เปลี่ยนตามขั้นตอนอัตโนมัติ — ยังไม่เริ่ม/กำลังทำตามผู้รับผิดชอบ, รอตรวจ/เสร็จแล้วผ่านการ "ส่งงาน"/"ตรวจงาน"'}
@@ -603,7 +607,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                                 className="rounded border-[#E5E5E5] text-[#FF6537] focus:ring-[#FF6537] cursor-pointer"
                               />
                               <span className="text-[#272220] font-bold text-[11px]">ติดปัญหา</span>
-                              <span className="text-[11px] text-[#767676]">— ทุกคนที่เกี่ยวข้องกับโปรเจคนี้จะได้รับแจ้งเตือน</span>
+                              <span className="text-[11px] text-[#6F6F6F]">— ทุกคนที่เกี่ยวข้องกับโปรเจคนี้จะได้รับแจ้งเตือน</span>
                             </label>
                             {blocked && (
                               <textarea
@@ -612,7 +616,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                                 value={blockedReason}
                                 onChange={(e) => setBlockedReason(e.target.value)}
                                 placeholder="ติดปัญหาอะไร? (บังคับกรอก — จะโชว์ให้คนอื่นเห็นด้วย)"
-                                className="w-full mt-2 p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                                className="w-full mt-2 p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                               />
                             )}
                           </div>
@@ -638,7 +642,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                               value={reason}
                               onChange={(e) => setReason(e.target.value)}
                               placeholder="งานนี้มีผู้รับผิดชอบแล้ว ระบุเหตุผลเพื่อขออนุมัติแก้ไข..."
-                              className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                              className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                             />
                           </div>
                         )}
@@ -667,7 +671,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                               placeholder="ชื่อโฟลเดอร์"
                               value={folderName}
                               onChange={(e) => { setFolderName(e.target.value); setFolderNameTouched(true); }}
-                              className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                              className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                             />
                           )}
                         </div>
@@ -733,7 +737,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                           </div>
                         </div>
 
-                        <p className="sm:col-span-2 -mt-1.5 text-[11px] text-[#767676]">ผู้ตรวจคนใดคนหนึ่งกดผ่าน/ตีกลับก็มีผลทันที ถ้ายังไม่เลือกตอนนี้ เลือกได้อีกครั้งตอนกด "ส่งงาน"</p>
+                        <p className="sm:col-span-2 -mt-1.5 text-[11px] text-[#6F6F6F]">ผู้ตรวจคนใดคนหนึ่งกดผ่าน/ตีกลับก็มีผลทันที ถ้ายังไม่เลือกตอนนี้ เลือกได้อีกครั้งตอนกด "ส่งงาน"</p>
 
                         <div>
                           <label className="block text-[#272220] font-bold text-[11px] mb-1">วันที่เริ่ม</label>
@@ -767,6 +771,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                           {isEditing ? (
                             <DeadlineReminderField
                               {...savedReminder}
+                              limit={reminderLimit(startDate, dueDate)}
                               deadlineWord="กำหนดส่ง"
                               note="บันทึกทันที ไม่ต้องรออนุมัติ"
                               warning={assigneeIds.includes(currentUserId) ? undefined : 'คุณไม่ได้เป็นผู้รับผิดชอบงานนี้ จึงจะไม่ได้รับการเตือน'}
@@ -776,6 +781,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                               days={pendingReminder ?? DEFAULT_DEADLINE_REMINDER_DAYS}
                               isDefault={pendingReminder === null}
                               onChange={setPendingReminder}
+                              limit={reminderLimit(startDate, dueDate)}
                               deadlineWord="กำหนดส่ง"
                               note="จะบันทึกพร้อมกับงานนี้"
                               warning={assigneeIds.includes(currentUserId) ? undefined : 'เตือนเฉพาะผู้รับผิดชอบงาน — คุณยังไม่ได้อยู่ในรายชื่อผู้รับผิดชอบ'}
@@ -843,7 +849,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                             placeholder="เช่น ห้องประชุมชั้น 3"
                             value={location}
                             onChange={(e) => setLocation(e.target.value)}
-                            className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                            className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                           />
                         </div>
 
@@ -854,7 +860,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                             placeholder="เช่น https://maps.google.com/..."
                             value={locationLink}
                             onChange={(e) => setLocationLink(e.target.value)}
-                            className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                            className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                           />
                         </div>
 
@@ -865,7 +871,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                             placeholder="เช่น https://meet.google.com/..."
                             value={meetingLink}
                             onChange={(e) => setMeetingLink(e.target.value)}
-                            className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                            className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                           />
                         </div>
                     </>
@@ -877,7 +883,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                     {!isEditing && (
                     <div className="lg:col-span-2 border-t border-slate-100 pt-3">
                       <label className="block text-[#272220] font-bold text-[11px] mb-1">
-                        ไฟล์แนบ/ลิงก์ประกอบ (ไม่บังคับ) <span className="font-normal text-[#767676]">— ไม่เกิน {formatFileSize(MAX_FILE_BYTES)} ต่อไฟล์</span>
+                        ไฟล์แนบ/ลิงก์ประกอบ (ไม่บังคับ) <span className="font-normal text-[#6F6F6F]">— ไม่เกิน {formatFileSize(MAX_FILE_BYTES)} ต่อไฟล์</span>
                       </label>
                       {/* File picker and link field sit side by side (stacked below sm) so this
                           row costs one line of height instead of two. */}
@@ -923,7 +929,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                             setLinkUrl('');
                           }}
                           placeholder="แปะลิงก์ที่นี่แล้วกด + เพื่อแนบ..."
-                          className="flex-1 min-w-0 p-2.5 text-xs border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                          className="flex-1 min-w-0 p-2.5 text-xs border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                         />
                         <button
                           type="button"
@@ -954,12 +960,12 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                                 {/* Name and size share one line — a second line per chip is what pushed
                                     a handful of attachments past the modal's no-scroll height. */}
                                 <p className="min-w-0 flex-1 truncate text-xs font-medium text-[#272220]">
-                                  {f.name} <span className="font-normal text-[11px] text-[#767676]">{formatFileSize(f.size)}</span>
+                                  {f.name} <span className="font-normal text-[11px] text-[#6F6F6F]">{formatFileSize(f.size)}</span>
                                 </p>
                                 <button
                                   type="button"
                                   onClick={() => setPickedFiles((prev) => prev.filter((_, i) => i !== idx))}
-                                  className="text-slate-400 hover:text-red-600 cursor-pointer shrink-0"
+                                  className="text-slate-500 hover:text-red-600 cursor-pointer shrink-0"
                                 >
                                   <Trash2 size={13} />
                                 </button>
@@ -974,12 +980,12 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                                   <Icon size={15} className={color} />
                                 </div>
                                 <p className="min-w-0 flex-1 truncate text-xs font-medium text-[#272220]" title={link.url}>
-                                  {link.name} <span className="font-normal text-[11px] text-[#767676]">{link.url}</span>
+                                  {link.name} <span className="font-normal text-[11px] text-[#6F6F6F]">{link.url}</span>
                                 </p>
                                 <button
                                   type="button"
                                   onClick={() => setPickedLinks((prev) => prev.filter((_, i) => i !== idx))}
-                                  className="text-slate-400 hover:text-red-600 cursor-pointer shrink-0"
+                                  className="text-slate-500 hover:text-red-600 cursor-pointer shrink-0"
                                 >
                                   <Trash2 size={13} />
                                 </button>

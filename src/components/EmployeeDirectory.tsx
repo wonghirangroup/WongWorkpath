@@ -38,7 +38,7 @@ function EmployeeQuickViewModal({ employee, onClose }: { employee: Employee | nu
             role="dialog" aria-modal="true" aria-label="ข้อมูลพนักงาน" className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-sm overflow-hidden"
           >
             <div className="flex justify-end px-4 pt-4">
-              <button onClick={onClose} className="text-slate-400 hover:text-slate-600 cursor-pointer" type="button" aria-label="ปิด">
+              <button onClick={onClose} className="text-slate-500 hover:text-slate-800 cursor-pointer" type="button" aria-label="ปิด">
                 <X size={18} />
               </button>
             </div>
@@ -57,7 +57,7 @@ function EmployeeQuickViewModal({ employee, onClose }: { employee: Employee | nu
                 <div className="min-w-0">
                   <h3 className="text-base font-bold text-[#272220] truncate">{employee.nickname || employee.name}</h3>
                   {employee.nickname && employee.nickname !== employee.name && (
-                    <p className="text-[12px] text-slate-400 truncate">{employee.name}</p>
+                    <p className="text-[12px] text-slate-500 truncate">{employee.name}</p>
                   )}
                   <span
                     className={`inline-flex items-center gap-1 mt-1 font-bold uppercase px-2 py-0.5 rounded-full leading-none text-[11px] ${
@@ -72,11 +72,11 @@ function EmployeeQuickViewModal({ employee, onClose }: { employee: Employee | nu
 
               <div className="space-y-2.5 pt-4 border-t border-slate-100 text-[13px]">
                 <div className="flex items-center gap-2 text-[#272220]">
-                  <Briefcase size={14} className="text-[#767676] shrink-0" />
+                  <Briefcase size={14} className="text-[#6F6F6F] shrink-0" />
                   <span>{employee.role}</span>
                 </div>
                 <div className="flex items-center gap-2 text-[#272220]">
-                  <Building2 size={14} className="text-[#767676] shrink-0" />
+                  <Building2 size={14} className="text-[#6F6F6F] shrink-0" />
                   <span>{employee.division || '—'}</span>
                   {employee.department && (
                     <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${getDepartmentTagClass(employee.department)}`}>
@@ -85,11 +85,11 @@ function EmployeeQuickViewModal({ employee, onClose }: { employee: Employee | nu
                   )}
                 </div>
                 <div className="flex items-center gap-2 text-[#272220]">
-                  <Phone size={14} className="text-[#767676] shrink-0" />
+                  <Phone size={14} className="text-[#6F6F6F] shrink-0" />
                   <span>{employee.phone || '—'}</span>
                 </div>
                 <div className="flex items-center gap-2 text-[#272220]">
-                  <Mail size={14} className="text-[#767676] shrink-0" />
+                  <Mail size={14} className="text-[#6F6F6F] shrink-0" />
                   <span className="break-all">{employee.email || '—'}</span>
                 </div>
               </div>
@@ -166,7 +166,7 @@ export default function EmployeeDirectory({ employees, orgDivisions, currentUser
         {activeTab === 'employees' ? (
           <div className="flex flex-col lg:flex-row gap-3 lg:items-center">
             <div className="relative w-full lg:w-137.5 lg:flex-none">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
               <input
                 type="text"
                 value={searchTerm}
@@ -179,7 +179,7 @@ export default function EmployeeDirectory({ employees, orgDivisions, currentUser
                   <button
                     type="button"
                     onClick={() => setSearchTerm('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-800 cursor-pointer"
                     aria-label="ล้างคำค้นหา"
                   >
                     <X size={15} />
@@ -278,7 +278,7 @@ export default function EmployeeDirectory({ employees, orgDivisions, currentUser
           <p className="font-normal text-[16px] text-[#6F6F6F] leading-none">ทั้งหมด {filteredEmployees.length} คน</p>
 
           {filteredEmployees.length === 0 ? (
-            <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-400 text-sm">
+            <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-500 text-sm">
               {employees.length === 0 ? 'ยังไม่มีพนักงานในระบบ' : 'ไม่พบรายการที่ตรงกับการค้นหา'}
             </div>
           ) : viewMode === 'grid' ? (
@@ -306,7 +306,7 @@ export default function EmployeeDirectory({ employees, orgDivisions, currentUser
                         {accountBadge(emp)}
                       </h4>
                       {emp.nickname && emp.nickname !== emp.name && (
-                        <p className="text-[11px] text-slate-400 truncate">{emp.name}</p>
+                        <p className="text-[11px] text-slate-500 truncate">{emp.name}</p>
                       )}
                     </div>
                     <Tooltip content="ดูรายละเอียด">
@@ -314,7 +314,7 @@ export default function EmployeeDirectory({ employees, orgDivisions, currentUser
                         type="button"
                         onClick={(e) => { e.stopPropagation(); setViewingEmployee(emp); }}
                         aria-label="ดูรายละเอียด"
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer shrink-0"
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 cursor-pointer shrink-0"
                       >
                         <Eye size={15} />
                       </button>
@@ -390,7 +390,7 @@ export default function EmployeeDirectory({ employees, orgDivisions, currentUser
                       <td className="px-4 py-3 whitespace-nowrap text-[12px] font-normal text-[#6F6F6F]">{emp.nickname || '—'}</td>
                       <td className="px-4 py-3 whitespace-nowrap text-[12px] font-normal text-[#6F6F6F]">{emp.phone || '—'}</td>
                       <td className="px-4 py-3 whitespace-nowrap text-[12px] font-normal text-[#6F6F6F]">
-                        <span className="flex items-center gap-1"><AtSign size={11} className="text-slate-300 shrink-0" />{emp.email}</span>
+                        <span className="flex items-center gap-1"><AtSign size={11} className="text-slate-500 shrink-0" />{emp.email}</span>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">{accountBadge(emp, 'xs')}</td>
                       <td className="px-4 py-3 whitespace-nowrap text-[12px] font-normal text-[#6F6F6F]">{emp.role}</td>
@@ -401,7 +401,7 @@ export default function EmployeeDirectory({ employees, orgDivisions, currentUser
                             {emp.department}
                           </span>
                         ) : (
-                          <span className="text-[#767676]">—</span>
+                          <span className="text-[#6F6F6F]">—</span>
                         )}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
@@ -410,7 +410,7 @@ export default function EmployeeDirectory({ employees, orgDivisions, currentUser
                             type="button"
                             onClick={(e) => { e.stopPropagation(); setViewingEmployee(emp); }}
                             aria-label="ดูรายละเอียด"
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 cursor-pointer"
                           >
                             <Eye size={15} />
                           </button>

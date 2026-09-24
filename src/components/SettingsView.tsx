@@ -32,7 +32,7 @@ interface SettingsViewProps {
 }
 
 const INPUT_CLASS =
-  'w-full h-11 px-3 text-sm text-[#272220] border border-[#E5E5E5] rounded-xl bg-white placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537] disabled:bg-[#F9F9F9] disabled:text-[#6F6F6F] disabled:cursor-not-allowed';
+  'w-full h-11 px-3 text-sm text-[#272220] border border-[#E5E5E5] rounded-xl bg-white placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537] disabled:bg-[#F9F9F9] disabled:text-[#6F6F6F] disabled:cursor-not-allowed';
 
 const CARD_CLASS = 'bg-white rounded-2xl border border-[#EDEEEF] shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)]';
 
@@ -93,7 +93,7 @@ function PasswordInput({ id, value, onChange, show, onToggleShow, autoComplete =
         type="button"
         tabIndex={-1}
         onClick={onToggleShow}
-        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-800 cursor-pointer"
         aria-label={show ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'}
       >
         {show ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -373,7 +373,7 @@ export default function SettingsView({ currentUser, changeRequests, onUpdateEmpl
         <div className="flex lg:flex-col gap-1 lg:gap-4 overflow-x-auto lg:overflow-visible pb-1 lg:pb-0">
           {MENU_GROUPS.map((group) => (
             <div key={group.label} className="contents lg:flex lg:flex-col lg:gap-0.5">
-              <p className="hidden lg:block px-3 pt-1 pb-1 text-[11px] font-bold text-[#767676]">{group.label}</p>
+              <p className="hidden lg:block px-3 pt-1 pb-1 text-[11px] font-bold text-[#6F6F6F]">{group.label}</p>
               {group.items.map(({ id, label, icon: Icon }) => {
                 const isActive = section === id;
                 return (
@@ -527,7 +527,7 @@ export default function SettingsView({ currentUser, changeRequests, onUpdateEmpl
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
                   placeholder="ระบุเหตุผลเพื่อให้แอดมินพิจารณา..."
-                  className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-xl placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                  className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-xl placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                 />
               </div>
             )}

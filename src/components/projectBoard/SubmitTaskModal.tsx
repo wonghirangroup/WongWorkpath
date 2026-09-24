@@ -194,7 +194,7 @@ export default function SubmitTaskModal({ task, employees, documents, projectDoc
                 <h3 className="text-sm font-bold text-slate-800">ส่งงาน</h3>
                 <p className="text-[11px] text-[#6F6F6F] mt-0.5 truncate">{task.title}</p>
               </div>
-              <button onClick={onClose} className="text-slate-400 hover:text-slate-600 cursor-pointer shrink-0" type="button">
+              <button onClick={onClose} className="text-slate-500 hover:text-slate-800 cursor-pointer shrink-0" type="button">
                 <X size={18} />
               </button>
             </div>
@@ -203,7 +203,7 @@ export default function SubmitTaskModal({ task, employees, documents, projectDoc
               <div className="flex-1 min-h-0 overflow-y-auto px-5 pt-4 pb-1 space-y-3">
                 <div>
                   <label className="block text-[#272220] font-bold text-[11px] mb-1">
-                    ผู้ตรวจงาน <span className="text-[#FF6537]">*</span> <span className="font-normal text-[#767676]">(เลือกได้มากกว่า 1)</span>
+                    ผู้ตรวจงาน <span className="text-[#FF6537]">*</span> <span className="font-normal text-[#6F6F6F]">(เลือกได้มากกว่า 1)</span>
                   </label>
                   <EmployeeMultiSelect
                     employees={selectableEmployees}
@@ -220,13 +220,13 @@ export default function SubmitTaskModal({ task, employees, documents, projectDoc
                     placeholder="สรุปสิ่งที่ทำเสร็จแล้ว หรือสิ่งที่อยากให้ตรวจเป็นพิเศษ..."
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
-                    className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                    className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                   />
                 </div>
 
                 <div>
                   <label className="block text-[#272220] font-bold text-[11px] mb-1">
-                    ไฟล์แนบ (ไม่บังคับ) <span className="font-normal text-[#767676]">— ไม่เกิน {formatFileSize(MAX_FILE_BYTES)} ต่อไฟล์</span>
+                    ไฟล์แนบ (ไม่บังคับ) <span className="font-normal text-[#6F6F6F]">— ไม่เกิน {formatFileSize(MAX_FILE_BYTES)} ต่อไฟล์</span>
                   </label>
 
                   {existingFiles.length > 0 && (
@@ -239,7 +239,7 @@ export default function SubmitTaskModal({ task, employees, documents, projectDoc
                               <Icon size={16} className={color} />
                             </div>
                             <span className="truncate flex-1 text-xs font-medium text-[#272220]">{doc.name}</span>
-                            <span className="text-[11px] text-[#767676] shrink-0">ส่งไปแล้ว</span>
+                            <span className="text-[11px] text-[#6F6F6F] shrink-0">ส่งไปแล้ว</span>
                           </div>
                         );
                       })}
@@ -270,7 +270,7 @@ export default function SubmitTaskModal({ task, employees, documents, projectDoc
                       onChange={(e) => setLinkUrl(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addPickedLink(); } }}
                       placeholder="แปะลิงก์ที่นี่แล้วกด + เพื่อแนบ..."
-                      className="flex-1 min-w-0 p-2.5 text-xs border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                      className="flex-1 min-w-0 p-2.5 text-xs border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                     />
                     <button
                       type="button"
@@ -293,9 +293,9 @@ export default function SubmitTaskModal({ task, employees, documents, projectDoc
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="truncate text-xs font-medium text-[#272220]">{f.name}</p>
-                              <p className="text-[11px] text-[#767676]">{formatFileSize(f.size)}</p>
+                              <p className="text-[11px] text-[#6F6F6F]">{formatFileSize(f.size)}</p>
                             </div>
-                            <button type="button" onClick={() => removePickedFile(idx)} className="text-slate-400 hover:text-red-600 cursor-pointer shrink-0">
+                            <button type="button" onClick={() => removePickedFile(idx)} className="text-slate-500 hover:text-red-600 cursor-pointer shrink-0">
                               <Trash2 size={13} />
                             </button>
                           </div>
@@ -310,9 +310,9 @@ export default function SubmitTaskModal({ task, employees, documents, projectDoc
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="truncate text-xs font-medium text-[#272220]">{link.name}</p>
-                              <p className="truncate text-[11px] text-[#767676]">{link.url}</p>
+                              <p className="truncate text-[11px] text-[#6F6F6F]">{link.url}</p>
                             </div>
-                            <button type="button" onClick={() => removePickedLink(idx)} className="text-slate-400 hover:text-red-600 cursor-pointer shrink-0">
+                            <button type="button" onClick={() => removePickedLink(idx)} className="text-slate-500 hover:text-red-600 cursor-pointer shrink-0">
                               <Trash2 size={13} />
                             </button>
                           </div>

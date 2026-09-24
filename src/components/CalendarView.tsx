@@ -412,7 +412,7 @@ export default function CalendarView() {
             </p>
             <div className="mt-2.5 space-y-2.5 overflow-y-auto">
             {upcomingItems.length === 0 ? (
-              <p className="text-xs text-[#767676] text-center py-2">
+              <p className="text-xs text-[#6F6F6F] text-center py-2">
                 {filterType === 'Projects' ? 'ไม่มีโครงการที่ใกล้ครบกำหนด' : 'ไม่มีงานหรือการประชุมที่ใกล้ถึง'}
               </p>
             ) : (
@@ -425,7 +425,7 @@ export default function CalendarView() {
                       <p className="font-semibold text-[#272220] truncate flex items-center gap-1">
                         {item.task.title}
                       </p>
-                      <p className={`text-[11px] truncate ${item.task.projectId ? 'text-[#FF6537] group-hover:underline' : 'text-[#767676]'}`}>
+                      <p className={`text-[11px] truncate ${item.task.projectId ? 'text-[#FF6537] group-hover:underline' : 'text-[#6F6F6F]'}`}>
                         {formatThaiDateShort(item.task.dueDateISO)} · {item.task.projectLabel}
                       </p>
                     </>
@@ -480,7 +480,7 @@ export default function CalendarView() {
                         {isCancelled ? <Ban size={10} className="shrink-0 text-red-500" /> : <Users2 size={10} className="shrink-0 text-purple-600" />}
                         <span className={isCancelled || isPast ? 'line-through' : ''}>{item.meeting.title}</span>
                       </p>
-                      <p className={`text-[11px] truncate ${isCancelled ? 'text-red-500' : isPast ? 'text-[#767676]' : project ? 'text-[#FF6537] group-hover:underline' : 'text-[#767676] group-hover:text-purple-600'}`}>
+                      <p className={`text-[11px] truncate ${isCancelled ? 'text-red-500' : isPast ? 'text-[#6F6F6F]' : project ? 'text-[#FF6537] group-hover:underline' : 'text-[#6F6F6F] group-hover:text-purple-600'}`}>
                         {isCancelled ? 'ยกเลิกแล้ว' : isPast ? 'ผ่านไปแล้ว' : `${formatThaiDateShort(item.meeting.date)} ${item.meeting.startTime}${project ? ` · ${project.title}` : ''}`}
                       </p>
                     </button>
@@ -490,7 +490,7 @@ export default function CalendarView() {
                           type="button"
                           onClick={() => setCancellingMeeting(item.meeting)}
                           aria-label="ยกเลิกประชุม"
-                          className="text-[#767676] hover:text-red-600 cursor-pointer shrink-0"
+                          className="text-[#6F6F6F] hover:text-red-600 cursor-pointer shrink-0"
                         >
                           <Ban size={12} />
                         </button>
@@ -572,7 +572,7 @@ export default function CalendarView() {
         ) : (
         <>
         {/* Days of Week Header Grid */}
-        <div className="shrink-0 mt-4 grid grid-cols-7 gap-1 text-center font-bold text-[11px] text-[#767676] uppercase select-none border-b border-slate-100 pb-2">
+        <div className="shrink-0 mt-4 grid grid-cols-7 gap-1 text-center font-bold text-[11px] text-[#6F6F6F] uppercase select-none border-b border-slate-100 pb-2">
           {daysOfWeek.map((day) => (
             <div key={day}>
               {day}
@@ -638,7 +638,7 @@ export default function CalendarView() {
                   <span className={`text-xs font-bold ${
                     isToday
                       ? 'bg-[#FF6537] text-white w-5 h-5 flex items-center justify-center rounded-full'
-                      : cell.isCurrentMonth ? 'text-[#272220]' : 'text-slate-400'
+                      : cell.isCurrentMonth ? 'text-[#272220]' : 'text-slate-500'
                   }`}>
                     {cell.date.getDate()}
                   </span>
@@ -683,7 +683,7 @@ export default function CalendarView() {
                         >
                           <div
                             className={`text-[11px] px-1.5 py-0.5 rounded-lg border truncate font-medium flex items-center gap-0.5 ${
-                              isCancelled || isPast ? 'bg-slate-50 text-slate-400 border-slate-200' : 'bg-purple-50 text-purple-700 border-purple-200'
+                              isCancelled || isPast ? 'bg-slate-50 text-slate-500 border-slate-200' : 'bg-purple-50 text-purple-700 border-purple-200'
                             }`}
                           >
                             {isCancelled ? <Ban size={9} className="shrink-0" /> : <Users2 size={9} className="shrink-0" />}
@@ -711,7 +711,7 @@ export default function CalendarView() {
                       visible chip, so a light day's leftover space reads as "more below" rather
                       than an unexplained gap under a cramped little stack of chips. */}
                   {hiddenDayChipCount > 0 && (
-                    <div className="mt-auto text-[11px] text-center text-[#767676] font-bold bg-slate-50 py-0.5 rounded-lg">
+                    <div className="mt-auto text-[11px] text-center text-[#6F6F6F] font-bold bg-slate-50 py-0.5 rounded-lg">
                       +{hiddenDayChipCount}
                     </div>
                   )}
@@ -734,7 +734,7 @@ export default function CalendarView() {
                       <button
                         type="button"
                         onClick={() => setOpenDayKey(null)}
-                        className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                        className="text-slate-500 hover:text-slate-800 cursor-pointer"
                       >
                         <X size={18} />
                       </button>
@@ -743,7 +743,7 @@ export default function CalendarView() {
                     <div className="p-3 space-y-3">
                       {hasTasks.length > 0 && (
                         <div className="space-y-1.5">
-                          <p className="text-[11px] font-bold text-[#767676] uppercase tracking-wide px-0.5">งาน</p>
+                          <p className="text-[11px] font-bold text-[#6F6F6F] uppercase tracking-wide px-0.5">งาน</p>
                           {hasTasks.map((task) => (
                             <div key={task.id} className="p-2 rounded-lg bg-slate-50">
                               {/* Title/project/assignee open the task's detail view; the two labelled
@@ -758,8 +758,8 @@ export default function CalendarView() {
                                 </span>
                                 <div className="min-w-0 flex-1 text-xs">
                                   <p className="font-semibold text-[#272220] group-hover:text-[#FF6537]">{task.title}</p>
-                                  <p className="text-[11px] text-[#767676] mt-0.5">โครงการ: {task.projectLabel}</p>
-                                  <p className="text-[11px] text-[#767676] mt-0.5">ผู้รับผิดชอบ: {task.assigneeNames ?? 'ยังไม่ระบุ'}</p>
+                                  <p className="text-[11px] text-[#6F6F6F] mt-0.5">โครงการ: {task.projectLabel}</p>
+                                  <p className="text-[11px] text-[#6F6F6F] mt-0.5">ผู้รับผิดชอบ: {task.assigneeNames ?? 'ยังไม่ระบุ'}</p>
                                 </div>
                               </button>
                               <div className="flex items-center gap-1.5 mt-2 pl-8">
@@ -793,7 +793,7 @@ export default function CalendarView() {
 
                       {hasMeetings.length > 0 && (
                         <div className="space-y-1.5">
-                          <p className="text-[11px] font-bold text-[#767676] uppercase tracking-wide px-0.5">การประชุม</p>
+                          <p className="text-[11px] font-bold text-[#6F6F6F] uppercase tracking-wide px-0.5">การประชุม</p>
                           {hasMeetings.map((meeting) => {
                             const project = meeting.projectId ? projectById.get(meeting.projectId) : undefined;
                             const isCancelled = meeting.status === 'cancelled';
@@ -809,7 +809,7 @@ export default function CalendarView() {
                                   onClick={() => setViewingMeeting(meeting)}
                                   className="flex items-start gap-2 flex-1 min-w-0 text-left cursor-pointer group"
                                 >
-                                  <span className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${isCancelled ? 'bg-red-50 text-red-500' : isPast ? 'bg-slate-100 text-slate-400' : 'bg-purple-50 text-purple-600'}`}>
+                                  <span className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${isCancelled ? 'bg-red-50 text-red-500' : isPast ? 'bg-slate-100 text-slate-500' : 'bg-purple-50 text-purple-600'}`}>
                                     {isCancelled ? <Ban size={12} /> : <Users2 size={12} />}
                                   </span>
                                   <div className="min-w-0 flex-1 text-xs">
@@ -819,9 +819,9 @@ export default function CalendarView() {
                                         ยกเลิกแล้ว{meeting.cancellationReason ? `: ${meeting.cancellationReason}` : ''}
                                       </p>
                                     ) : isPast ? (
-                                      <p className="text-[11px] text-[#767676] mt-0.5">ผ่านไปแล้ว</p>
+                                      <p className="text-[11px] text-[#6F6F6F] mt-0.5">ผ่านไปแล้ว</p>
                                     ) : null}
-                                    <p className="text-[11px] text-[#767676] mt-0.5">
+                                    <p className="text-[11px] text-[#6F6F6F] mt-0.5">
                                       {project ? `โครงการ: ${project.title}` : 'ไม่ได้ผูกกับโครงการ'}
                                     </p>
                                   </div>
@@ -832,7 +832,7 @@ export default function CalendarView() {
                                       type="button"
                                       onClick={() => setCancellingMeeting(meeting)}
                                       aria-label="ยกเลิกประชุม"
-                                      className="text-[#767676] hover:text-red-600 cursor-pointer shrink-0 p-1"
+                                      className="text-[#6F6F6F] hover:text-red-600 cursor-pointer shrink-0 p-1"
                                     >
                                       <Ban size={13} />
                                     </button>
@@ -871,7 +871,7 @@ export default function CalendarView() {
 
                       {hasProjectDeadlines.length > 0 && (
                         <div className="space-y-1.5">
-                          <p className="text-[11px] font-bold text-[#767676] uppercase tracking-wide px-0.5">ครบกำหนดโครงการ</p>
+                          <p className="text-[11px] font-bold text-[#6F6F6F] uppercase tracking-wide px-0.5">ครบกำหนดโครงการ</p>
                           {hasProjectDeadlines.map((project) => {
                             const StatusIcon = STATUS_ICON[project.status];
                             const dotColor = STATUS_DOT[project.status];
@@ -890,12 +890,12 @@ export default function CalendarView() {
                                 </span>
                                 <div className="min-w-0 flex-1 text-xs">
                                   <p className="font-semibold text-[#272220] group-hover:text-[#FF6537]">{project.title}</p>
-                                  <p className="text-[11px] text-[#767676] mt-0.5 flex items-center gap-1">
+                                  <p className="text-[11px] text-[#6F6F6F] mt-0.5 flex items-center gap-1">
                                     <StatusIcon size={10} />
                                     {STATUS_LABEL[project.status]}
                                   </p>
                                 </div>
-                                <ChevronRight size={14} className="shrink-0 text-slate-300 mt-1 group-hover:text-[#FF6537]" />
+                                <ChevronRight size={14} className="shrink-0 text-slate-500 mt-1 group-hover:text-[#FF6537]" />
                               </button>
                             );
                           })}

@@ -128,12 +128,12 @@ export default function TaskSummaryTable({ tasks, employees, projectTitle, onSel
       </div>
 
       {rows.length === 0 ? (
-        <div className="flex-1 flex items-center justify-center text-xs text-[#767676] py-6">ยังไม่มีงานในโครงการนี้</div>
+        <div className="flex-1 flex items-center justify-center text-xs text-[#6F6F6F] py-6">ยังไม่มีงานในโครงการนี้</div>
       ) : (
         <div className="flex-1 overflow-auto max-h-90">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-[11px] text-[#767676] border-b border-slate-100">
+              <tr className="text-left text-[11px] text-[#6F6F6F] border-b border-slate-100">
                 <th className="pb-2 font-semibold">ชื่องาน</th>
                 <th className="pb-2 font-semibold">ผู้รับผิดชอบ</th>
                 <th className="pb-2 font-semibold">กำหนดส่ง</th>
@@ -181,13 +181,13 @@ export default function TaskSummaryTable({ tasks, employees, projectTitle, onSel
                             <p className="font-medium text-[#272220] truncate">{t.title}</p>
                           </Tooltip>
                           {subtaskCount > 0 && (
-                            <span className="text-[11px] font-medium text-[#767676] bg-slate-100 rounded-full px-1.5 py-0.5 shrink-0">
+                            <span className="text-[11px] font-medium text-[#6F6F6F] bg-slate-100 rounded-full px-1.5 py-0.5 shrink-0">
                               งานย่อย {subtaskCount}
                             </span>
                           )}
                         </div>
                         {parentTitle && (
-                          <p className="text-[11px] text-[#767676] truncate">งานย่อยของ: {parentTitle}</p>
+                          <p className="text-[11px] text-[#6F6F6F] truncate">งานย่อยของ: {parentTitle}</p>
                         )}
                       </div>
                     </td>
@@ -209,13 +209,13 @@ export default function TaskSummaryTable({ tasks, employees, projectTitle, onSel
                           </span>
                         </span>
                       ) : (
-                        <span className="text-xs text-[#767676]">ไม่ระบุ</span>
+                        <span className="text-xs text-[#6F6F6F]">ไม่ระบุ</span>
                       )}
                     </td>
                     <td className="py-2.5 pr-3 whitespace-nowrap">
                       <p className="text-xs text-[#272220]">{t.dueDate ?? 'ไม่ระบุ'}</p>
                       {t.daysUntilDue !== undefined && (
-                        <p className={`text-[11px] ${overdue ? 'text-[#FF2A04] font-semibold' : 'text-[#767676]'}`}>
+                        <p className={`text-[11px] ${overdue ? 'text-[#FF2A04] font-semibold' : 'text-[#6F6F6F]'}`}>
                           {overdue ? 'เลยกำหนดแล้ว' : `อีก ${t.daysUntilDue} วัน`}
                         </p>
                       )}

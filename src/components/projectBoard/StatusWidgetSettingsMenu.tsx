@@ -88,7 +88,7 @@ export default function StatusWidgetSettingsMenu({
             transition={{ duration: 0.15 }}
             className="absolute left-0 top-full mt-1.5 w-72 bg-white border border-slate-200 rounded-xl shadow-lg py-2 z-20"
           >
-            <p className="px-3.5 py-1 text-[11px] font-bold text-[#767676] uppercase tracking-wide">
+            <p className="px-3.5 py-1 text-[11px] font-bold text-[#6F6F6F] uppercase tracking-wide">
               เลือกการ์ดที่จะแสดง (สูงสุด {MAX_STATUS_CARDS})
             </p>
             <div className="max-h-52 overflow-y-auto">
@@ -127,7 +127,7 @@ export default function StatusWidgetSettingsMenu({
                             }
                           }}
                           aria-label="ลบสถานะนี้"
-                          className="text-slate-300 hover:text-red-600 cursor-pointer shrink-0"
+                          className="text-slate-500 hover:text-red-600 cursor-pointer shrink-0"
                         >
                           <X size={13} />
                         </button>
@@ -139,7 +139,7 @@ export default function StatusWidgetSettingsMenu({
             </div>
             <div className="my-1.5 border-t border-slate-100" />
             <div className="px-3.5 pt-1.5">
-              <p className="text-[11px] font-bold text-[#767676] uppercase tracking-wide mb-1.5">สร้างสถานะใหม่</p>
+              <p className="text-[11px] font-bold text-[#6F6F6F] uppercase tracking-wide mb-1.5">สร้างสถานะใหม่</p>
               <div className="flex items-center gap-1.5">
                 <input
                   type="text"
@@ -147,7 +147,7 @@ export default function StatusWidgetSettingsMenu({
                   onChange={(e) => setNewLabel(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleCreate(); } }}
                   placeholder="ชื่อสถานะ เช่น รอเซ็นสัญญา"
-                  className="flex-1 min-w-0 h-9 px-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#B0B0B0] focus:outline-none focus:border-[#FF6537]"
+                  className="flex-1 min-w-0 h-9 px-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
                 />
                 <button
                   type="button"

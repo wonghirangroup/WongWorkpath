@@ -195,7 +195,7 @@ export default function ProjectGantt({ tasks, employees, projects }: ProjectGant
   if (bars.length === 0) {
     return (
       <div className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] p-5">
-        <p className="text-sm text-[#767676] flex items-center gap-2">
+        <p className="text-sm text-[#6F6F6F] flex items-center gap-2">
           <CalendarRange size={16} />
           ยังไม่มีงานในโครงการนี้
         </p>
@@ -302,7 +302,7 @@ export default function ProjectGantt({ tasks, employees, projects }: ProjectGant
               cell per calendar month/year instead, sized to how many days of it are in view. */}
           <div className="flex border-b border-[#F4F4F4] sticky top-0 z-20 bg-white">
             <div
-              className="shrink-0 px-5 py-3 text-xs font-medium text-[#767676] border-r border-[#F4F4F4] sticky left-0 z-20 bg-white"
+              className="shrink-0 px-5 py-3 text-xs font-medium text-[#6F6F6F] border-r border-[#F4F4F4] sticky left-0 z-20 bg-white"
               style={{ width: LABEL_COL_WIDTH }}
             >
               งาน / ผู้รับผิดชอบ
@@ -316,7 +316,7 @@ export default function ProjectGantt({ tasks, employees, projects }: ProjectGant
                   }`}
                   style={{ width: pxPerDay }}
                 >
-                  <span className="text-[11px] text-[#767676]">{THAI_WEEKDAY_SHORT[col.date.getDay()]}</span>
+                  <span className="text-[11px] text-[#6F6F6F]">{THAI_WEEKDAY_SHORT[col.date.getDay()]}</span>
                   <span
                     className={`text-[11px] font-semibold ${
                       col.isToday ? 'w-5 h-5 rounded-full bg-[#FF6537] text-white flex items-center justify-center' : 'text-[#272220]'
@@ -396,11 +396,11 @@ export default function ProjectGantt({ tasks, employees, projects }: ProjectGant
                     style={{ width: LABEL_COL_WIDTH }}
                   >
                     <p className="text-sm font-medium text-[#272220] truncate flex items-center gap-1" style={{ paddingLeft: depth * 16 }}>
-                      {depth > 0 && <CornerDownRight size={11} className="text-[#767676] shrink-0" />}
+                      {depth > 0 && <CornerDownRight size={11} className="text-[#6F6F6F] shrink-0" />}
                       <span className="truncate">{t.title}</span>
                     </p>
                     {projects && (
-                      <p className="text-[11px] text-[#767676] truncate">โครงการ: {projectById.get(t.projectId)?.title ?? 'ไม่ทราบโครงการ'}</p>
+                      <p className="text-[11px] text-[#6F6F6F] truncate">โครงการ: {projectById.get(t.projectId)?.title ?? 'ไม่ทราบโครงการ'}</p>
                     )}
                     <div className="flex items-center gap-1.5 mt-1">
                       {firstAssignee ? (
@@ -420,7 +420,7 @@ export default function ProjectGantt({ tasks, employees, projects }: ProjectGant
                           </span>
                         </>
                       ) : (
-                        <span className="text-[11px] text-[#767676]">ยังไม่มีผู้รับผิดชอบ</span>
+                        <span className="text-[11px] text-[#6F6F6F]">ยังไม่มีผู้รับผิดชอบ</span>
                       )}
                     </div>
                   </div>
@@ -442,7 +442,7 @@ export default function ProjectGantt({ tasks, employees, projects }: ProjectGant
                       </>
                     ) : (
                       <div className="absolute top-1/2 -translate-y-1/2 left-2 flex items-center gap-2">
-                        <span className="text-[11px] text-[#767676] italic">ยังไม่กำหนดวันที่</span>
+                        <span className="text-[11px] text-[#6F6F6F] italic">ยังไม่กำหนดวันที่</span>
                         <AvatarStack people={assignees} />
                       </div>
                     )}
@@ -454,7 +454,7 @@ export default function ProjectGantt({ tasks, employees, projects }: ProjectGant
         </div>
       </div>
       {nowInRange && (
-        <p className="px-5 py-2 text-[11px] text-[#767676] border-t border-[#F4F4F4]">{nowLabel}</p>
+        <p className="px-5 py-2 text-[11px] text-[#6F6F6F] border-t border-[#F4F4F4]">{nowLabel}</p>
       )}
     </div>
   );
