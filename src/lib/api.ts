@@ -267,9 +267,18 @@ export async function fetchProjects(): Promise<ProjectRow[]> {
 
 export type CreateProjectPayload = Partial<
   Pick<ProjectRow, 'id' | 'title' | 'description' | 'department' | 'type' | 'abbreviation' | 'priority' | 'budget' | 'ownerEmployeeIds' | 'memberEmployeeIds' | 'memberDuties' | 'docFolderId' | 'progress' | 'status' | 'parentProjectId'>
-> & { title: string; startDate?: string | null; endDate?: string | null; createdBy?: string | null };
+> & {
+  title: string;
+  startDate?: string | null;
+  endDate?: string | null;
+  createdBy?: string | null;
+  // Name of a Drive folder to create for the project. The server creates it in the same transaction as
+  // the project, so a failed save never leaves a folder behind.
+  createFolderName?: string;
+};
 
-export async function createProject(payload: CreateProjectPayload): Promise<ProjectRow> {
+// The created project, plus the Drive folder made with it (when createFolderName was sent).
+export async function createProject(payload: CreateProjectPayload): Promise<{ project: ProjectRow; folder?: LinkedDoc }> {
   let res: Response;
   try {
     res = await authFetch(`${API_BASE_URL}/api/projects`, {
@@ -285,7 +294,8 @@ export async function createProject(payload: CreateProjectPayload): Promise<Proj
   if (!res.ok) {
     throw new ApiError(data.message ?? 'สร้างโครงการไม่สำเร็จ', res.status);
   }
-  return data as ProjectRow;
+  const { createdFolder, ...project } = data as ProjectRow & { createdFolder?: LinkedDoc };
+  return { project: project as ProjectRow, folder: createdFolder };
 }
 
 // actorEmployeeId lets the server's ownership gate tell "an owner editing" apart from "someone

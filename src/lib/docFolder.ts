@@ -1,13 +1,11 @@
 import { LinkedDoc } from '../types';
 import { nowTimestamp } from './datetime';
 
-// Shared by every "สร้างโฟลเดอร์เอกสาร" checkbox (CreateProjectModal's own step, AddTaskModal's
-// per-task checkbox whether opened from a project or from the Dashboard's quick-add) — one place
-// for the actual LinkedDoc shape so they can't drift apart. Returns the new folder's (server-
-// assigned) id so callers can link it back to whatever created it (a project saves it as its own
-// docFolderId; a task's folder nests inside that via parentId instead of always dropping at the
-// Drive root). A project's own root folder always starts scoped 'โครงการ' + tagged to that project,
-// since it's created together with (and only ever visible to) that project's own team.
+// AddTaskModal's per-task "สร้างโฟลเดอร์เอกสาร" checkbox (whether opened from a project or from the
+// Dashboard's quick-add). Returns the new folder's (server-assigned) id so the caller can link it back
+// to the task; the folder nests inside the project's own root folder via parentId instead of always
+// dropping at the Drive root. (A project's own root folder is NOT made here — the server creates it
+// together with the project, in one transaction: see POST /api/projects and createFolderName.)
 export async function createDocFolder(
   name: string,
   parentId: string | null,

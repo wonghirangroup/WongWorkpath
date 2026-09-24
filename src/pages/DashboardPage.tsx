@@ -1,7 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import Dashboard from '../components/Dashboard';
 import { useAppData } from '../context/AppDataContext';
-import { createDocFolder } from '../lib/docFolder';
 
 export default function DashboardPage() {
   const {
@@ -13,7 +12,6 @@ export default function DashboardPage() {
     customProjectStatuses,
     customProjectTypes,
     handleAddCustomProjectType,
-    handleAddDocument,
     setTaskSelectedProjectId,
     orgSections,
   } = useAppData();
@@ -24,9 +22,6 @@ export default function DashboardPage() {
     navigate('/tasks');
   };
 
-  const handleCreateFolder = (name: string, parentId: string | null, taskId: string | undefined, projectId: string) =>
-    createDocFolder(name, parentId, taskId, projectId, handleAddDocument, currentUser?.name || 'ผู้ใช้งานปัจจุบัน');
-
   return (
     <Dashboard
       projects={projects}
@@ -34,7 +29,6 @@ export default function DashboardPage() {
       employees={employees}
       currentUser={currentUser}
       onCreateProject={(payload) => handleAddProject({ ...payload, createdBy: currentUser?.id ?? '' })}
-      onCreateFolder={handleCreateFolder}
       customProjectStatuses={customProjectStatuses}
       customProjectTypes={customProjectTypes}
       onAddCustomProjectType={handleAddCustomProjectType}

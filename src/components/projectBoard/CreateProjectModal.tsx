@@ -216,7 +216,7 @@ export function EmployeeMultiSelect({
 const STEP_META: { step: 1 | 2 | 3; icon: typeof Pencil; label: string }[] = [
   { step: 1, icon: Pencil, label: 'กำหนดชื่อ' },
   { step: 2, icon: CalendarClock, label: 'ขอบเขตงาน' },
-  { step: 3, icon: Check, label: 'สำเร็จ' },
+  { step: 3, icon: Check, label: 'ตรวจสอบ' },
 ];
 
 function StepIndicator({ step }: { step: 1 | 2 | 3 }) {
@@ -304,10 +304,11 @@ function SummaryRow({ label, value }: { label: string; value: ReactNode }) {
 interface CreateProjectModalProps {
   isOpen: boolean;
   onClose: () => void;
-  // Resolves with the created project — its id is needed to save this person's own "เตือนก่อนวันสิ้นสุด" choice.
-  onCreate: (payload: Omit<CreateProjectPayload, 'createdBy'>) => Promise<{ id: string }>;
+  // Resolves with the created project — its id is needed to save this person's own "เตือนก่อนวันสิ้นสุด"
+  // choice — and whether its Drive folder really came back with it (the server creates the folder in the
+  // same transaction as the project, so it's both or neither).
+  onCreate: (payload: Omit<CreateProjectPayload, 'createdBy'>) => Promise<{ id: string; folderCreated?: boolean }>;
   onCreated: (title: string, folderCreated: boolean) => void;
-  onCreateFolder: (name: string, parentId: string | null, taskId: string | undefined, projectId: string) => Promise<string>;
   // Best-effort preview only — the real code (and its sequence number) is always generated
   // server-side at submit time; this just reflects it back live as the user picks a type/types
   // in an abbreviation, since the exact code can't be known until then.
@@ -359,9 +360,10 @@ function deriveAbbreviation(title: string): string {
 // fails, the form stays open and shows the error instead of closing, same pattern as
 // EmployeeManagement's add-employee form. "ผู้รับผิดชอบงาน"/assigneeIds (shown as "ผู้รับผิดชอบร่วม"
 // in the step 3 summary) is sent through as memberEmployeeIds and shows up in the project detail
-// page's "ทีม" tab. The optional "create a folder" step writes to the shared document store via
-// onCreateFolder, and only runs after the project itself is confirmed created.
-export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreated, onCreateFolder, getNextCodePreview, employees, existingTitles, customStatuses, customTypes, onAddCustomType, projects }: CreateProjectModalProps) {
+// page's "ทีม" tab. The optional "create a folder" choice is sent along as createFolderName and the
+// server creates the folder in the same transaction as the project, so a failed save leaves no
+// stray folder behind in Drive.
+export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreated, getNextCodePreview, employees, existingTitles, customStatuses, customTypes, onAddCustomType, projects }: CreateProjectModalProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [title, setTitle] = useState('');
   const [renameNotice, setRenameNotice] = useState('');
@@ -465,18 +467,12 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
         const createdType = await onAddCustomType(customTypeName.trim(), customTypeAbbrev.trim());
         finalType = createdType.id;
       }
-      // Created first (not after) so its id can be saved as the project's own docFolderId in the
-      // same request — a task's own "create folder" checkbox later nests inside this folder
-      // instead of always dropping it at the Drive root. The folder's own document row needs to be
-      // tagged scope='โครงการ' + this project's id right away (so the project's own team can see
-      // it under the new "โครงการ" visibility rule) — but the project doesn't exist yet at this
-      // point, so its id is generated here, client-side, and reused for both this project's own
-      // creation request below and the folder's tag, rather than the usual server-generated one.
+      // The folder is not created here any more: the server makes it together with the project (same
+      // transaction, tagged scope='โครงการ' + the project's id and saved as its docFolderId, so a task's
+      // own "create folder" checkbox later nests inside it). Creating it up front from this modal is what
+      // used to leave an orphan folder in Drive whenever saving the project then failed.
       const willCreateFolder = createFolder && folderName.trim() !== '';
-      const newProjectId = willCreateFolder ? `PROJ_${Date.now()}` : undefined;
-      const newFolderId = willCreateFolder && newProjectId ? await onCreateFolder(folderName.trim(), null, undefined, newProjectId) : undefined;
       const createdProject = await onCreate({
-        id: newProjectId,
         title: finalTitle,
         description: description.trim() || undefined,
         type: finalType ?? undefined,
@@ -488,7 +484,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
         memberDuties: Object.fromEntries(
           Object.entries(memberDuties).filter(([id, duty]) => assigneeIds.includes(id) && duty.trim() !== '')
         ),
-        docFolderId: newFolderId,
+        createFolderName: willCreateFolder ? folderName.trim() : undefined,
         status,
         budget: budget.trim() !== '' && !isNaN(Number(budget)) ? Number(budget) : undefined,
         startDate: startDate || undefined,
@@ -500,7 +496,8 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
       if (pendingReminder !== null && savedLimit) {
         handleSetDeadlineReminder('project', createdProject.id, pendingReminder.filter((d) => d <= savedLimit.maxDays));
       }
-      onCreated(finalTitle, willCreateFolder);
+      // What the toast says comes from what really happened, not from what was asked for.
+      onCreated(finalTitle, Boolean(createdProject.folderCreated));
       resetAndClose();
     } catch (err) {
       setFormError(err instanceof ApiError ? err.message : 'สร้างโครงการไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');

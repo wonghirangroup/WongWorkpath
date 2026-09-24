@@ -7,7 +7,7 @@ import { loadActorContext, canSeeDocument, canAddToProject } from '../lib/access
 
 export const documentsRouter = Router();
 
-interface DocumentRowDb extends RowDataPacket {
+export interface DocumentRowDb extends RowDataPacket {
   id: string;
   name: string;
   kind: 'folder' | 'file' | 'link';
@@ -26,7 +26,7 @@ interface DocumentRowDb extends RowDataPacket {
   history: string | null;
 }
 
-function toLinkedDoc(r: DocumentRowDb) {
+export function toLinkedDoc(r: DocumentRowDb) {
   return {
     id: r.id,
     name: r.name,
@@ -47,7 +47,7 @@ function toLinkedDoc(r: DocumentRowDb) {
   };
 }
 
-const SELECT_FIELDS = `id, name, kind, parent_id, url, file_data_url, file_mime_type, file_size, scope, project_id, task_id, creator_employee_id, version, last_updated, updated_by, history`;
+export const SELECT_FIELDS = `id, name, kind, parent_id, url, file_data_url, file_mime_type, file_size, scope, project_id, task_id, creator_employee_id, version, last_updated, updated_by, history`;
 const SERVER_ERROR = { message: 'เกิดข้อผิดพลาดในระบบ กรุณาลองใหม่อีกครั้ง' };
 
 // A doc scoped 'ส่วนตัว' is visible only to whoever created it — never shared, regardless of
@@ -80,10 +80,11 @@ documentsRouter.post('/', async (req, res) => {
   try {
     const ctx = await loadActorContext(req.actorId!);
     if (scope === 'โครงการ' && !canAddToProject(ctx, projectId)) {
-      // CreateProjectModal creates the project's Drive folder *before* the project row itself exists
-      // (it needs the folder's id to save on the project), tagged with the id it is about to use. A
-      // project that doesn't exist yet has no team to check membership against, so that one case
-      // passes; once the row exists the normal owner/member rule applies.
+      // Kept for older browser tabs: before the project's own folder was created together with the
+      // project (see POST /api/projects), CreateProjectModal created it *before* the project row
+      // existed, tagged with the id it was about to use. A project that doesn't exist yet has no team
+      // to check membership against, so that one case passes; once the row exists the normal
+      // owner/member rule applies.
       const [[existingProject]] = await pool.query<RowDataPacket[]>('SELECT id FROM project WHERE id = ?', [projectId]);
       if (existingProject) {
         return res.status(403).json({ message: 'เพิ่มเอกสารได้เฉพาะโครงการที่คุณรับผิดชอบ' });

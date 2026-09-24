@@ -586,7 +586,6 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
           )
         }
         employees={employees}
-        onCreateFolder={onCreateFolder}
         existingTitles={projects.map((p) => p.title)}
         customStatuses={customProjectStatuses}
         customTypes={customProjectTypes}

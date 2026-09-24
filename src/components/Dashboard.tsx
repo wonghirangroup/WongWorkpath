@@ -27,8 +27,7 @@ interface DashboardProps {
   projectTasks: ProjectTaskItem[];
   employees: Employee[];
   currentUser: Employee | null;
-  onCreateProject: (payload: Omit<CreateProjectPayload, 'createdBy'>) => Promise<{ id: string }>;
-  onCreateFolder: (name: string, parentId: string | null, taskId: string | undefined, projectId: string) => Promise<string>;
+  onCreateProject: (payload: Omit<CreateProjectPayload, 'createdBy'>) => Promise<{ id: string; folderCreated?: boolean }>;
   customProjectStatuses: CustomProjectStatus[];
   customProjectTypes: CustomProjectType[];
   onAddCustomProjectType: (label: string, abbreviation: string) => Promise<CustomProjectType>;
@@ -42,7 +41,6 @@ export default function Dashboard({
   employees,
   currentUser,
   onCreateProject,
-  onCreateFolder,
   customProjectStatuses,
   customProjectTypes,
   onAddCustomProjectType,
@@ -240,7 +238,6 @@ export default function Dashboard({
           )
         }
         employees={employees}
-        onCreateFolder={onCreateFolder}
         existingTitles={projects.map((p) => p.title)}
         customStatuses={customProjectStatuses}
         customTypes={customProjectTypes}

@@ -5,6 +5,8 @@ import { nowBangkokDateTime, formatThaiDateShort, daysUntilBangkokDate } from '.
 import { customStatusIds } from './project-custom-statuses.ts';
 import { customTypeIds } from './project-custom-types.ts';
 import { isOwner, isExecutiveActor, isProjectDeleterActor, resolveValidOwnerIds } from '../lib/ownership.ts';
+import { newId } from '../lib/ids.ts';
+import { toLinkedDoc, SELECT_FIELDS as DOCUMENT_SELECT_FIELDS, type DocumentRowDb } from './documents.ts';
 
 export const projectsRouter = Router();
 
@@ -179,31 +181,58 @@ projectsRouter.post('/', async (req, res) => {
   const ownerEmployeeIds = sanitizeIds(p.ownerEmployeeIds);
   const memberEmployeeIds = sanitizeIds(p.memberEmployeeIds);
   const memberDuties = sanitizeMemberDuties(p.memberDuties);
+  // The name of the Drive folder to create for this project (CreateProjectModal's "สร้างโฟลเดอร์เอกสาร"
+  // checkbox). Empty = no folder.
+  const createFolderName = typeof p.createFolderName === 'string' ? p.createFolderName.trim() : '';
 
   try {
     const status = (await isValidProjectStatus(p.status)) ? p.status : 'draft';
     const type = (await isValidProjectType(p.type)) ? p.type : null;
     const code = await generateProjectCode(abbreviation, type);
-    // Normally server-generated, but CreateProjectModal's own "create matching Drive folder"
-    // checkbox needs the project's real id before the project itself exists (so the new folder's
-    // document row can be tagged scope='โครงการ' + this projectId right away, instead of briefly
-    // existing untagged) — it pre-generates and sends one in that case.
+    // Server-generated. (An older browser tab may still send its own id along with a folder it made
+    // itself before this request — that path is honoured unchanged.)
     const id = typeof p.id === 'string' && p.id ? p.id : `PROJ_${Date.now()}`;
     const parentProjectId = await resolveParentProjectId(type, p.parentProjectId, id);
     const now = nowBangkokDateTime();
 
-    await pool.query(
-      `INSERT INTO project
-         (id, code, title, description, department, type, abbreviation, priority, budget, owner_employee_ids,
-          member_employee_ids, member_duties, doc_folder_id, progress, start_date, end_date, status, created_by, parent_project_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id, code, p.title.trim(), p.description?.trim() || null, p.department || null, type, abbreviation || null, priority,
-        p.budget ?? null, ownerEmployeeIds.length ? JSON.stringify(ownerEmployeeIds) : null, memberEmployeeIds.length ? JSON.stringify(memberEmployeeIds) : null,
-        Object.keys(memberDuties).length ? JSON.stringify(memberDuties) : null,
-        p.docFolderId || null, p.progress ?? 0, p.startDate || null, p.endDate || null, status, req.actorId, parentProjectId, now, now,
-      ]
-    );
+    // The folder and the project are written in ONE transaction, so one can never exist without the
+    // other: if the project can't be saved, the folder is rolled back with it instead of being left
+    // behind in Drive (and a retry can't pile up duplicates).
+    let createdFolderId: string | null = null;
+    await withTransaction(async (conn) => {
+      let docFolderId: string | null = p.docFolderId || null;
+      if (createFolderName) {
+        const [[actor]] = await conn.query<RowDataPacket[]>('SELECT name FROM employee WHERE id = ?', [req.actorId]);
+        const actorName: string = actor?.name ?? '';
+        const stamp = now.slice(0, 16); // Drive timestamps are minute-precision "YYYY-MM-DD HH:mm"
+        createdFolderId = newId('DOC');
+        await conn.query(
+          `INSERT INTO document
+             (id, name, kind, parent_id, url, file_data_url, file_mime_type, file_size, scope, project_id,
+              task_id, creator_employee_id, version, last_updated, updated_by, history, created_at, updated_at)
+           VALUES (?, ?, 'folder', NULL, NULL, NULL, NULL, NULL, 'โครงการ', ?, NULL, ?, 1, ?, ?, ?, ?, ?)`,
+          [
+            createdFolderId, createFolderName, id, req.actorId, stamp, actorName,
+            JSON.stringify([{ version: 1, updatedBy: actorName, date: stamp, note: 'สร้างโฟลเดอร์จากการสร้างโครงการใหม่' }]),
+            now, now,
+          ]
+        );
+        docFolderId = createdFolderId;
+      }
+
+      await conn.query(
+        `INSERT INTO project
+           (id, code, title, description, department, type, abbreviation, priority, budget, owner_employee_ids,
+            member_employee_ids, member_duties, doc_folder_id, progress, start_date, end_date, status, created_by, parent_project_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id, code, p.title.trim(), p.description?.trim() || null, p.department || null, type, abbreviation || null, priority,
+          p.budget ?? null, ownerEmployeeIds.length ? JSON.stringify(ownerEmployeeIds) : null, memberEmployeeIds.length ? JSON.stringify(memberEmployeeIds) : null,
+          Object.keys(memberDuties).length ? JSON.stringify(memberDuties) : null,
+          docFolderId, p.progress ?? 0, p.startDate || null, p.endDate || null, status, req.actorId, parentProjectId, now, now,
+        ]
+      );
+    });
 
     const [[row]] = await pool.query<ProjectRowDb[]>(
       `SELECT id, code, title, description, department, type, abbreviation, priority, budget, owner_employee_ids,
@@ -211,6 +240,11 @@ projectsRouter.post('/', async (req, res) => {
        FROM project WHERE id = ?`,
       [id]
     );
+    if (createdFolderId) {
+      // Hand the new folder back with the project so the client can show it in Drive straight away.
+      const [[folderRow]] = await pool.query<DocumentRowDb[]>(`SELECT ${DOCUMENT_SELECT_FIELDS} FROM document WHERE id = ?`, [createdFolderId]);
+      return res.status(201).json({ ...toProjectRow(row), createdFolder: toLinkedDoc(folderRow) });
+    }
     res.status(201).json(toProjectRow(row));
   } catch (err) {
     console.error('POST /api/projects failed:', err);

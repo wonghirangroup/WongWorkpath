@@ -110,7 +110,7 @@ interface AppDataContextValue {
   handleDeleteEmployee: (id: string, reason: string) => Promise<void>;
   handleChangeSelfPassword: (password: string) => Promise<void>;
   handleRefreshAccountData: () => Promise<void>;
-  handleAddProject: (payload: CreateProjectPayload) => Promise<ProjectRow>;
+  handleAddProject: (payload: CreateProjectPayload) => Promise<ProjectRow & { folderCreated: boolean }>;
   handleUpdateProject: (id: string, updates: Partial<ProjectRow>) => Promise<void>;
   handleDeleteProject: (id: string) => Promise<void>;
   customProjectStatuses: CustomProjectStatus[];
@@ -720,8 +720,15 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   // 0a. Project Operations (จัดการงานและโครงการ) — real `project` table, no localStorage layer.
   // Create awaits the API since the server generates both `id` and the human-facing "PRJ-NNN"
   // code, unlike credentials' fire-and-forget pattern where the client already owns the id.
+  // When the payload asks for a Drive folder (createFolderName) the server creates it in the same
+  // transaction as the project — so it's either both or neither — and hands it back here to show in
+  // Drive right away. `folderCreated` tells the caller whether a folder really came back.
   const handleAddProject = async (payload: CreateProjectPayload) => {
-    const created = await createProject(payload);
+    const { project: created, folder } = await createProject(payload);
+    if (folder) {
+      setDocuments((prev) => [folder, ...prev]);
+      handleLogAudit('ADD_DOCUMENT', `สร้างโฟลเดอร์ใน Drive: "${folder.name}"`);
+    }
     setProjects((prev) => [created, ...prev]);
     handleLogAudit('ADD_PROJECT', `สร้างโครงการใหม่: "${created.title}" (${created.code})`);
 
@@ -742,7 +749,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         });
       });
 
-    return created;
+    return { ...created, folderCreated: Boolean(folder) };
   };
 
   // Awaited (not optimistic) — replaces the local row with the server's freshly re-formatted
