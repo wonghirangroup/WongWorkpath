@@ -164,6 +164,9 @@ interface AppDataContextValue {
   // App-wide "something went wrong" message (failed data load, refused change) — see AppErrorToast.
   appError: string | null;
   dismissAppError: () => void;
+  // Shows the app-wide top toast for something the person needs to know about but that isn't a form
+  // error — e.g. a task that WAS created but whose folder/attachments could not be.
+  reportAppError: (message: string) => void;
   // My own reminder lead times per project/task (set in each one's modal) — see lib/deadlineReminders.ts.
   deadlineReminders: ReminderMap;
   handleSetDeadlineReminder: (entityType: ReminderEntityType, entityId: string, leadDays: number[] | null) => void;
@@ -233,6 +236,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   // server refused) surface as one toast instead of a silent console warning.
   const [appError, setAppError] = useState<string | null>(null);
   const dismissAppError = useCallback(() => setAppError(null), []);
+  const reportAppError = useCallback((message: string) => setAppError(message), []);
   const reportLoadFailure = useCallback(() => setAppError('โหลดข้อมูลบางส่วนไม่สำเร็จ กรุณารีเฟรชหน้าอีกครั้ง หากยังไม่หายให้แจ้งผู้ดูแลระบบ'), []);
   const reportActionFailure = (err: unknown, fallback: string) => setAppError(err instanceof ApiError ? err.message : fallback);
   // A new login starts with a clean slate — an error from the previous session shouldn't linger.
@@ -1437,6 +1441,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     dismissNotificationToast,
     appError,
     dismissAppError,
+    reportAppError,
     deadlineReminders,
     handleSetDeadlineReminder,
     orgDivisions,

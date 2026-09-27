@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
-import { X, Folder, ListChecks, Users2, Layers, Paperclip, Link2, Trash2 } from 'lucide-react';
+import { X, Folder, ListChecks, Users2, Paperclip, Link2, Trash2 } from 'lucide-react';
 import { Employee, LinkedDoc, Meeting } from '../../types';
 import { ProjectRow, ProjectTaskItem, ProjectTaskStatus } from './types';
 import { EmployeeMultiSelect, displayName, formatThaiDateShort, PRIORITY_OPTIONS, Priority } from './CreateProjectModal';
@@ -19,12 +19,7 @@ import { useAppData } from '../../context/AppDataContext';
 import DeadlineReminderField, { useSavedReminder } from '../DeadlineReminderField';
 import { DEFAULT_DEADLINE_REMINDER_DAYS, reminderLimit } from '../../lib/deadlineReminders';
 
-// 'topic' ("หัวข้อ") is not a separate stored entity — it's the exact same ProjectTaskItem as
-// 'task', just created through a differently-labeled tab for a task the user intends to hold
-// subtasks (e.g. "เบิกทุน NIA"). Its status then auto-derives from its subtasks once any exist
-// (see project-tasks.ts's recomputeAncestorStatuses) — nothing here needs to know which tab the
-// task was originally created from after that point.
-type ModalMode = 'task' | 'topic' | 'meeting';
+type ModalMode = 'task' | 'meeting';
 
 // A task's status now follows the actual work process instead of being freely pickable: no
 // assignee yet -> ยังไม่เริ่ม, an assignee set -> กำลังทำ, and รอตรวจ/เสร็จแล้ว only ever happen
@@ -120,7 +115,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
   // it's a personal preference that never goes through the approval flow.
   const [pendingReminder, setPendingReminder] = useState<number[] | null>(null);
   const savedReminder = useSavedReminder('task', editingTask?.id);
-  const { handleSetDeadlineReminder } = useAppData();
+  const { handleSetDeadlineReminder, reportAppError } = useAppData();
   const [createFolder, setCreateFolder] = useState(false);
   const [folderName, setFolderName] = useState('');
   // Tracks whether the user has typed into the folder-name field themselves — while untouched, it
@@ -359,54 +354,85 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
           if (pendingReminder !== null && savedLimit) {
             handleSetDeadlineReminder('task', createdTask.id, pendingReminder.filter((d) => d <= savedLimit.maxDays));
           }
+          // From here on the task already EXISTS, so nothing below may be reported as "เพิ่มงานไม่สำเร็จ"
+          // with the form left open — pressing the button again would create the task a second time.
+          // Each step is tried on its own, and whatever fails is reported once the form has closed.
+          const notDone: string[] = [];
+
           // Folder creation is create-only — re-offering it on every edit-save would spawn a fresh
           // duplicate folder each time, since there's no "already created" flag to check against.
           let newFolderId: string | undefined;
+          let folderFailed = false;
           if (createFolder && folderName.trim()) {
-            newFolderId = await onCreateFolder(folderName.trim(), effectiveProjectDocFolderId ?? null, createdTask.id, createdTask.projectId);
+            try {
+              newFolderId = await onCreateFolder(folderName.trim(), effectiveProjectDocFolderId ?? null, createdTask.id, createdTask.projectId);
+            } catch {
+              folderFailed = true;
+              notDone.push('สร้างโฟลเดอร์ไม่สำเร็จ');
+            }
           }
           // Any file/link attached here goes inside this task's own brand-new folder when one was
           // just created (it's specifically this task's own space); otherwise it falls back to
           // whatever folder-nesting rule effectiveProjectDocFolderId already resolved above — the
           // project's root, or the parent task's own folder when this is a subtask.
           if (pickedFiles.length > 0 || pickedLinks.length > 0) {
-            const attachParentId = newFolderId ?? effectiveProjectDocFolderId ?? null;
-            const date = nowTimestamp();
-            for (const file of pickedFiles) {
-              const dataUrl = await readFileAsDataUrl(file);
-              await onAddDocument({
-                name: file.name,
-                kind: 'file',
-                parentId: attachParentId,
-                taskId: createdTask.id,
-                fileDataUrl: dataUrl,
-                fileMimeType: file.type || 'application/octet-stream',
-                fileSize: file.size,
-                scope: 'โครงการ',
-                projectId: createdTask.projectId,
-                creatorEmployeeId: currentUserId,
-                version: 1,
-                lastUpdated: date,
-                updatedBy: currentUserName,
-                history: [{ version: 1, updatedBy: currentUserName, date, note: 'แนบไฟล์ตอนสร้างงาน' }],
-              });
+            if (folderFailed) {
+              // The task's own folder — where these were meant to go — doesn't exist, so none were uploaded.
+              notDone.push('ไฟล์/ลิงก์ที่แนบจึงยังไม่ถูกอัปโหลด');
+            } else {
+              const attachParentId = newFolderId ?? effectiveProjectDocFolderId ?? null;
+              const date = nowTimestamp();
+              const failedFiles: string[] = [];
+              for (const file of pickedFiles) {
+                try {
+                  const dataUrl = await readFileAsDataUrl(file);
+                  await onAddDocument({
+                    name: file.name,
+                    kind: 'file',
+                    parentId: attachParentId,
+                    taskId: createdTask.id,
+                    fileDataUrl: dataUrl,
+                    fileMimeType: file.type || 'application/octet-stream',
+                    fileSize: file.size,
+                    scope: 'โครงการ',
+                    projectId: createdTask.projectId,
+                    creatorEmployeeId: currentUserId,
+                    version: 1,
+                    lastUpdated: date,
+                    updatedBy: currentUserName,
+                    history: [{ version: 1, updatedBy: currentUserName, date, note: 'แนบไฟล์ตอนสร้างงาน' }],
+                  });
+                } catch {
+                  failedFiles.push(file.name);
+                }
+              }
+              const failedLinks: string[] = [];
+              for (const link of pickedLinks) {
+                try {
+                  await onAddDocument({
+                    name: link.name,
+                    kind: 'link',
+                    parentId: attachParentId,
+                    taskId: createdTask.id,
+                    url: link.url,
+                    scope: 'โครงการ',
+                    projectId: createdTask.projectId,
+                    creatorEmployeeId: currentUserId,
+                    version: 1,
+                    lastUpdated: date,
+                    updatedBy: currentUserName,
+                    history: [{ version: 1, updatedBy: currentUserName, date, note: 'แนบลิงก์ตอนสร้างงาน' }],
+                  });
+                } catch {
+                  failedLinks.push(link.name);
+                }
+              }
+              if (failedFiles.length > 0) notDone.push(`แนบไฟล์ไม่สำเร็จ: ${failedFiles.join(', ')}`);
+              if (failedLinks.length > 0) notDone.push(`แนบลิงก์ไม่สำเร็จ: ${failedLinks.join(', ')}`);
             }
-            for (const link of pickedLinks) {
-              await onAddDocument({
-                name: link.name,
-                kind: 'link',
-                parentId: attachParentId,
-                taskId: createdTask.id,
-                url: link.url,
-                scope: 'โครงการ',
-                projectId: createdTask.projectId,
-                creatorEmployeeId: currentUserId,
-                version: 1,
-                lastUpdated: date,
-                updatedBy: currentUserName,
-                history: [{ version: 1, updatedBy: currentUserName, date, note: 'แนบลิงก์ตอนสร้างงาน' }],
-              });
-            }
+          }
+          if (notDone.length > 0) {
+            reportAppError(`สร้างงาน "${createdTask.title}" สำเร็จแล้ว แต่${notDone.join(' · ')} — เพิ่มเองได้ที่หน้า เอกสาร Drive`);
           }
         }
       }
@@ -468,8 +494,6 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                     ? 'เพิ่มงานย่อย'
                     : mode === 'task'
                     ? 'เพิ่มงานใหม่'
-                    : mode === 'topic'
-                    ? 'เพิ่มหัวข้อใหม่'
                     : 'นัดประชุมใหม่'}
                 </h3>
                 <p className="text-[11px] text-[#6F6F6F] mt-0.5">
@@ -481,8 +505,6 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                     ? 'เลือกโครงการแล้วกรอกรายละเอียดงาน'
                     : mode === 'task'
                     ? 'กรอกรายละเอียดงานสำหรับโครงการนี้'
-                    : mode === 'topic'
-                    ? 'สร้างหัวข้อไว้ก่อน แล้วค่อยเพิ่มงานย่อยจากหัวข้อนี้ทีหลัง'
                     : 'กรอกรายละเอียดการประชุมสำหรับโครงการนี้'}
                 </p>
               </div>
@@ -501,15 +523,6 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                 }`}
               >
                 <ListChecks size={13} /> งาน
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode('topic')}
-                className={`flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
-                  mode === 'topic' ? 'bg-[#FFF1EC] text-[#FF6537]' : 'text-[#6F6F6F] hover:bg-slate-50'
-                }`}
-              >
-                <Layers size={13} /> หัวข้อ
               </button>
               <button
                 type="button"
@@ -534,12 +547,12 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                 <div className="flex flex-col gap-3 min-w-0">
                   <div className="sm:col-span-2">
                     <label className="block text-[#272220] font-bold text-[11px] mb-1">
-                      {mode === 'task' ? 'ชื่องาน' : mode === 'topic' ? 'ชื่อหัวข้อ' : 'ชื่อการประชุม'} <span className="text-[#FF6537]">*</span>
+                      {mode === 'task' ? 'ชื่องาน' : 'ชื่อการประชุม'} <span className="text-[#FF6537]">*</span>
                     </label>
                     <input
                       type="text"
                       autoFocus
-                      placeholder={mode === 'task' ? 'เช่น ออกแบบหน้าร้านใหม่' : mode === 'topic' ? 'เช่น เบิกทุน NIA' : 'เช่น ประชุมทบทวนความคืบหน้าโครงการ'}
+                      placeholder={mode === 'task' ? 'เช่น ออกแบบหน้าร้านใหม่' : 'เช่น ประชุมทบทวนความคืบหน้าโครงการ'}
                       value={title}
                       onChange={(e) => setTitle(e.target.value)}
                       className="w-full p-2.5 text-sm border border-[#E5E5E5] rounded-lg placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
@@ -1028,8 +1041,6 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                     ? 'บันทึกการแก้ไข'
                     : mode === 'task'
                     ? 'เพิ่มงาน'
-                    : mode === 'topic'
-                    ? 'สร้างหัวข้อ'
                     : 'นัดประชุม'}
                 </button>
               </div>

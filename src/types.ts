@@ -131,6 +131,7 @@ export interface Meeting {
   createdBy?: string; // Employee id
   status: 'scheduled' | 'cancelled';
   cancellationReason?: string; // required whenever status is 'cancelled' — see ScheduleMeetingModal's cancel flow
+  cancelledBy?: string; // Employee id — set together with cancellationReason; server-assigned from the real actor, never client-sent
 }
 
 export interface Notification {

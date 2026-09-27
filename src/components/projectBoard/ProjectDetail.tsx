@@ -5,6 +5,7 @@ import { Employee, Meeting, LinkedDoc } from '../../types';
 import { ProjectRow, ProjectTaskItem, ProjectTaskStatus, CustomProjectStatus, CustomProjectType } from './types';
 import { STATUS_DOT, TASK_STATUS_LABEL, TASK_STATUS_COLOR, PROJECT_PRIORITY_META } from './statusMeta';
 import { displayName, formatThaiDateShort, PRIORITY_OPTIONS } from './CreateProjectModal';
+import { isPastMeeting } from '../../lib/datetime';
 import { ChangeRequest } from '../../lib/api';
 import { isOwner, resolveValidIds } from '../../lib/ownership';
 import { isUrl } from '../../lib/url';
@@ -769,13 +770,14 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
             <div className="divide-y divide-[#F4F4F4]">
               {projectMeetings.map((meeting) => {
                 const isCancelled = meeting.status === 'cancelled';
+                const isPast = isPastMeeting(meeting);
                 const linkedTask = meeting.taskId ? tasks.find((t) => t.id === meeting.taskId) : undefined;
                 return (
                   <button
                     key={meeting.id}
                     type="button"
                     onClick={() => setTab('meetings')}
-                    className={`w-full flex items-center justify-between gap-3 px-5 py-3 text-left hover:bg-slate-50 cursor-pointer ${isCancelled ? 'opacity-60' : ''}`}
+                    className={`w-full flex items-center justify-between gap-3 px-5 py-3 text-left hover:bg-slate-50 cursor-pointer ${isCancelled || isPast ? 'opacity-60' : ''}`}
                   >
                     <span className="flex items-center gap-2 min-w-0">
                       <Users2 size={14} className="text-[#6F6F6F] shrink-0" />
@@ -794,6 +796,10 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                       {isCancelled ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 text-red-600 text-[11px] font-medium">
                           <Ban size={11} /> ยกเลิกแล้ว
+                        </span>
+                      ) : isPast ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[11px] font-medium">
+                          ผ่านไปแล้ว
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-medium">
@@ -1059,8 +1065,9 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                   {projectMeetings.map((meeting) => {
                     const attendees = meeting.attendeeIds.map((id) => employeeById.get(id)).filter((e): e is Employee => Boolean(e));
                     const isCancelled = meeting.status === 'cancelled';
+                    const isPast = isPastMeeting(meeting);
                     return (
-                      <tr key={meeting.id} className={`border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50 align-top ${isCancelled ? 'opacity-60' : ''}`}>
+                      <tr key={meeting.id} className={`border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50 align-top ${isCancelled || isPast ? 'opacity-60' : ''}`}>
                         <td className="px-5 py-3 font-medium text-[#272220]">
                           <span className="flex items-center gap-2 min-w-0">
                             <Users2 size={14} className="text-[#6F6F6F] shrink-0" />
@@ -1118,13 +1125,20 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                         </span></Tooltip></td>
                         <td className="px-5 py-3 whitespace-nowrap">
                           {isCancelled ? (
-                            <Tooltip content={meeting.cancellationReason ? `เหตุผล: ${meeting.cancellationReason}` : undefined}>
+                            <Tooltip content={meeting.cancellationReason ? (() => {
+                              const canceller = meeting.cancelledBy ? employeeById.get(meeting.cancelledBy) : undefined;
+                              return `เหตุผล: ${meeting.cancellationReason}${canceller ? ` (ยกเลิกโดย ${displayName(canceller)})` : ''}`;
+                            })() : undefined}>
                               <span
                                 className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 text-red-600 text-[11px] font-medium"
                               >
                                 <Ban size={11} /> ยกเลิกแล้ว
                               </span>
                             </Tooltip>
+                          ) : isPast ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[11px] font-medium">
+                              ผ่านไปแล้ว
+                            </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-medium">
                               นัดหมายแล้ว
@@ -1132,7 +1146,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                           )}
                         </td>
                         <td className="px-5 py-3 whitespace-nowrap">
-                          {!isCancelled && (
+                          {!isCancelled && !isPast && (
                             <div className="flex items-center gap-3">
                               <Tooltip content="แก้ไขสถานที่/ลิงก์">
                                 <button

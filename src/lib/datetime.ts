@@ -1,3 +1,5 @@
+import type { Meeting } from '../types';
+
 const THAI_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 
 // "01 ก.ย. 2569"-style short Thai date (Buddhist-Era year) from a plain ISO/`yyyy-mm-dd`-prefixed
@@ -45,4 +47,19 @@ export function formatRelativeTimeTh(timestamp: string): string {
   const diffDays = Math.floor(diffHours / 24);
   if (diffDays < 7) return `${diffDays} วันที่แล้ว`;
   return new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Bangkok' }).format(date);
+}
+
+// A scheduled (not cancelled) meeting whose end time — or start time, if it has no end — has
+// already passed. "YYYY-MM-DDTHH:mm" strings sort lexicographically the same as chronologically, so
+// this is a plain string comparison against "now" in the same shape — no Date parsing/timezone
+// conversion needed since meeting.date/startTime/endTime are already local wall-clock values with
+// no zone of their own. Shared by CalendarView (every meeting chip) and ProjectDetail's own meeting
+// list/table, so a meeting that already happened reads "ผ่านไปแล้ว" everywhere, not just on the
+// calendar — a meeting whose status is still 'scheduled' otherwise looks identical to an upcoming one.
+export function isPastMeeting(meeting: Meeting): boolean {
+  if (meeting.status === 'cancelled') return false; // cancelled already gets its own treatment
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const nowString = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  return `${meeting.date}T${meeting.endTime || meeting.startTime}` < nowString;
 }

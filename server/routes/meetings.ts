@@ -35,6 +35,7 @@ interface MeetingRowDb extends RowDataPacket {
   created_by: string | null;
   status: 'scheduled' | 'cancelled';
   cancellation_reason: string | null;
+  cancelled_by: string | null;
 }
 
 // Same JSON-array-as-TEXT convention as project.member_employee_ids.
@@ -63,10 +64,11 @@ function toMeeting(r: MeetingRowDb) {
     createdBy: r.created_by ?? undefined,
     status: r.status,
     cancellationReason: r.cancellation_reason ?? undefined,
+    cancelledBy: r.cancelled_by ?? undefined,
   };
 }
 
-const SELECT_FIELDS = `id, project_id, task_id, department, title, description, date, start_time, end_time, attendee_ids, location, location_link, meeting_link, created_by, status, cancellation_reason`;
+const SELECT_FIELDS = `id, project_id, task_id, department, title, description, date, start_time, end_time, attendee_ids, location, location_link, meeting_link, created_by, status, cancellation_reason, cancelled_by`;
 
 meetingsRouter.get('/', async (_req, res) => {
   try {
@@ -138,16 +140,17 @@ meetingsRouter.put('/:id', async (req, res) => {
   if ('meetingLink' in m) { fields.push('meeting_link = ?'); values.push(m.meetingLink?.trim() || null); }
 
   // Cancelling always requires a reason — set together in the same request so a meeting can
-  // never end up cancelled with no explanation on record.
+  // never end up cancelled with no explanation on record. cancelled_by is never taken from the
+  // client — it's whoever is actually logged in (req.actorId), same rule as every other actor field.
   if (m.status === 'cancelled') {
     if (typeof m.cancellationReason !== 'string' || !m.cancellationReason.trim()) {
       return res.status(400).json({ message: 'กรุณาระบุเหตุผลที่ยกเลิกการประชุม' });
     }
-    fields.push('status = ?', 'cancellation_reason = ?');
-    values.push('cancelled', m.cancellationReason.trim());
+    fields.push('status = ?', 'cancellation_reason = ?', 'cancelled_by = ?');
+    values.push('cancelled', m.cancellationReason.trim(), req.actorId);
   } else if (m.status === 'scheduled') {
-    fields.push('status = ?', 'cancellation_reason = ?');
-    values.push('scheduled', null);
+    fields.push('status = ?', 'cancellation_reason = ?', 'cancelled_by = ?');
+    values.push('scheduled', null, null);
   }
 
   if (fields.length === 0) {

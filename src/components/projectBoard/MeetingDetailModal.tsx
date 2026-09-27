@@ -30,6 +30,7 @@ export default function MeetingDetailModal({ meeting, employees, onClose, onEdit
   useEscapeToClose(Boolean(meeting), onClose);
   const attendees = meeting ? employees.filter((e) => meeting.attendeeIds.includes(e.id)) : [];
   const creator = meeting?.createdBy ? employees.find((e) => e.id === meeting.createdBy) : undefined;
+  const canceller = meeting?.cancelledBy ? employees.find((e) => e.id === meeting.cancelledBy) : undefined;
   const isCancelled = meeting?.status === 'cancelled';
   // Pre-existing meetings from before location/meetingLink were split may still have a URL sitting
   // in `location` alone — still link-ify that case so older data doesn't regress to plain text.
@@ -205,7 +206,9 @@ export default function MeetingDetailModal({ meeting, employees, onClose, onEdit
 
               {isCancelled && meeting.cancellationReason && (
                 <div>
-                  <p className="text-[#6F6F6F] text-[11px] mb-1">เหตุผลที่ยกเลิก</p>
+                  <p className="text-[#6F6F6F] text-[11px] mb-1">
+                    เหตุผลที่ยกเลิก{canceller && <> — ยกเลิกโดย {displayName(canceller)}</>}
+                  </p>
                   <p className="text-sm text-red-600 whitespace-pre-wrap break-words bg-red-50 border border-red-100 rounded-lg px-3 py-2">{meeting.cancellationReason}</p>
                 </div>
               )}

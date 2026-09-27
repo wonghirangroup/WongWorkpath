@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Meeting, Employee } from '../types';
 import { useAppData } from '../context/AppDataContext';
+import { isPastMeeting } from '../lib/datetime';
 import {
   Calendar as CalIcon,
   ChevronLeft,
@@ -74,17 +75,6 @@ function toLocalDateString(date: Date): string {
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
-}
-
-// "YYYY-MM-DDTHH:mm" strings sort lexicographically the same as chronologically, so this is a
-// plain string comparison against "now" in the same shape — no Date parsing/timezone conversion
-// needed since meeting.date/startTime are already local wall-clock values with no zone of their
-// own (see toLocalDateString's own note on the same thing for tasks).
-function isPastMeeting(meeting: Meeting): boolean {
-  if (meeting.status === 'cancelled') return false; // cancelled already gets its own treatment
-  const now = new Date();
-  const nowString = `${toLocalDateString(now)}T${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-  return `${meeting.date}T${meeting.endTime || meeting.startTime}` < nowString;
 }
 
 export default function CalendarView() {
@@ -817,6 +807,9 @@ export default function CalendarView() {
                                     {isCancelled ? (
                                       <p className="text-[11px] text-red-500 font-medium mt-0.5">
                                         ยกเลิกแล้ว{meeting.cancellationReason ? `: ${meeting.cancellationReason}` : ''}
+                                        {meeting.cancelledBy && employeeById.get(meeting.cancelledBy) && (
+                                          <> — โดย {displayName(employeeById.get(meeting.cancelledBy)!)}</>
+                                        )}
                                       </p>
                                     ) : isPast ? (
                                       <p className="text-[11px] text-[#6F6F6F] mt-0.5">ผ่านไปแล้ว</p>

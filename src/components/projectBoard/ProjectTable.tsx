@@ -102,7 +102,11 @@ export default function ProjectTable({ rows, employees, onViewDetail, canDelete,
             // here doubles as resolveValidIds — a deleted owner can't permanently lock the row.
             const canEditPriority = isExecutive || isOwner(owners.map((o) => o.id), currentUserId);
             return (
-              <tr key={row.id} className="border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50">
+              <tr
+                key={row.id}
+                onDoubleClick={() => onViewDetail(row)}
+                className="border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50 cursor-pointer"
+              >
                 <td className="py-4">
                   {accentColor && <span className="block w-1.5 h-9 rounded-full" style={{ backgroundColor: accentColor }} />}
                 </td>
