@@ -572,15 +572,18 @@ export default function CalendarView() {
 
         {/* Calendar Month Cell Grid — a real 5 or 6 equal-height rows (whatever the month actually
             needs, see calendarGrid's totalRows) that share the flex-1 space evenly, so the grid
-            always exactly fills its container with no inner scrollbar. minmax(0, 1fr), not
-            minmax(70px, 1fr) — a fixed floor is what forced a scrollbar whenever N × 70px didn't
-            fit; a cramped row still reads fine since chip overflow already collapses into
-            "+N more" and the click-to-expand popover. Hardcoding 6 rows regardless of the actual
-            month used to pad most months' last row with 100% next-month filler. */}
+            fills its container without padding a 5-row month with 100% next-month filler.
+            minmax(64px, 1fr): a 64px floor keeps a chip's 11px text + padding legible even on a
+            6-row month in a short viewport — minmax(0, 1fr) let rows shrink low enough to squash
+            chips down to blank slivers with no visible text at all. overflow-y-auto is the
+            fallback for whenever that floor pushes the grid taller than its flex-1 allowance: a
+            small internal scrollbar on a cramped 6-row month reads far better than illegible
+            chips, and every other month is unaffected since its rows are already taller than
+            64px. */}
         <div
           ref={gridRef}
-          className="flex-1 min-h-0 max-lg:flex-none max-lg:h-[23rem] mt-1.5 grid grid-cols-7 gap-1.5"
-          style={{ gridTemplateRows: `repeat(${calendarGrid.totalRows}, minmax(0, 1fr))` }}
+          className="flex-1 min-h-0 max-lg:flex-none max-lg:h-[23rem] mt-1.5 grid grid-cols-7 gap-1.5 overflow-y-auto"
+          style={{ gridTemplateRows: `repeat(${calendarGrid.totalRows}, minmax(64px, 1fr))` }}
         >
           {calendarGrid.cells.map((cell, index) => {
             const hasTasks = filterType !== 'Meetings' ? getTasksOnDate(cell.date) : [];

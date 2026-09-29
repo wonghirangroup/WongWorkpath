@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { Clock, ListChecks, Users2, Plus, Eye, CalendarClock, Pencil, Trash2, Maximize2, Minimize2, Ban, Send, ClipboardCheck, ChevronDown, ChevronRight, CornerDownRight } from 'lucide-react';
+import { Clock, ListChecks, CheckSquare, Users2, Plus, Eye, CalendarClock, Pencil, Trash2, Maximize2, Minimize2, Ban, Send, ClipboardCheck, ChevronDown, ChevronRight, CornerDownRight } from 'lucide-react';
 import { Employee, Meeting, LinkedDoc } from '../../types';
 import { ProjectRow, ProjectTaskItem, ProjectTaskStatus, CustomProjectStatus, CustomProjectType } from './types';
 import { STATUS_DOT, TASK_STATUS_LABEL, TASK_STATUS_COLOR, PROJECT_PRIORITY_META } from './statusMeta';
@@ -133,6 +133,59 @@ const TASK_FILTER_OPTIONS: { value: TaskFilter; label: string }[] = [
   { value: 'done', label: TASK_STATUS_LABEL.done },
 ];
 
+// Overview tab's own "เรียงตาม" for topLevelFilteredTasks — 'created' (the default) is just the
+// array's own order, which is newest-first (handleAddProjectTask prepends new tasks), so a
+// just-created or just-reordered-to-front task legitimately lands at ลำดับ 1 under this option
+// rather than it looking like an unexplained jump. Subtask order within each parent is untouched
+// by this — only the top-level rows get reordered.
+type TaskSortKey = 'created' | 'title' | 'startDate' | 'dueDate' | 'priority' | 'status';
+
+const TASK_SORT_OPTIONS: { value: TaskSortKey; label: string }[] = [
+  { value: 'created', label: 'ลำดับที่สร้าง (ใหม่→เก่า)' },
+  { value: 'title', label: 'ชื่องาน (ก-ฮ)' },
+  { value: 'startDate', label: 'วันที่เริ่ม (ใกล้→ไกล)' },
+  { value: 'dueDate', label: 'กำหนดส่ง (ใกล้→ไกล)' },
+  { value: 'priority', label: 'ความสำคัญ (สูง→ต่ำ)' },
+  { value: 'status', label: 'สถานะ' },
+];
+
+// String-keyed mirror of PRIORITY_OPTIONS (Dropdown<T> requires T extends string) — same pattern
+// ProjectTable.tsx already uses for a project's own priority (PRIORITY_DROPDOWN_OPTIONS there).
+const TASK_PRIORITY_DROPDOWN_OPTIONS: { value: string; label: string }[] = PRIORITY_OPTIONS.map((p) => ({
+  value: String(p.value),
+  label: p.label,
+}));
+
+const TASK_STATUS_SORT_ORDER: Record<ProjectTaskStatus, number> = {
+  blocked: 0,
+  in_progress: 1,
+  todo: 2,
+  review: 3,
+  done: 4,
+};
+
+function sortTopLevelTasks(list: ProjectTaskItem[], sort: TaskSortKey): ProjectTaskItem[] {
+  if (sort === 'created') return list;
+  const sorted = [...list];
+  sorted.sort((a, b) => {
+    switch (sort) {
+      case 'title':
+        return a.title.localeCompare(b.title, 'th');
+      case 'startDate':
+        return (a.startDateISO ?? '9999-99-99').localeCompare(b.startDateISO ?? '9999-99-99');
+      case 'dueDate':
+        return (a.dueDateISO ?? '9999-99-99').localeCompare(b.dueDateISO ?? '9999-99-99');
+      case 'priority':
+        return (a.priority ?? 99) - (b.priority ?? 99);
+      case 'status':
+        return TASK_STATUS_SORT_ORDER[a.status] - TASK_STATUS_SORT_ORDER[b.status];
+      default:
+        return 0;
+    }
+  });
+  return sorted;
+}
+
 function formatBudget(budget: number | null): string {
   if (budget === null) return 'ยังไม่มี';
   return `฿${budget.toLocaleString('th-TH')}`;
@@ -181,6 +234,7 @@ interface ProjectDetailProps {
 const DETAIL_TABS: DetailTab[] = ['overview', 'tasks', 'team', 'meetings', 'timeline'];
 
 export default function ProjectDetail({ row, tasks, meetings, employees, currentUserId, onAddTask, onUpdateTask, onDeleteTask, onAddMeeting, onUpdateMeeting, onCreateFolder, onUpdateProject, existingProjectTitles, customStatuses, customTypes, projects, onSelectProject, changeRequests, onRequestChange, onDecideChangeRequest, documents, onAddDocument, orgSections, isExecutive, initialTab }: ProjectDetailProps) {
+  const confirm = useConfirm();
   const [tab, setTab] = useState<DetailTab>(() => (
     initialTab && (DETAIL_TABS as string[]).includes(initialTab) ? (initialTab as DetailTab) : 'overview'
   ));
@@ -189,6 +243,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
   // งานย่อย — which task (if any) AddTaskModal is currently creating a new subtask under, and
   // which top-level tasks currently have their subtask rows expanded in the overview table.
   const [addingSubtaskFor, setAddingSubtaskFor] = useState<ProjectTaskItem | null>(null);
+  const [taskSort, setTaskSort] = useState<TaskSortKey>('created');
   const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(new Set());
   const toggleTaskExpanded = (id: string) => setExpandedTaskIds((prev) => {
     const next = new Set(prev);
@@ -312,7 +367,10 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
   // flat; ภาพรวม is the one place this hierarchy is worth showing — งาน/ทีม/Timeline still treat
   // every row (task or subtask, whatever its depth) as flat, matching how MyWorkspace and the
   // project's overall progress already do.
-  const topLevelFilteredTasks = useMemo(() => filteredTasks.filter((t) => !t.parentTaskId), [filteredTasks]);
+  const topLevelFilteredTasks = useMemo(
+    () => sortTopLevelTasks(filteredTasks.filter((t) => !t.parentTaskId), taskSort),
+    [filteredTasks, taskSort]
+  );
   const subtasksByParent = useMemo(() => {
     const map = new Map<string, ProjectTaskItem[]>();
     filteredTasks.forEach((t) => {
@@ -331,7 +389,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
   // with depth) and the expand chevron. `depth` nests recursively — a subtask can have its own
   // subtasks, and so on, with no fixed limit — rendering itself plus, when expanded, every one of
   // its own children one level deeper.
-  const renderOverviewTaskRow = (t: ProjectTaskItem, depth: number): React.ReactNode => {
+  const renderOverviewTaskRow = (t: ProjectTaskItem, depth: number, order?: number): React.ReactNode => {
     const taskAssignees = t.assigneeEmployeeIds.map((id) => employeeById.get(id)).filter((e): e is Employee => Boolean(e));
     const taskReviewers = (t.reviewerEmployeeIds ?? []).map((id) => employeeById.get(id)).filter((e): e is Employee => Boolean(e));
     const taskCreator = t.creatorEmployeeId ? employeeById.get(t.creatorEmployeeId) : undefined;
@@ -339,9 +397,18 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
     const subtaskCount = children.length;
     const isSubtask = depth > 0;
     const isExpanded = expandedTaskIds.has(t.id);
+    // Same ownership-gate exemption as InlineDeleteConfirm's requiresReason just below — a subtask
+    // has no owner concept of its own so it's always directly editable, an executive bypasses the
+    // gate entirely, and everyone else must be one of the task's own assignees.
+    const canEditPriorityDirectly = isExecutive || isSubtask || isOwner(resolveValidIds(t.assigneeEmployeeIds, employees), currentUserId);
     return (
       <Fragment key={t.id}>
-      <tr className={`border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50 ${isSubtask ? 'bg-slate-50/40' : ''}`}>
+      <tr
+        onDoubleClick={() => setSelectedTask(t)}
+        className={`border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50 cursor-pointer ${isSubtask ? 'bg-slate-50/40' : ''}`}
+      >
+        {/* ลำดับ นับเฉพาะงานหลัก (depth 0) ตามลำดับที่แสดงในตาราง — งานย่อยไม่มีลำดับของตัวเอง เว้นว่างไว้ */}
+        <td className="px-5 py-3 text-[#6F6F6F] whitespace-nowrap">{order ?? ''}</td>
         <td className="px-5 py-3 font-medium text-[#272220] whitespace-nowrap">
           <span className="flex items-center gap-2 min-w-0" style={{ paddingLeft: depth * 24 }}>
             {subtaskCount > 0 ? (
@@ -358,7 +425,11 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
             ) : (
               <span className="w-3.5 shrink-0" />
             )}
-            <ListChecks size={14} className="text-[#6F6F6F] shrink-0" />
+            {isSubtask ? (
+              <CheckSquare size={14} className="text-[#6F6F6F] shrink-0" />
+            ) : (
+              <ListChecks size={14} className="text-[#6F6F6F] shrink-0" />
+            )}
             <span>{t.title}</span>
             {subtaskCount > 0 && (
               <span className="text-[11px] font-medium text-[#6F6F6F] bg-slate-100 rounded-full px-1.5 py-0.5 shrink-0">{subtaskCount}</span>
@@ -373,6 +444,27 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
         <td className="px-5 py-3 whitespace-nowrap"><PeopleCell people={taskCreator ? [taskCreator] : []} /></td>
         <td className="px-5 py-3 text-[#6F6F6F] whitespace-nowrap">{t.startDate ?? 'ยังไม่มี'}</td>
         <td className="px-5 py-3 text-[#6F6F6F] whitespace-nowrap">{t.dueDate ?? 'ยังไม่มีกำหนด'}</td>
+        <td className="px-5 py-3 whitespace-nowrap">
+          <div className="w-24">
+            <Tooltip content={canEditPriorityDirectly ? undefined : 'ต้องขออนุมัติจากผู้รับผิดชอบก่อน — แก้ไขผ่านหน้ารายละเอียดงาน'}>
+              <Dropdown
+                value={t.priority !== undefined ? String(t.priority) : ''}
+                options={TASK_PRIORITY_DROPDOWN_OPTIONS}
+                onChange={async (value) => {
+                  const newLabel = TASK_PRIORITY_DROPDOWN_OPTIONS.find((o) => o.value === value)?.label ?? value;
+                  const confirmed = await confirm({
+                    title: 'ยืนยันการเปลี่ยนความสำคัญ?',
+                    message: `เปลี่ยนความสำคัญของงาน "${t.title}" เป็น "${newLabel}"`,
+                    confirmLabel: 'เปลี่ยน',
+                  });
+                  if (confirmed) onUpdateTask(t.id, { priority: Number(value) as ProjectTaskItem['priority'] });
+                }}
+                placeholder="ยังไม่มี"
+                disabled={!canEditPriorityDirectly}
+              />
+            </Tooltip>
+          </div>
+        </td>
         <td className="px-5 py-3 whitespace-nowrap">
           <Tooltip content={t.status === 'blocked' ? t.blockedReason : undefined}>
             <span
@@ -726,7 +818,15 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
       {tab === 'overview' && (
         <>
         <div className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] overflow-hidden">
-          <h4 className="font-bold text-[#272220] px-5 pt-5 pb-3">งานทั้งหมดของโครงการ</h4>
+          <div className="flex items-center justify-between gap-3 px-5 pt-5 pb-3 flex-wrap">
+            <h4 className="font-bold text-[#272220]">งานทั้งหมดของโครงการ</h4>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs text-[#6F6F6F] whitespace-nowrap">เรียงตาม</span>
+              <div className="w-52 shrink-0">
+                <Dropdown<TaskSortKey> value={taskSort} onChange={setTaskSort} options={TASK_SORT_OPTIONS} />
+              </div>
+            </div>
+          </div>
           {filteredTasks.length === 0 ? (
             <p className="text-sm text-[#6F6F6F] px-5 pb-5">ไม่มีงานที่ตรงกับตัวกรอง</p>
           ) : (
@@ -738,6 +838,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr className="bg-[#F9F9F9] text-[12px] font-semibold text-[#000000] border-b border-[#EDEEEF]">
+                    <th className="px-5 py-2 text-left whitespace-nowrap">ลำดับ</th>
                     <th className="px-5 py-2 text-left whitespace-nowrap">ชื่องาน</th>
                     <th className="px-5 py-2 text-left">รายละเอียด</th>
                     <th className="px-5 py-2 text-left whitespace-nowrap">ผู้รับผิดชอบ</th>
@@ -745,12 +846,13 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                     <th className="px-5 py-2 text-left whitespace-nowrap">ผู้สร้าง</th>
                     <th className="px-5 py-2 text-left whitespace-nowrap">วันที่เริ่ม</th>
                     <th className="px-5 py-2 text-left whitespace-nowrap">กำหนดส่ง</th>
+                    <th className="px-5 py-2 text-left whitespace-nowrap">ความสำคัญ</th>
                     <th className="px-5 py-2 text-left whitespace-nowrap">สถานะ</th>
                     <th className="px-5 py-2 text-left whitespace-nowrap">การกระทำ</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {topLevelFilteredTasks.map((t) => renderOverviewTaskRow(t, 0))}
+                  {topLevelFilteredTasks.map((t, index) => renderOverviewTaskRow(t, 0, index + 1))}
                 </tbody>
               </table>
             </div>

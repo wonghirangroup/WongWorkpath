@@ -2,7 +2,7 @@
 
 Design system reference for **Wong Workpath**, extracted from what's actually implemented in `src/`. This documents current usage — it isn't a spec to enforce, it's a reference to stay consistent with when adding new UI.
 
-Scope: every module that has gone through a real design pass — Login, the app shell (Sidebar/Header), Employee Management (list + org chart + audit log), Task & Project Management (the Project Board), Doc Vault, Credential Vault, the Reports placeholder, แดชบอร์ด (Dashboard), ปฏิทินและตารางเวลา (Calendar), and งานของฉัน (`/gantt`, MyWorkspace — the page previously hosted a separate flat Gantt/workload view; it's since been replaced by MyWorkspace, which now shares this same design pass).
+Scope: every module that has gone through a real design pass — Login, the app shell (Sidebar/Header), Employee Management (list + org chart + audit log), Task & Project Management (the Project Board), Doc Vault, Credential Vault, แดชบอร์ด (Dashboard), ปฏิทินและตารางเวลา (Calendar), and งานของฉัน (`/gantt`, MyWorkspace — the page previously hosted a separate flat Gantt/workload view; it's since been replaced by MyWorkspace, which now shares this same design pass).
 
 ## Brand & Color Palette
 
@@ -157,7 +157,7 @@ A separate 5-way scale (`TASK_STATUS_LABEL`/`TASK_STATUS_COLOR`) covers task-lev
 **Org-chart tree connectors** (`OrgChart.tsx`'s `ForkRow`) — a reusable "one parent, N children" branch: a horizontal bar forks into one vertical drop per child, trimmed so it never overhangs past the outermost child (each half-border extends exactly half the gap past its own child's edge to meet its neighbor's — precise for fixed-width boxes via a computed pixel/fraction inset, and for the variable-width member chips via a fixed `6px` extension into the `gap-3` between them). Every connector segment in the whole chart is the same `h-6` (24px) length, whether it's company→division, division→section, or box→member-chips, so the hierarchy reads as visually uniform regardless of level.
 
 **Empty states**
-Centered PNG illustration (`w-62.5 h-62.5`) + muted text (`text-sm text-[#6F6F6F]`) + primary orange `+` button. The Reports page placeholder uses a simpler lucide-icon variant of the same idea: `FileOutput` at 40px/`opacity-40`, centered, with `ระบบออกรายงานอยู่ระหว่างการพัฒนา` underneath — a "not built yet" state, not a true empty state.
+Centered PNG illustration (`w-62.5 h-62.5`) + muted text (`text-sm text-[#6F6F6F]`) + primary orange `+` button.
 
 **Cards**
 - Shadow: `shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)]`.
@@ -261,10 +261,6 @@ Toolbar (search + kind filter + scope filter + grid/list toggle + "สร้า�
 ## Credential Vault ("คลังรหัสผ่าน", `/vault`)
 
 Same toolbar/list shape as Doc Vault (search + type/scope filter + grid/list toggle + "+" add). Scope is ส่วนตัว or ทีม; a ทีม-scoped credential is auto-tagged with the creator's own department and only visible to others in that same department (`item.team === currentUserDepartment`). No separate PIN/master-password gate exists in the current code — access is gated by the normal app login only (an earlier local-encryption design is documented in git history/CLAUDE.md but isn't present in `src/` anymore).
-
-## Reports ("การออกรายงาน", `/reports`)
-
-Not yet built — a single centered placeholder card (`FileOutput` icon + "ระบบออกรายงานอยู่ระหว่างการพัฒนา").
 
 ## Dashboard ("แดชบอร์ด", `/dashboard`)
 
