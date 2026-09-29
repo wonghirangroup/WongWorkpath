@@ -48,7 +48,7 @@ export interface ProjectRow {
   department?: string; // shown as "ทีม" in the project detail meta grid
   type?: string; // one of the 6 ProjectType built-ins, or a CustomProjectType.id — also embedded in the generated code
   abbreviation?: string; // "ตัวย่อชื่อโครงการ" (e.g. "GS" for Grow store) — derived from the title, user-editable, the code's first segment
-  priority?: ProjectPriority; // shown as "ความสำคัญ" in the project detail meta grid
+  priority?: ProjectPriority | null; // shown as "ความสำคัญ" in the project detail meta grid — null is an explicit clear-back-to-"ยังไม่มี" (undefined just means "not sent" in a partial update)
   budget: number | null; // null renders as "ยังไม่มี" (draft projects with no figure yet)
   ownerEmployeeIds: string[]; // real Employee.ids, equal authority — e.g. any one of them can approve an edit/delete request once the project has an owner. Empty array = unowned, anyone can edit/delete freely
   memberEmployeeIds?: string[]; // "ผู้รับผิดชอบร่วม" — additional team members beyond the owners
@@ -86,7 +86,7 @@ export interface ProjectTaskItem {
   title: string;
   description?: string; // optional free-text note, from the "เพิ่มงาน" modal
   status: ProjectTaskStatus;
-  priority?: ProjectPriority; // optional, from the "เพิ่มงาน" modal — same 1-5 scale as a project's own priority
+  priority?: ProjectPriority | null; // optional, from the "เพิ่มงาน" modal — same 1-5 scale as a project's own priority; null is an explicit clear-back-to-"ยังไม่มี"
   assigneeEmployeeIds: string[]; // real Employee.ids — a task can have more than one responsible person; "only my tasks" filtering checks membership, not equality
   reviewerEmployeeIds?: string[]; // who can review this task's submission — chosen per task, not inherited from the project owner; any ONE of them passing/rejecting is authoritative, not a consensus vote
   creatorEmployeeId?: string; // who created the task, from the "เพิ่มงาน" modal — optional since the original mock tasks predate this field

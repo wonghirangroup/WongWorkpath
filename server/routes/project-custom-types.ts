@@ -62,3 +62,20 @@ projectCustomTypesRouter.post('/', async (req, res) => {
     res.status(500).json({ message: 'เกิดข้อผิดพลาดในระบบ กรุณาลองใหม่อีกครั้ง' });
   }
 });
+
+// A type that projects are still using can't be deleted — they'd be left holding a raw id like
+// "MKT" that no longer resolves to a real label. Same reasoning as project_custom_status.
+projectCustomTypesRouter.delete('/:id', async (req, res) => {
+  try {
+    const [[usage]] = await pool.query<RowDataPacket[]>('SELECT COUNT(*) AS cnt FROM project WHERE type = ?', [req.params.id]);
+    const inUse = Number(usage?.cnt ?? 0);
+    if (inUse > 0) {
+      return res.status(409).json({ message: `ลบประเภทนี้ไม่ได้ เพราะยังมี ${inUse} โครงการที่ใช้ประเภทนี้อยู่ กรุณาเปลี่ยนประเภทของโครงการเหล่านั้นก่อน` });
+    }
+    await pool.query('DELETE FROM project_custom_type WHERE id = ?', [req.params.id]);
+    res.status(204).send();
+  } catch (err) {
+    console.error('DELETE /api/project-custom-types/:id failed:', err);
+    res.status(500).json({ message: 'เกิดข้อผิดพลาดในระบบ กรุณาลองใหม่อีกครั้ง' });
+  }
+});

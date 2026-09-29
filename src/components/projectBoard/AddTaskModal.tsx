@@ -5,7 +5,7 @@ import { X, Folder, ListChecks, Users2, Paperclip, Link2, Trash2 } from 'lucide-
 import { Employee, LinkedDoc, Meeting } from '../../types';
 import { ProjectRow, ProjectTaskItem, ProjectTaskStatus } from './types';
 import { EmployeeMultiSelect, displayName, formatThaiDateShort, PRIORITY_OPTIONS, Priority } from './CreateProjectModal';
-import { TASK_STATUS_LABEL, TASK_STATUS_COLOR } from './statusMeta';
+import { TASK_STATUS_LABEL, TASK_STATUS_COLOR, resolveTaskDisplayStatus } from './statusMeta';
 import { ApiError, ChangeRequest } from '../../lib/api';
 import { isOwner, resolveValidIds } from '../../lib/ownership';
 import { readFileAsDataUrl, MAX_FILE_BYTES, formatFileSize, getItemVisual, suggestLinkName } from '../DocVault';
@@ -22,14 +22,16 @@ import { DEFAULT_DEADLINE_REMINDER_DAYS, reminderLimit } from '../../lib/deadlin
 type ModalMode = 'task' | 'meeting';
 
 // A task's status now follows the actual work process instead of being freely pickable: no
-// assignee yet -> ยังไม่เริ่ม, an assignee set -> กำลังทำ, and รอตรวจ/เสร็จแล้ว only ever happen
+// assignee yet -> ยังไม่เริ่ม, an assignee set -> กำลังทำ (unless its start date hasn't arrived yet —
+// resolveTaskDisplayStatus holds it at ยังไม่เริ่ม until then), and รอตรวจ/เสร็จแล้ว only ever happen
 // through the real "ส่งงาน"/"ตรวจงาน" flows (SubmitTaskModal/ReviewTaskModal) — editing here never
 // regresses either of those back to todo/in_progress. ติดปัญหา is the one manual override left,
 // via the checkbox below, and wins over everything else while it's checked.
-function computeTaskStatus(currentStatus: ProjectTaskStatus | undefined, assigneeIds: string[], blocked: boolean): ProjectTaskStatus {
+function computeTaskStatus(currentStatus: ProjectTaskStatus | undefined, assigneeIds: string[], blocked: boolean, startDate: string): ProjectTaskStatus {
   if (blocked) return 'blocked';
   if (currentStatus === 'review' || currentStatus === 'done') return currentStatus;
-  return assigneeIds.length > 0 ? 'in_progress' : 'todo';
+  if (assigneeIds.length === 0) return 'todo';
+  return resolveTaskDisplayStatus('in_progress', startDate);
 }
 
 interface AddTaskModalProps {
@@ -327,7 +329,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
           startDate: startDate || null,
           dueDate: dueDate || null,
           // Derived from the process, not freely picked — see computeTaskStatus above.
-          status: computeTaskStatus(editingTask?.status, assigneeIds, blocked),
+          status: computeTaskStatus(editingTask?.status, assigneeIds, blocked, startDate),
           blockedReason: blocked ? blockedReason.trim() : undefined,
         };
 
@@ -596,7 +598,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                               </p>
                             </div>
                             {(() => {
-                              const previewStatus = hasSubtasks ? editingTask.status : computeTaskStatus(editingTask.status, assigneeIds, blocked);
+                              const previewStatus = hasSubtasks ? editingTask.status : computeTaskStatus(editingTask.status, assigneeIds, blocked, startDate);
                               const color = TASK_STATUS_COLOR[previewStatus];
                               return (
                                 <span

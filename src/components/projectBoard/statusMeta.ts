@@ -150,6 +150,21 @@ export const TASK_STATUS_COLOR: Record<ProjectTaskStatus, string> = {
   done: '#197A4B',
 };
 
+// A task whose stored status is 'in_progress' but whose start date hasn't arrived yet reads as
+// ยังไม่เริ่ม everywhere its status is shown — computeTaskStatus (AddTaskModal.tsx) already sets
+// new/edited tasks this way, but this also covers tasks saved before that rule existed, and
+// self-corrects the day the start date arrives without a server scheduler (same "derive from a
+// stored date at read time" approach isPastMeeting/deadline reminders already use). review/done/
+// blocked are never touched — those only ever come from the real ส่งงาน/ตรวจงาน/ติดปัญหา flows,
+// never from a date check.
+export function resolveTaskDisplayStatus(status: ProjectTaskStatus, startDateISO?: string | null): ProjectTaskStatus {
+  if (status !== 'in_progress' || !startDateISO) return status;
+  const today = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const todayISO = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+  return startDateISO > todayISO ? 'todo' : status;
+}
+
 // ProjectRow.priority's own scale — the same numeric 1-5 scale as task priority
 // (CreateProjectModal.tsx's PRIORITY_OPTIONS), shown wherever a project's own priority appears
 // (detail meta grid, project table). Same color ramp, simplified to bg+text since this renders

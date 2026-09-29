@@ -12,6 +12,7 @@ import PeopleCell from './PeopleCell';
 // Dropdown is generic over string values only, so the numeric 1-5 scale is represented as
 // strings here and converted back to a number right at the onUpdatePriority call site below.
 const PRIORITY_DROPDOWN_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: 'ยังไม่มี' },
   { value: '1', label: PROJECT_PRIORITY_META[1].label },
   { value: '2', label: PROJECT_PRIORITY_META[2].label },
   { value: '3', label: PROJECT_PRIORITY_META[3].label },
@@ -39,7 +40,7 @@ interface ProjectTableProps {
   // delete icon renders at all (a plain employee sees no icon there, not just a disabled one).
   canDelete: boolean;
   onDelete: (row: ProjectRow) => void;
-  onUpdatePriority: (row: ProjectRow, priority: ProjectPriority) => void;
+  onUpdatePriority: (row: ProjectRow, priority: ProjectPriority | null) => void;
   currentUserId: string;
   // ผู้บริหาร can always change priority inline, regardless of ownership.
   isExecutive: boolean;
@@ -129,7 +130,7 @@ export default function ProjectTable({ rows, employees, onViewDetail, canDelete,
                   <div className="w-28">
                     <Tooltip content={canEditPriority ? undefined : 'ต้องขออนุมัติจากผู้รับผิดชอบก่อน — แก้ไขผ่านหน้ารายละเอียดโครงการ'}>
                       <Dropdown
-                        value={row.priority !== undefined ? String(row.priority) : ''}
+                        value={row.priority != null ? String(row.priority) : ''}
                         options={PRIORITY_DROPDOWN_OPTIONS}
                         onChange={async (value) => {
                           const newLabel = PRIORITY_DROPDOWN_OPTIONS.find((o) => o.value === value)?.label ?? value;
@@ -138,7 +139,7 @@ export default function ProjectTable({ rows, employees, onViewDetail, canDelete,
                             message: `เปลี่ยนความสำคัญของโครงการ "${row.title}" เป็น "${newLabel}"`,
                             confirmLabel: 'เปลี่ยน',
                           });
-                          if (confirmed) onUpdatePriority(row, Number(value) as ProjectPriority);
+                          if (confirmed) onUpdatePriority(row, value === '' ? null : Number(value) as ProjectPriority);
                         }}
                         placeholder="ยังไม่มี"
                         disabled={!canEditPriority}

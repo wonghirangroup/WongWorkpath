@@ -12,6 +12,7 @@ export default function DashboardPage() {
     customProjectStatuses,
     customProjectTypes,
     handleAddCustomProjectType,
+    handleDeleteCustomProjectType,
     setTaskSelectedProjectId,
     orgSections,
   } = useAppData();
@@ -32,6 +33,7 @@ export default function DashboardPage() {
       customProjectStatuses={customProjectStatuses}
       customProjectTypes={customProjectTypes}
       onAddCustomProjectType={handleAddCustomProjectType}
+      onDeleteCustomProjectType={handleDeleteCustomProjectType}
       onSelectProject={goToProject}
       orgSections={orgSections}
     />

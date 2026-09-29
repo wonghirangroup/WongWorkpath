@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { Clock, ListChecks, CheckSquare, Users2, Plus, Eye, CalendarClock, Pencil, Trash2, Maximize2, Minimize2, Ban, Send, ClipboardCheck, ChevronDown, ChevronRight, CornerDownRight } from 'lucide-react';
 import { Employee, Meeting, LinkedDoc } from '../../types';
 import { ProjectRow, ProjectTaskItem, ProjectTaskStatus, CustomProjectStatus, CustomProjectType } from './types';
-import { STATUS_DOT, TASK_STATUS_LABEL, TASK_STATUS_COLOR, PROJECT_PRIORITY_META } from './statusMeta';
+import { STATUS_DOT, TASK_STATUS_LABEL, TASK_STATUS_COLOR, PROJECT_PRIORITY_META, resolveTaskDisplayStatus } from './statusMeta';
 import { displayName, formatThaiDateShort, PRIORITY_OPTIONS } from './CreateProjectModal';
 import { isPastMeeting } from '../../lib/datetime';
 import { ChangeRequest } from '../../lib/api';
@@ -151,10 +151,10 @@ const TASK_SORT_OPTIONS: { value: TaskSortKey; label: string }[] = [
 
 // String-keyed mirror of PRIORITY_OPTIONS (Dropdown<T> requires T extends string) — same pattern
 // ProjectTable.tsx already uses for a project's own priority (PRIORITY_DROPDOWN_OPTIONS there).
-const TASK_PRIORITY_DROPDOWN_OPTIONS: { value: string; label: string }[] = PRIORITY_OPTIONS.map((p) => ({
-  value: String(p.value),
-  label: p.label,
-}));
+const TASK_PRIORITY_DROPDOWN_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: 'ยังไม่มี' },
+  ...PRIORITY_OPTIONS.map((p) => ({ value: String(p.value), label: p.label })),
+];
 
 const TASK_STATUS_SORT_ORDER: Record<ProjectTaskStatus, number> = {
   blocked: 0,
@@ -178,7 +178,7 @@ function sortTopLevelTasks(list: ProjectTaskItem[], sort: TaskSortKey): ProjectT
       case 'priority':
         return (a.priority ?? 99) - (b.priority ?? 99);
       case 'status':
-        return TASK_STATUS_SORT_ORDER[a.status] - TASK_STATUS_SORT_ORDER[b.status];
+        return TASK_STATUS_SORT_ORDER[resolveTaskDisplayStatus(a.status, a.startDateISO)] - TASK_STATUS_SORT_ORDER[resolveTaskDisplayStatus(b.status, b.startDateISO)];
       default:
         return 0;
     }
@@ -323,10 +323,11 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
   const counts = useMemo(() => {
     const base = { total: tasks.length, done: 0, in_progress: 0, review: 0, blocked: 0 };
     tasks.forEach((t) => {
-      if (t.status === 'done') base.done += 1;
-      else if (t.status === 'in_progress') base.in_progress += 1;
-      else if (t.status === 'review') base.review += 1;
-      else if (t.status === 'blocked') base.blocked += 1;
+      const status = resolveTaskDisplayStatus(t.status, t.startDateISO);
+      if (status === 'done') base.done += 1;
+      else if (status === 'in_progress') base.in_progress += 1;
+      else if (status === 'review') base.review += 1;
+      else if (status === 'blocked') base.blocked += 1;
     });
     return base;
   }, [tasks]);
@@ -353,7 +354,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
   // (overview's table, งาน's "only my tasks", ทีม's per-member task lists, and the Gantt chart) —
   // it does not affect the progress overview card above, which always reflects the whole project.
   const filteredTasks = useMemo(
-    () => (taskFilter === 'all' ? tasks : tasks.filter((t) => t.status === taskFilter)),
+    () => (taskFilter === 'all' ? tasks : tasks.filter((t) => resolveTaskDisplayStatus(t.status, t.startDateISO) === taskFilter)),
     [tasks, taskFilter]
   );
 
@@ -401,6 +402,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
     // has no owner concept of its own so it's always directly editable, an executive bypasses the
     // gate entirely, and everyone else must be one of the task's own assignees.
     const canEditPriorityDirectly = isExecutive || isSubtask || isOwner(resolveValidIds(t.assigneeEmployeeIds, employees), currentUserId);
+    const displayStatus = resolveTaskDisplayStatus(t.status, t.startDateISO);
     return (
       <Fragment key={t.id}>
       <tr
@@ -448,7 +450,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
           <div className="w-24">
             <Tooltip content={canEditPriorityDirectly ? undefined : 'ต้องขออนุมัติจากผู้รับผิดชอบก่อน — แก้ไขผ่านหน้ารายละเอียดงาน'}>
               <Dropdown
-                value={t.priority !== undefined ? String(t.priority) : ''}
+                value={t.priority != null ? String(t.priority) : ''}
                 options={TASK_PRIORITY_DROPDOWN_OPTIONS}
                 onChange={async (value) => {
                   const newLabel = TASK_PRIORITY_DROPDOWN_OPTIONS.find((o) => o.value === value)?.label ?? value;
@@ -457,7 +459,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                     message: `เปลี่ยนความสำคัญของงาน "${t.title}" เป็น "${newLabel}"`,
                     confirmLabel: 'เปลี่ยน',
                   });
-                  if (confirmed) onUpdateTask(t.id, { priority: Number(value) as ProjectTaskItem['priority'] });
+                  if (confirmed) onUpdateTask(t.id, { priority: value === '' ? null : Number(value) as ProjectTaskItem['priority'] });
                 }}
                 placeholder="ยังไม่มี"
                 disabled={!canEditPriorityDirectly}
@@ -466,12 +468,12 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
           </div>
         </td>
         <td className="px-5 py-3 whitespace-nowrap">
-          <Tooltip content={t.status === 'blocked' ? t.blockedReason : undefined}>
+          <Tooltip content={displayStatus === 'blocked' ? t.blockedReason : undefined}>
             <span
               className="text-[11px] font-medium px-2 py-0.5 rounded-full"
-              style={{ backgroundColor: `${TASK_STATUS_COLOR[t.status]}1A`, color: TASK_STATUS_COLOR[t.status] }}
+              style={{ backgroundColor: `${TASK_STATUS_COLOR[displayStatus]}1A`, color: TASK_STATUS_COLOR[displayStatus] }}
             >
-              {TASK_STATUS_LABEL[t.status]}
+              {TASK_STATUS_LABEL[displayStatus]}
             </span>
           </Tooltip>
         </td>
@@ -942,16 +944,17 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                     const isUrgent = t.daysUntilDue !== undefined && t.daysUntilDue <= 2;
                     const creator = t.creatorEmployeeId ? employeeById.get(t.creatorEmployeeId) : undefined;
                     const priorityMeta = t.priority ? PRIORITY_OPTIONS.find((p) => p.value === t.priority) : undefined;
+                    const displayStatus = resolveTaskDisplayStatus(t.status, t.startDateISO);
                     return (
                       <tr key={t.id} className="border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50 align-top">
                         <td className="px-5 py-3 whitespace-nowrap">
                           <div className="flex flex-col gap-1 items-start">
-                            <Tooltip content={t.status === 'blocked' ? t.blockedReason : undefined}>
+                            <Tooltip content={displayStatus === 'blocked' ? t.blockedReason : undefined}>
                               <span
                                 className="text-[11px] font-medium px-2 py-0.5 rounded-full"
-                                style={{ backgroundColor: `${TASK_STATUS_COLOR[t.status]}1A`, color: TASK_STATUS_COLOR[t.status] }}
+                                style={{ backgroundColor: `${TASK_STATUS_COLOR[displayStatus]}1A`, color: TASK_STATUS_COLOR[displayStatus] }}
                               >
-                                {TASK_STATUS_LABEL[t.status]}
+                                {TASK_STATUS_LABEL[displayStatus]}
                               </span>
                             </Tooltip>
                             {isUrgent && (
@@ -973,9 +976,9 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                         <td className="px-5 py-3">
                           <div className="flex items-center gap-2 min-w-[120px]">
                             <div className="flex-1 h-1.5 rounded-full bg-[#F0F0F0] overflow-hidden">
-                              <div className="h-full rounded-full" style={{ width: `${t.progress}%`, backgroundColor: TASK_STATUS_COLOR[t.status] }} />
+                              <div className="h-full rounded-full" style={{ width: `${t.progress}%`, backgroundColor: TASK_STATUS_COLOR[displayStatus] }} />
                             </div>
-                            <span className="text-xs font-medium shrink-0" style={{ color: TASK_STATUS_COLOR[t.status] }}>{t.progress}%</span>
+                            <span className="text-xs font-medium shrink-0" style={{ color: TASK_STATUS_COLOR[displayStatus] }}>{t.progress}%</span>
                           </div>
                         </td>
                         <td className="px-5 py-3 whitespace-nowrap">
@@ -1075,7 +1078,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                       <div className="w-full pt-3 mt-1 border-t border-slate-50 space-y-2 text-left">
                         {match.tasks.map((t) => (
                           <div key={t.id} className="flex items-start gap-1.5">
-                            <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: TASK_STATUS_COLOR[t.status] }} />
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: TASK_STATUS_COLOR[resolveTaskDisplayStatus(t.status, t.startDateISO)] }} />
                             <div className="min-w-0">
                               <p className="text-xs text-[#272220] truncate">{t.title}</p>
                               <p className="text-[11px] text-[#6F6F6F]">
@@ -1125,7 +1128,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                       <div className="w-full pt-3 mt-1 border-t border-slate-50 space-y-2">
                         {memberTasks.map((t) => (
                           <div key={t.id} className="flex items-start gap-1.5 text-left">
-                            <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: TASK_STATUS_COLOR[t.status] }} />
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: TASK_STATUS_COLOR[resolveTaskDisplayStatus(t.status, t.startDateISO)] }} />
                             <div className="min-w-0">
                               <p className="text-xs text-[#272220] truncate">{t.title}</p>
                               <p className="text-[11px] text-[#6F6F6F]">

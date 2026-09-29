@@ -31,6 +31,7 @@ interface DashboardProps {
   customProjectStatuses: CustomProjectStatus[];
   customProjectTypes: CustomProjectType[];
   onAddCustomProjectType: (label: string, abbreviation: string) => Promise<CustomProjectType>;
+  onDeleteCustomProjectType: (id: string) => Promise<void>;
   onSelectProject: (id: string) => void;
   orgSections: string[];
 }
@@ -44,6 +45,7 @@ export default function Dashboard({
   customProjectStatuses,
   customProjectTypes,
   onAddCustomProjectType,
+  onDeleteCustomProjectType,
   onSelectProject,
   orgSections
 }: DashboardProps) {
@@ -242,6 +244,7 @@ export default function Dashboard({
         customStatuses={customProjectStatuses}
         customTypes={customProjectTypes}
         onAddCustomType={onAddCustomProjectType}
+        onDeleteCustomType={onDeleteCustomProjectType}
         projects={projects}
       />
 

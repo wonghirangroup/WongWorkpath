@@ -395,6 +395,19 @@ export async function createProjectCustomType(label: string, abbreviation: strin
   return data as CustomProjectType;
 }
 
+export async function deleteProjectCustomTypeRemote(id: string): Promise<void> {
+  let res: Response;
+  try {
+    res = await authFetch(`${API_BASE_URL}/api/project-custom-types/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(data.message ?? 'ลบประเภทโครงการไม่สำเร็จ', res.status);
+  }
+}
+
 export async function fetchMeetings(): Promise<Meeting[]> {
   const res = await authFetch(`${API_BASE_URL}/api/meetings`);
   if (!res.ok) throw new Error(`Failed to fetch meetings: ${res.status}`);

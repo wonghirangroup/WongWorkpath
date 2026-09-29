@@ -15,6 +15,7 @@ import EmployeeAvatar from '../EmployeeAvatar';
 import ThaiDatePicker from '../ThaiDatePicker';
 import Dropdown from '../Dropdown';
 import { useEscapeToClose } from '../../lib/useEscapeToClose';
+import { useConfirm } from '../../context/ConfirmContext';
 import { useAppData } from '../../context/AppDataContext';
 import DeadlineReminderField from '../DeadlineReminderField';
 import { DEFAULT_DEADLINE_REMINDER_DAYS, reminderLimit } from '../../lib/deadlineReminders';
@@ -318,6 +319,7 @@ interface CreateProjectModalProps {
   customStatuses: CustomProjectStatus[];
   customTypes: CustomProjectType[];
   onAddCustomType: (label: string, abbreviation: string) => Promise<CustomProjectType>;
+  onDeleteCustomType: (id: string) => Promise<void>;
   // For the "โครงการหลัก" picker, offered only when type === 'SP' — filtered down to just the
   // top-level "โครงการ (P)" ones right where it's used below, not here, so the full list stays
   // available if this modal ever needs it for something else later.
@@ -363,7 +365,7 @@ function deriveAbbreviation(title: string): string {
 // page's "ทีม" tab. The optional "create a folder" choice is sent along as createFolderName and the
 // server creates the folder in the same transaction as the project, so a failed save leaves no
 // stray folder behind in Drive.
-export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreated, getNextCodePreview, employees, existingTitles, customStatuses, customTypes, onAddCustomType, projects }: CreateProjectModalProps) {
+export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreated, getNextCodePreview, employees, existingTitles, customStatuses, customTypes, onAddCustomType, onDeleteCustomType, projects }: CreateProjectModalProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [title, setTitle] = useState('');
   const [renameNotice, setRenameNotice] = useState('');
@@ -391,6 +393,30 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
   const submitButtonRef = useRef<HTMLButtonElement>(null);
+  const confirm = useConfirm();
+  // Only surfaced by the type dropdown's delete (X) button below — kept separate from formError
+  // since it's not part of the project-creation flow and shouldn't block/clear alongside it.
+  const [deleteTypeError, setDeleteTypeError] = useState('');
+
+  // "ลบประเภทที่สร้างผิด" — a custom type is only ever created a step earlier in this same wizard
+  // (there's no separate management screen for it), so undoing a mistake belongs right here next
+  // to where it was added. Server refuses (409) if any project already uses it.
+  const handleDeleteCustomType = async (customType: CustomProjectType) => {
+    const confirmed = await confirm({
+      title: 'ยืนยันการลบประเภทโครงการ?',
+      message: `ลบประเภท "${customType.label} (${customType.id})" ออกจากระบบ`,
+      tone: 'danger',
+      confirmLabel: 'ลบ',
+    });
+    if (!confirmed) return;
+    setDeleteTypeError('');
+    try {
+      await onDeleteCustomType(customType.id);
+      if (type === customType.id) setType(null); // was selected — clear it, it no longer exists
+    } catch (err) {
+      setDeleteTypeError(err instanceof ApiError ? err.message : 'ลบประเภทโครงการไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+    }
+  };
 
   // Step 3 is a read-only summary with no input fields — without this, reaching it (by button
   // click or by Enter) leaves nothing focused at all, so a further Enter press has no element to
@@ -619,10 +645,34 @@ export default function CreateProjectModal({ isOpen, onClose, onCreate, onCreate
                           placeholder="เลือกประเภทโครงการ"
                           options={[
                             ...PROJECT_TYPE_OPTIONS.map((t) => ({ value: t as string, label: `${PROJECT_TYPE_META[t].label} (${t})` })),
-                            ...customTypes.map((t) => ({ value: t.id, label: `${t.label} (${t.id})` })),
+                            // A custom type gets its own delete (X) — created a step earlier in this
+                            // same wizard via "อื่นๆ ระบุ..." below, so undoing a wrong one belongs
+                            // right here. Not a nested <button> (options are already <button>s in
+                            // Dropdown.tsx) — a plain clickable span with stopPropagation instead, so
+                            // clicking it deletes without also selecting the option underneath it.
+                            ...customTypes.map((t) => ({
+                              value: t.id,
+                              label: (
+                                <span className="flex items-center justify-between gap-2 w-full">
+                                  <span className="truncate">{t.label} ({t.id})</span>
+                                  <span
+                                    role="button"
+                                    tabIndex={-1}
+                                    aria-label={`ลบประเภท ${t.label}`}
+                                    onClick={(e) => { e.stopPropagation(); handleDeleteCustomType(t); }}
+                                    className="text-slate-500 hover:text-red-600 cursor-pointer shrink-0 p-0.5"
+                                  >
+                                    <X size={12} />
+                                  </span>
+                                </span>
+                              ),
+                            })),
                             { value: CUSTOM_TYPE_VALUE, label: <span className="flex items-center gap-1.5"><Plus size={12} /> อื่นๆ ระบุ...</span> },
                           ]}
                         />
+                        {deleteTypeError && (
+                          <p className="text-[11px] text-red-600 mt-1">{deleteTypeError}</p>
+                        )}
                       </div>
                       <div>
                         <label className="block text-[#272220] font-bold text-[11px] mb-1">

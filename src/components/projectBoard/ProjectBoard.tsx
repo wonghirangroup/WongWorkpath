@@ -197,6 +197,7 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
     handleDeleteCustomProjectStatus,
     customProjectTypes,
     handleAddCustomProjectType,
+    handleDeleteCustomProjectType,
     handleAddProjectTask,
     handleUpdateProjectTask,
     handleDeleteProjectTask,
@@ -590,6 +591,7 @@ export default function ProjectBoard({ employees, onCreateFolder, currentUserId 
         customStatuses={customProjectStatuses}
         customTypes={customProjectTypes}
         onAddCustomType={handleAddCustomProjectType}
+        onDeleteCustomType={handleDeleteCustomProjectType}
         projects={projects}
       />
 

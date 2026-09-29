@@ -8,7 +8,7 @@ import {
   AuditLog,
 } from '../types';
 import { DEFAULT_ORG_DIVISIONS, OrgDivisionData } from '../data/orgStructure';
-import { ApiError, fetchCurrentUser, getAuthToken, clearAuthToken, setSessionExpiredHandler, fetchEmployees, createEmployee, updateEmployeeRemote, changeSelfPassword, deleteEmployeeRemote, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote, fetchProjects, createProject, updateProjectRemote, deleteProjectRemote, CreateProjectPayload, fetchMeetings, createMeeting, updateMeetingRemote, fetchProjectTasks, createProjectTask, updateProjectTaskRemote, deleteProjectTaskRemote, fetchProjectCustomStatuses, createProjectCustomStatus, deleteProjectCustomStatusRemote, fetchNotifications, createNotification, markNotificationRead, markAllNotificationsRead, CreateNotificationPayload, fetchChangeRequests, createChangeRequest, decideChangeRequest, ChangeRequest, fetchDocuments, createDocument, updateDocumentRemote, deleteDocumentRemote, fetchOrgStructure, addOrgDivision, renameOrgDivision, deleteOrgDivision, addOrgSection, renameOrgSection, deleteOrgSection, fetchAuditLogs, createAuditLog, fetchProjectCustomTypes, createProjectCustomType, fetchDeadlineReminders, setDeadlineReminderRemote } from '../lib/api';
+import { ApiError, fetchCurrentUser, getAuthToken, clearAuthToken, setSessionExpiredHandler, fetchEmployees, createEmployee, updateEmployeeRemote, changeSelfPassword, deleteEmployeeRemote, fetchCredentials, createCredential, updateCredentialRemote, deleteCredentialRemote, fetchProjects, createProject, updateProjectRemote, deleteProjectRemote, CreateProjectPayload, fetchMeetings, createMeeting, updateMeetingRemote, fetchProjectTasks, createProjectTask, updateProjectTaskRemote, deleteProjectTaskRemote, fetchProjectCustomStatuses, createProjectCustomStatus, deleteProjectCustomStatusRemote, fetchNotifications, createNotification, markNotificationRead, markAllNotificationsRead, CreateNotificationPayload, fetchChangeRequests, createChangeRequest, decideChangeRequest, ChangeRequest, fetchDocuments, createDocument, updateDocumentRemote, deleteDocumentRemote, fetchOrgStructure, addOrgDivision, renameOrgDivision, deleteOrgDivision, addOrgSection, renameOrgSection, deleteOrgSection, fetchAuditLogs, createAuditLog, fetchProjectCustomTypes, createProjectCustomType, deleteProjectCustomTypeRemote, fetchDeadlineReminders, setDeadlineReminderRemote } from '../lib/api';
 import { nowTimestamp, formatThaiDateShort } from '../lib/datetime';
 import {
   ReminderMap,
@@ -118,6 +118,7 @@ interface AppDataContextValue {
   handleDeleteCustomProjectStatus: (id: string) => Promise<void>;
   customProjectTypes: CustomProjectType[];
   handleAddCustomProjectType: (label: string, abbreviation: string) => Promise<CustomProjectType>;
+  handleDeleteCustomProjectType: (id: string) => Promise<void>;
   handleAddProjectTask: (task: Omit<ProjectTaskItem, 'id'>) => Promise<ProjectTaskItem>;
   handleUpdateProjectTask: (id: string, updates: Partial<ProjectTaskItem>) => Promise<void>;
   handleDeleteProjectTask: (id: string) => Promise<void>;
@@ -835,6 +836,15 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     return created;
   };
 
+  const handleDeleteCustomProjectType = async (id: string) => {
+    await deleteProjectCustomTypeRemote(id);
+    setCustomProjectTypes((prev) => {
+      const next = prev.filter((t) => t.id !== id);
+      registerCustomTypeLabels(next);
+      return next;
+    });
+  };
+
   const handleAddProjectTask = async (task: Omit<ProjectTaskItem, 'id'>) => {
     const created = await createProjectTask(task);
     setProjectTasks((prev) => {
@@ -1413,6 +1423,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     handleDeleteCustomProjectStatus,
     customProjectTypes,
     handleAddCustomProjectType,
+    handleDeleteCustomProjectType,
     handleAddProjectTask,
     handleUpdateProjectTask,
     handleDeleteProjectTask,
