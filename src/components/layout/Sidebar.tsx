@@ -30,7 +30,7 @@ import passwordHold from '../../../images/new side bar/password icon hold.png';
 import Tooltip from '../Tooltip';
 
 export const NAV_ITEMS = [
-  { id: 'dashboard', label: 'แดชบอร์ด', iconActive: dashboardActive, iconInactive: dashboardInactive, iconHover: undefined as string | undefined, iconComponent: undefined as typeof Users | undefined },
+  { id: 'dashboard', label: 'ภาพรวม', iconActive: dashboardActive, iconInactive: dashboardInactive, iconHover: undefined as string | undefined, iconComponent: undefined as typeof Users | undefined },
   { id: 'tasks', label: 'จัดการงานและโครงการ', iconActive: projectActive, iconInactive: projectInactive, iconHover: projectHover as string | undefined, iconComponent: undefined as typeof Users | undefined },
   { id: 'calendar', label: 'ปฏิทินและตารางเวลา', iconActive: calendarActive, iconInactive: calendarInactive, iconHover: calendarHover as string | undefined, iconComponent: undefined as typeof Users | undefined },
   { id: 'gantt', label: 'งานของฉัน', iconActive: employeeActive, iconInactive: employeeInactive, iconHover: employeeHover as string | undefined, iconComponent: undefined as typeof Users | undefined },

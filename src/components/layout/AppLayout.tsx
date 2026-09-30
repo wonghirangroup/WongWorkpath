@@ -14,7 +14,7 @@ import { canManageEmployees } from '../../lib/permissions';
 // Title/subtitle shown in the Header for each route — kept separate from NAV_ITEMS' short
 // sidebar labels since some pages (e.g. docs) use different, longer wording for their page title.
 const PAGE_META: Record<string, { title: string; subtitle?: string }> = {
-  dashboard: { title: 'แดชบอร์ด', subtitle: 'ภาพรวมโครงการ งบประมาณ และภาระงานทั้งองค์กรในหน้าเดียว' },
+  dashboard: { title: 'ภาพรวม', subtitle: 'ภาพรวมโครงการ งบประมาณ และภาระงานทั้งองค์กรในหน้าเดียว' },
   tasks: { title: 'จัดการงานและโครงการ', subtitle: 'วางแผนและติดตามความคืบหน้าของโครงการทั้งหมด' },
   calendar: { title: 'ปฏิทินและตารางเวลา', subtitle: 'ดูภาพรวมงานและการประชุมทั้งหมดในปฏิทินเดียว' },
   gantt: { title: 'งานของฉัน', subtitle: 'งาน โครงการ และ Gantt Chart ของคุณเองในที่เดียว' },

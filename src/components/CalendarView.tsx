@@ -22,7 +22,7 @@ import CancelMeetingModal from './projectBoard/CancelMeetingModal';
 import MeetingDetailModal from './projectBoard/MeetingDetailModal';
 import TaskDetailModal from './projectBoard/TaskDetailModal';
 import { ProjectRow, ProjectTaskItem } from './projectBoard/types';
-import { STATUS_DOT, STATUS_LABEL, STATUS_ICON, TASK_STATUS_COLOR, TASK_STATUS_LABEL } from './projectBoard/statusMeta';
+import { STATUS_DOT, STATUS_LABEL, STATUS_ICON } from './projectBoard/statusMeta';
 import { formatThaiDateShort, displayName } from './projectBoard/CreateProjectModal';
 import { isResponsibleForProject } from '../lib/ownership';
 import Tooltip from './Tooltip';
@@ -44,15 +44,30 @@ interface CalendarTaskItem {
   title: string;
   dueDateISO: string;
   startDateISO: string | null;
-  // Real project tasks carry colorHex (from the canonical TASK_STATUS_COLOR in statusMeta.ts, the
-  // same palette ProjectDetail/ProjectGantt/MyWorkspace already color this exact status with) and
-  // render via inline style, same technique as this file's own project-deadline chips below.
-  colorClasses: string;
-  colorHex?: string;
   projectLabel: string;
   projectId?: string;
   assigneeNames?: string; // display name(s) of whoever's responsible — undefined when nobody's assigned yet
 }
+
+// A chip/list-item's color and label are no longer about the task's/project's own status (that
+// info is one click away in its own detail view) — they're about *which date this occurrence is*,
+// since a task or project can now show up on the calendar on two separate days (its start and its
+// due/end date, see getTasksOnDate/getProjectsOnDate below) and a viewer has no other way to tell
+// those two occurrences apart. Task and project each get their own start/due pair of colors so the
+// two entity types stay visually distinct too.
+type CalendarDateKind = 'taskStart' | 'taskDue' | 'projectStart' | 'projectDue';
+const CALENDAR_DATE_KIND_COLOR: Record<CalendarDateKind, string> = {
+  taskStart: '#2563EB',
+  taskDue: '#FF6537',
+  projectStart: '#0D9488',
+  projectDue: '#DC2626',
+};
+const CALENDAR_DATE_KIND_LABEL: Record<CalendarDateKind, string> = {
+  taskStart: 'วันที่เริ่มงาน',
+  taskDue: 'สิ้นสุดงาน',
+  projectStart: 'วันที่เริ่มโครงการ',
+  projectDue: 'ครบกำหนดโครงการ',
+};
 
 type UpcomingItem =
   | { kind: 'task'; sortKey: string; task: CalendarTaskItem }
@@ -61,11 +76,12 @@ type UpcomingItem =
 
 // A day cell's chips (up to 2 visible, see dayChipItems below) — same 3 kinds as UpcomingItem,
 // just without a sortKey since a day cell keeps the original tasks/meetings/deadlines grouping
-// order instead of sorting across kinds.
+// order instead of sorting across kinds. task/project carry dateKind so rendering knows which of
+// their two possible occurrences (start vs due) landed on this particular day.
 type DayChipItem =
-  | { kind: 'task'; key: string; task: CalendarTaskItem }
+  | { kind: 'task'; key: string; task: CalendarTaskItem; dateKind: 'taskStart' | 'taskDue' }
   | { kind: 'meeting'; key: string; meeting: Meeting }
-  | { kind: 'project'; key: string; project: ProjectRow };
+  | { kind: 'project'; key: string; project: ProjectRow; dateKind: 'projectStart' | 'projectDue' };
 
 // Stored dates are plain "YYYY-MM-DD" strings with no timezone of their own — formatting via the
 // Date object's LOCAL getters (not toISOString, which converts to UTC first) is what keeps a task
@@ -237,8 +253,6 @@ export default function CalendarView() {
         title: t.title,
         dueDateISO: t.dueDateISO as string,
         startDateISO: t.startDateISO ?? null,
-        colorClasses: 'border',
-        colorHex: TASK_STATUS_COLOR[t.status],
         projectLabel: projectById.get(t.projectId)?.title ?? 'ไม่ทราบโครงการ',
         projectId: t.projectId,
         assigneeNames: namesFor(t.assigneeEmployeeIds),
@@ -247,18 +261,21 @@ export default function CalendarView() {
     return fromProjectTasks;
   }, [projectTasks, projectById, employeeById, scope, currentUserId]);
 
-  // Check if a date has tasks falling on it
-  const getTasksOnDate = (date: Date) => {
+  // A task chip shows only on its start date and its due date (not every day in between) — a
+  // multi-week task used to render on every single day of its range, so a busy month's grid ended
+  // up with almost every cell showing the same chip and a large "+N", telling the viewer nothing
+  // useful about when things actually start/end. Returns which of the two dates matched (dateKind)
+  // so the caller can color/label a "starts today" chip differently from a "due today" one — a
+  // single-day task (start === due) counts as its due occurrence only, since "due today" is the
+  // more actionable of the two to surface.
+  const getTasksOnDate = (date: Date): { task: CalendarTaskItem; dateKind: 'taskStart' | 'taskDue' }[] => {
     const dateString = toLocalDateString(date);
-    return allCalendarTasks.filter(task => {
-      if (task.startDateISO) {
-        if (task.startDateISO <= dateString && task.dueDateISO >= dateString) return true;
-      } else if (task.dueDateISO === dateString) {
-        return true;
-      }
-
-      return false;
+    const result: { task: CalendarTaskItem; dateKind: 'taskStart' | 'taskDue' }[] = [];
+    allCalendarTasks.forEach((task) => {
+      if (task.dueDateISO === dateString) result.push({ task, dateKind: 'taskDue' });
+      else if (task.startDateISO === dateString) result.push({ task, dateKind: 'taskStart' });
     });
+    return result;
   };
 
   // Check if a date has meetings scheduled on it — meetings created from a project's "เพิ่มงาน"
@@ -275,12 +292,19 @@ export default function CalendarView() {
     return meetings.filter(meeting => meeting.date === dateString && isMyMeeting(meeting));
   };
 
-  // A project's own deadline (endDate) — shown as its own marker on the day it's due, separate
-  // from its tasks. The dedicated "เฉพาะโครงการ" filter switches to a full Gantt timeline instead
-  // (see the render below) since a single-day marker doesn't convey a project's actual duration.
-  const getProjectsOnDate = (date: Date) => {
+  // A project's own start/end dates — shown as their own markers on the days they fall on,
+  // separate from its tasks (same start/due dateKind split as getTasksOnDate above; a single-day
+  // project counts as its due occurrence only). The dedicated "เฉพาะโครงการ" filter switches to a
+  // full Gantt timeline instead (see the render below) since single-day markers don't convey a
+  // project's actual duration.
+  const getProjectsOnDate = (date: Date): { project: ProjectRow; dateKind: 'projectStart' | 'projectDue' }[] => {
     const dateString = toLocalDateString(date);
-    return scopedProjects.filter((p) => p.endDateISO === dateString);
+    const result: { project: ProjectRow; dateKind: 'projectStart' | 'projectDue' }[] = [];
+    scopedProjects.forEach((p) => {
+      if (p.endDateISO === dateString) result.push({ project: p, dateKind: 'projectDue' });
+      else if (p.startDateISO === dateString) result.push({ project: p, dateKind: 'projectStart' });
+    });
+    return result;
   };
 
   const todayString = toLocalDateString(new Date());
@@ -576,18 +600,18 @@ export default function CalendarView() {
             minmax(64px, 1fr): a 64px floor keeps a chip's 11px text + padding legible even on a
             cramped month in a short viewport — minmax(0, 1fr) let rows shrink low enough to squash
             chips down to blank slivers with no visible text at all.
-            No min-h-0/overflow-y-auto here on purpose — that combination let the grid shrink
-            below 5-6 rows × 64px and clip whatever didn't fit inside its own tiny scroll region, so
-            a short viewport hid a day's chips entirely with no visible scrollbar hinting there was
-            more (day 30 rendering only its date number, chip and all, gone). Leaving both off means
-            the grid can't be squeezed smaller than its rows' real minimum height — flex-1 still
-            lets it stretch to fill extra space on a normal-height screen, but on a short one it
-            overflows its own flex parent instead, and AppLayout's <main overflow-y-auto> (the page
-            itself) catches that with an ordinary, visible scrollbar instead of a hidden nested
-            one. */}
+            min-h-0 + overflow-y-auto: the card this grid sits in is height-capped (its wrapper is
+            `lg:h-full`, matched to the filter sidebar next to it, on purpose so the page needs no
+            scrollbar on a normal-height screen) — without min-h-0 here, the grid refuses to shrink
+            below its 64px-per-row floor and, since the card's own height can't grow past its cap,
+            the excess visibly bleeds out past the card's rounded border into the page below instead
+            of being contained (this looked like overlapping/broken chips, not a usable scrollbar —
+            worse than what it replaced). Keeping both means: fits one screen → no scrollbar, same
+            as always; doesn't fit → a small internal scrollbar confined to the grid itself, which
+            stays inside the card's visual boundary instead of spilling past it. */}
         <div
           ref={gridRef}
-          className="flex-1 max-lg:flex-none max-lg:h-[23rem] mt-1.5 grid grid-cols-7 gap-1.5"
+          className="flex-1 min-h-0 max-lg:flex-none max-lg:h-[23rem] mt-1.5 grid grid-cols-7 gap-1.5 overflow-y-auto"
           style={{ gridTemplateRows: `repeat(${calendarGrid.totalRows}, minmax(64px, 1fr))` }}
         >
           {calendarGrid.cells.map((cell, index) => {
@@ -602,9 +626,9 @@ export default function CalendarView() {
             // cramped the cell actually is. Order: tasks, then meetings, then deadlines (unchanged
             // from before), just sliced together instead of independently.
             const dayChipItems: DayChipItem[] = [
-              ...hasTasks.map((task): DayChipItem => ({ kind: 'task', key: `t-${task.id}`, task })),
+              ...hasTasks.map(({ task, dateKind }): DayChipItem => ({ kind: 'task', key: `t-${task.id}`, task, dateKind })),
               ...hasMeetings.map((meeting): DayChipItem => ({ kind: 'meeting', key: `m-${meeting.id}`, meeting })),
-              ...hasProjectDeadlines.map((project): DayChipItem => ({ kind: 'project', key: `p-${project.id}`, project })),
+              ...hasProjectDeadlines.map(({ project, dateKind }): DayChipItem => ({ kind: 'project', key: `p-${project.id}`, project, dateKind })),
             ];
             // 2 full chips when that's everything there is, but only 1 the moment a 3rd exists —
             // reserving that room guarantees the "+N" badge below always has a place to render
@@ -625,13 +649,20 @@ export default function CalendarView() {
             const popoverVertical = row >= calendarGrid.totalRows - 2 ? 'bottom-0' : 'top-0';
 
             return (
+              // ring-inset (not the default outer ring + ring-offset) on "today"'s highlight —
+              // an outer ring bleeds a few px past the cell's own box, which the grid's
+              // overflow-y-auto (needed above for the "ตกขอบ" fix) clipped off entirely for a
+              // bottom-row cell, and which visually intruded into the weekday-label row above for
+              // a top-row cell. Inset draws the ring inside the cell's own border-box instead, so
+              // it can never spill into a clipped edge or a neighboring row regardless of where
+              // "today" falls in the grid.
               <div
                 key={cell.key}
                 className={`relative p-1.5 border rounded-xl flex flex-col justify-between transition-colors min-h-0 ${
                   hasAnything ? 'cursor-pointer' : ''
                 } ${
                   cell.isCurrentMonth ? 'bg-white' : 'bg-slate-50/40 text-slate-300'
-                } ${isToday ? 'ring-2 ring-[#FF6537] ring-offset-1' : ''} ${
+                } ${isToday ? 'ring-2 ring-inset ring-[#FF6537]' : ''} ${
                   isOpen ? 'border-[#FF6537]' : 'border-slate-100 hover:bg-slate-50'
                 }`}
                 onClick={() => hasAnything && setOpenDayKey((prev) => (prev === cell.key ? null : cell.key))}
@@ -672,11 +703,12 @@ export default function CalendarView() {
                   {visibleDayChips.map((item) => {
                     if (item.kind === 'task') {
                       const task = item.task;
+                      const color = CALENDAR_DATE_KIND_COLOR[item.dateKind];
                       return (
-                        <Tooltip key={item.key} content={`[${task.projectLabel}] ${task.title}`}>
+                        <Tooltip key={item.key} content={`${CALENDAR_DATE_KIND_LABEL[item.dateKind]}: [${task.projectLabel}] ${task.title}`}>
                           <div
-                            className={`shrink-0 text-[11px] px-1.5 py-0.5 rounded-lg border truncate font-medium ${task.colorClasses}`}
-                            style={task.colorHex ? { backgroundColor: `${task.colorHex}1A`, color: task.colorHex, borderColor: `${task.colorHex}33` } : undefined}
+                            className="shrink-0 text-[11px] px-1.5 py-0.5 rounded-lg border truncate font-medium"
+                            style={{ backgroundColor: `${color}1A`, color, borderColor: `${color}33` }}
                           >
                             {task.title}
                           </div>
@@ -704,11 +736,12 @@ export default function CalendarView() {
                       );
                     }
                     const project = item.project;
+                    const projectColor = CALENDAR_DATE_KIND_COLOR[item.dateKind];
                     return (
-                      <Tooltip key={item.key} content={`ครบกำหนดโครงการ: ${project.title}`}>
+                      <Tooltip key={item.key} content={`${CALENDAR_DATE_KIND_LABEL[item.dateKind]}: ${project.title}`}>
                         <div
                           className="shrink-0 text-[11px] px-1.5 py-0.5 rounded-lg border truncate font-medium flex items-center gap-0.5"
-                          style={{ backgroundColor: `${STATUS_DOT[project.status]}1A`, color: STATUS_DOT[project.status], borderColor: `${STATUS_DOT[project.status]}33` }}
+                          style={{ backgroundColor: `${projectColor}1A`, color: projectColor, borderColor: `${projectColor}33` }}
                         >
                           <Briefcase size={9} className="shrink-0" />
                           {project.title}
@@ -755,7 +788,9 @@ export default function CalendarView() {
                       {hasTasks.length > 0 && (
                         <div className="space-y-1.5">
                           <p className="text-[11px] font-bold text-[#6F6F6F] uppercase tracking-wide px-0.5">งาน</p>
-                          {hasTasks.map((task) => (
+                          {hasTasks.map(({ task, dateKind }) => {
+                            const color = CALENDAR_DATE_KIND_COLOR[dateKind];
+                            return (
                             <div key={task.id} className="p-2 rounded-lg bg-slate-50">
                               {/* Title/project/assignee open the task's detail view; the two labelled
                                   buttons underneath spell out both things a task here can do. */}
@@ -764,11 +799,12 @@ export default function CalendarView() {
                                 onClick={() => openTaskDetail(task)}
                                 className="w-full flex items-start gap-2 text-left cursor-pointer group"
                               >
-                                <span className="w-6 h-6 rounded-lg bg-[#FFF1EC] text-[#FF6537] flex items-center justify-center shrink-0">
+                                <span className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${color}1A`, color }}>
                                   <ListChecks size={12} />
                                 </span>
                                 <div className="min-w-0 flex-1 text-xs">
                                   <p className="font-semibold text-[#272220] group-hover:text-[#FF6537]">{task.title}</p>
+                                  <p className="text-[11px] mt-0.5 font-semibold" style={{ color }}>{CALENDAR_DATE_KIND_LABEL[dateKind]}</p>
                                   <p className="text-[11px] text-[#6F6F6F] mt-0.5">โครงการ: {task.projectLabel}</p>
                                   <p className="text-[11px] text-[#6F6F6F] mt-0.5">ผู้รับผิดชอบ: {task.assigneeNames ?? 'ยังไม่ระบุ'}</p>
                                 </div>
@@ -794,7 +830,8 @@ export default function CalendarView() {
                                 )}
                               </div>
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
 
@@ -885,10 +922,10 @@ export default function CalendarView() {
 
                       {hasProjectDeadlines.length > 0 && (
                         <div className="space-y-1.5">
-                          <p className="text-[11px] font-bold text-[#6F6F6F] uppercase tracking-wide px-0.5">ครบกำหนดโครงการ</p>
-                          {hasProjectDeadlines.map((project) => {
+                          <p className="text-[11px] font-bold text-[#6F6F6F] uppercase tracking-wide px-0.5">โครงการ</p>
+                          {hasProjectDeadlines.map(({ project, dateKind }) => {
                             const StatusIcon = STATUS_ICON[project.status];
-                            const dotColor = STATUS_DOT[project.status];
+                            const color = CALENDAR_DATE_KIND_COLOR[dateKind];
                             return (
                               <button
                                 key={project.id}
@@ -898,12 +935,13 @@ export default function CalendarView() {
                               >
                                 <span
                                   className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0"
-                                  style={{ backgroundColor: `${dotColor}1A`, color: dotColor }}
+                                  style={{ backgroundColor: `${color}1A`, color }}
                                 >
                                   <Briefcase size={12} />
                                 </span>
                                 <div className="min-w-0 flex-1 text-xs">
                                   <p className="font-semibold text-[#272220] group-hover:text-[#FF6537]">{project.title}</p>
+                                  <p className="text-[11px] mt-0.5 font-semibold" style={{ color }}>{CALENDAR_DATE_KIND_LABEL[dateKind]}</p>
                                   <p className="text-[11px] text-[#6F6F6F] mt-0.5 flex items-center gap-1">
                                     <StatusIcon size={10} />
                                     {STATUS_LABEL[project.status]}
@@ -924,38 +962,30 @@ export default function CalendarView() {
           })}
         </div>
 
-        {/* Legend Information — task-status swatches are inline-styled from TASK_STATUS_COLOR
-            (the canonical palette ProjectDetail/ProjectGantt/MyWorkspace already color these same
-            statuses with), replacing what used to be an independent, disconnected set of pastel
-            Tailwind colors that didn't match the actual task chips shown in the grid above. */}
+        {/* Legend Information — swatches now describe *which date this is* (start vs due, task vs
+            project — see CALENDAR_DATE_KIND_COLOR/LABEL above) instead of a task's workflow status,
+            matching the chips above which now show only on a task's/project's start and due dates
+            rather than colored by their current status. */}
         <div className="shrink-0 mt-4 pt-4 border-t border-slate-100 flex flex-wrap gap-4 text-xs text-[#6F6F6F]">
           <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full block" style={{ backgroundColor: `${TASK_STATUS_COLOR.todo}1A`, border: `1px solid ${TASK_STATUS_COLOR.todo}` }}></span>
-            <span>{TASK_STATUS_LABEL.todo}</span>
+            <span className="w-2.5 h-2.5 rounded-full block" style={{ backgroundColor: `${CALENDAR_DATE_KIND_COLOR.taskStart}1A`, border: `1px solid ${CALENDAR_DATE_KIND_COLOR.taskStart}` }}></span>
+            <span>{CALENDAR_DATE_KIND_LABEL.taskStart}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full block" style={{ backgroundColor: `${TASK_STATUS_COLOR.in_progress}1A`, border: `1px solid ${TASK_STATUS_COLOR.in_progress}` }}></span>
-            <span>{TASK_STATUS_LABEL.in_progress}</span>
+            <span className="w-2.5 h-2.5 rounded-full block" style={{ backgroundColor: `${CALENDAR_DATE_KIND_COLOR.taskDue}1A`, border: `1px solid ${CALENDAR_DATE_KIND_COLOR.taskDue}` }}></span>
+            <span>{CALENDAR_DATE_KIND_LABEL.taskDue}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full block" style={{ backgroundColor: `${TASK_STATUS_COLOR.review}1A`, border: `1px solid ${TASK_STATUS_COLOR.review}` }}></span>
-            <span>{TASK_STATUS_LABEL.review}</span>
+            <span className="w-2.5 h-2.5 rounded-full block" style={{ backgroundColor: `${CALENDAR_DATE_KIND_COLOR.projectStart}1A`, border: `1px solid ${CALENDAR_DATE_KIND_COLOR.projectStart}` }}></span>
+            <span>{CALENDAR_DATE_KIND_LABEL.projectStart}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full block" style={{ backgroundColor: `${TASK_STATUS_COLOR.done}1A`, border: `1px solid ${TASK_STATUS_COLOR.done}` }}></span>
-            <span>{TASK_STATUS_LABEL.done}</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full block" style={{ backgroundColor: `${TASK_STATUS_COLOR.blocked}1A`, border: `1px solid ${TASK_STATUS_COLOR.blocked}` }}></span>
-            <span>{TASK_STATUS_LABEL.blocked}</span>
+            <span className="w-2.5 h-2.5 rounded-full block" style={{ backgroundColor: `${CALENDAR_DATE_KIND_COLOR.projectDue}1A`, border: `1px solid ${CALENDAR_DATE_KIND_COLOR.projectDue}` }}></span>
+            <span>{CALENDAR_DATE_KIND_LABEL.projectDue}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full bg-purple-50 border border-purple-200 block"></span>
             <span>การประชุม</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <Briefcase size={12} className="text-[#6F6F6F]" />
-            <span>ครบกำหนดโครงการ</span>
           </div>
         </div>
         </>

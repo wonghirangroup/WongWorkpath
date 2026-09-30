@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { CalendarRange, CornerDownRight } from 'lucide-react';
 import { Employee } from '../../types';
 import { ProjectRow, ProjectTaskItem } from './types';
@@ -44,6 +44,10 @@ function AvatarStack({ people, sizePx = 22 }: { people: Employee[]; sizePx?: num
 }
 
 const THAI_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+const THAI_MONTHS_FULL = [
+  'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+  'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
+];
 const THAI_WEEKDAY_SHORT = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
 
 // Reverses formatThaiDateShort ("24 ส.ค. 2569" -> Date) so the chart can position bars on a
@@ -107,6 +111,100 @@ export default function ProjectGantt({ tasks, employees, projects }: ProjectGant
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
+
+  // The title bar and day-header row now live OUTSIDE the scrolling box entirely (see the render)
+  // — plain, always-visible content, never touched by scroll — instead of being "locked" via
+  // sticky positioning inside it. That was the earlier approach, and it worked, but the browser's
+  // own scrollbar for that box still visually spanned its FULL height (title bar + day-header +
+  // rows), since a scrollbar reflects the scrolling box's total content regardless of which parts
+  // are held in place with sticky. Splitting them out means the ROWS box (see rowsScrollRef below)
+  // is the only thing that scrolls, so its scrollbar only ever runs alongside the rows themselves.
+  // The trade-off: the day-header's day/week/month columns still need to slide left-right in exact
+  // sync with the task bars below as the rows box scrolls horizontally, which native scroll can no
+  // longer do for us once it's a separate, non-scrolling element — handled below by mirroring the
+  // rows box's scrollLeft onto the day-header's own inner track via a transform (see
+  // handleRowsScroll and dayHeaderTrackRef).
+  //
+  // Both heights are measured (not hardcoded) so the rows box's own max-height can be computed as
+  // "whatever's left after these two" — offsetHeight (not the ResizeObserver callback's own
+  // contentRect.height, which excludes padding/border) since both rows have real padding/borders
+  // that a content-box-only measurement previously under-counted.
+  const titleBarRef = useRef<HTMLDivElement>(null);
+  const [titleBarHeight, setTitleBarHeight] = useState(0);
+  useEffect(() => {
+    const el = titleBarRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => setTitleBarHeight(el.offsetHeight));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const dayHeaderRef = useRef<HTMLDivElement>(null);
+  const [dayHeaderHeight, setDayHeaderHeight] = useState(0);
+  useEffect(() => {
+    const el = dayHeaderRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => setDayHeaderHeight(el.offsetHeight));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // The "วันนี้ HH:MM" footer (see the render's bottom, only shown when nowInRange) also sits
+  // outside the rows box, below it — its height has to come out of the same budget as the title
+  // bar and day-header, or the card ends up exactly this much taller than intended and its bottom
+  // edge drifts past the sidebar's again (missed on the first pass through this calculation).
+  const nowLabelRef = useRef<HTMLParagraphElement>(null);
+  const [nowLabelHeight, setNowLabelHeight] = useState(0);
+  useEffect(() => {
+    const el = nowLabelRef.current;
+    if (!el) {
+      setNowLabelHeight(0);
+      return;
+    }
+    const observer = new ResizeObserver(() => setNowLabelHeight(el.offsetHeight));
+    observer.observe(el);
+    return () => observer.disconnect();
+  });
+
+  // Mirrors the rows box's horizontal scroll position onto the day-header's own inner track —
+  // direct DOM write (not React state) so dragging the scrollbar doesn't trigger a re-render per
+  // pixel. Re-synced after a zoom change too (see the effect below `dayHeaderTrackRef`'s own
+  // declaration further down), since day/month/year zoom drastically changes the content width and
+  // the browser may reset scrollLeft to 0 when that happens.
+  const dayHeaderTrackRef = useRef<HTMLDivElement>(null);
+  const handleRowsScroll = () => {
+    if (dayHeaderTrackRef.current && scrollRef.current) {
+      dayHeaderTrackRef.current.style.transform = `translateX(-${scrollRef.current.scrollLeft}px)`;
+    }
+  };
+  useEffect(() => {
+    handleRowsScroll();
+  }, [zoom]);
+
+  // Caps the rows box's own height at whatever vertical space is actually left below the card
+  // (minus the title bar and day-header's real heights, now that they sit above it instead of
+  // inside it), instead of a fixed guess — so the card's bottom edge lines up with the page's own
+  // bottom edge (same one the left nav sidebar reaches, since both this page's <main> and the
+  // sidebar share the same 16px bottom margin) rather than stopping short with dead gray space
+  // underneath it. Measured via the card's own position (not a CSS height chain up through the
+  // page) since ProjectGantt is dropped into two different page layouts (ProjectDetail's Timeline
+  // tab, MyWorkspace's own Gantt tab) with different amounts of content above it — this adapts to
+  // either automatically.
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [maxHeight, setMaxHeight] = useState(512);
+  useLayoutEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    const updateMaxHeight = () => {
+      const top = el.getBoundingClientRect().top;
+      const available = window.innerHeight - top - 16; // 16px = <main>'s own lg:pb-4 bottom padding
+      setMaxHeight(Math.max(available, 240)); // never collapse below a usable minimum
+    };
+    updateMaxHeight();
+    window.addEventListener('resize', updateMaxHeight);
+    return () => window.removeEventListener('resize', updateMaxHeight);
+  }, []);
+  const rowsMaxHeight = Math.max(maxHeight - titleBarHeight - dayHeaderHeight - nowLabelHeight, 120);
 
   const employeeById = useMemo(() => {
     const map = new Map<string, Employee>();
@@ -272,11 +370,16 @@ export default function ProjectGantt({ tasks, employees, projects }: ProjectGant
   const nowInRange = new Date() >= range.min && new Date() <= range.max;
   const nowLeftPx = nowInRange ? dayOffset(new Date()) * pxPerDay : null;
   const nowLabel = `วันนี้ ${new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`;
+  // "Gantt" on its own told the viewer nothing useful — today's month/year gives an at-a-glance
+  // anchor for the timeline, same role a calendar's own header plays.
+  const headerMonthLabel = `${THAI_MONTHS_FULL[new Date().getMonth()]} ${new Date().getFullYear() + 543}`;
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-3 border-b border-[#F4F4F4]">
-        <h4 className="font-bold text-[#272220] text-sm">Gantt</h4>
+    <div ref={cardRef} className="bg-white rounded-2xl border border-slate-100 shadow-[0px_2px_7px_-1px_rgba(0,0,0,0.1)] overflow-hidden">
+      {/* Title bar — plain, always-visible content above the scrolling rows box below. Not inside
+          any scroll container at all, so there's nothing here for a scrollbar to run alongside. */}
+      <div ref={titleBarRef} className="flex items-center justify-between px-5 py-3 border-b border-[#F4F4F4] bg-white">
+        <h4 className="font-bold text-[#272220] text-base">{headerMonthLabel}</h4>
         <div className="flex items-center gap-0.5 bg-white border border-slate-200 rounded-xl p-1">
           {ZOOM_OPTIONS.map((z) => (
             <button
@@ -293,20 +396,20 @@ export default function ProjectGantt({ tasks, employees, projects }: ProjectGant
         </div>
       </div>
 
-      {/* The one scroll container for the whole chart — sliding it horizontally is how you move
-          through the timeline at any zoom level, since both the header row and every task row
-          below share this exact same scroll position. */}
-      <div className="overflow-x-auto" ref={scrollRef}>
-        <div style={{ width: LABEL_COL_WIDTH + totalWidth }}>
-          {/* Header row — day zoom draws one cell per real day; month/year zoom draws one wider
-              cell per calendar month/year instead, sized to how many days of it are in view. */}
-          <div className="flex border-b border-[#F4F4F4] sticky top-0 z-20 bg-white">
-            <div
-              className="shrink-0 px-5 py-3 text-xs font-medium text-[#6F6F6F] border-r border-[#F4F4F4] sticky left-0 z-20 bg-white"
-              style={{ width: LABEL_COL_WIDTH }}
-            >
-              งาน / ผู้รับผิดชอบ
-            </div>
+      {/* Day-header row — also outside the scroll box (overflow-hidden, not overflow-x-auto: it
+          never scrolls on its own). Its day/month/year columns instead slide via a CSS transform
+          that's kept in sync with the rows box's real horizontal scroll position (handleRowsScroll
+          below) — the only way to keep this row's dates lined up with the task bars underneath once
+          it's no longer sharing the same native scroll as them. */}
+      <div ref={dayHeaderRef} className="flex border-b border-[#F4F4F4] bg-white">
+        <div
+          className="shrink-0 px-5 py-3 text-xs font-medium text-[#6F6F6F] border-r border-[#F4F4F4] bg-white"
+          style={{ width: LABEL_COL_WIDTH }}
+        >
+          งาน / ผู้รับผิดชอบ
+        </div>
+        <div className="overflow-hidden flex-1">
+          <div ref={dayHeaderTrackRef} className="flex" style={{ width: totalWidth }}>
             {zoom === 'day' ? (
               dayColumns.map((col, idx) => (
                 <div
@@ -340,7 +443,15 @@ export default function ProjectGantt({ tasks, employees, projects }: ProjectGant
               ))
             )}
           </div>
+        </div>
+      </div>
 
+      {/* Rows box — the ONE real scroll container left (both axes), capped at rowsMaxHeight so its
+          scrollbar only ever runs alongside the rows themselves, never behind the title bar or
+          day-header above. onScroll mirrors this box's horizontal position onto the day-header's
+          track (see handleRowsScroll) so the dates above stay lined up with the bars below. */}
+      <div className="overflow-auto" style={{ maxHeight: rowsMaxHeight }} ref={scrollRef} onScroll={handleRowsScroll}>
+        <div style={{ width: LABEL_COL_WIDTH + totalWidth }}>
           <div className="divide-y divide-[#F9F9F9] relative">
             {/* Vertical day-cell gridlines behind every row, at day zoom only — month/year zoom
                 keeps just the header's own boundary lines, since a line per day would be too
@@ -454,7 +565,7 @@ export default function ProjectGantt({ tasks, employees, projects }: ProjectGant
         </div>
       </div>
       {nowInRange && (
-        <p className="px-5 py-2 text-[11px] text-[#6F6F6F] border-t border-[#F4F4F4]">{nowLabel}</p>
+        <p ref={nowLabelRef} className="px-5 py-2 text-[11px] text-[#6F6F6F] border-t border-[#F4F4F4]">{nowLabel}</p>
       )}
     </div>
   );
