@@ -1,6 +1,6 @@
 # API Documentation
 
-Base URL: `https://wongworkpath.onrender.com` (production) หรือ `http://localhost:4000` (เครื่องพัฒนา)
+Base URL: `https://wongworkpath-jxiy.onrender.com` (production) หรือ `http://localhost:4000` (เครื่องพัฒนา)
 
 ดึงรายการ endpoint ทั้งหมดจากโค้ด `server/routes/*.ts` และการ mount ใน `server/index.ts` จริง (2569-09-25) ไม่มี endpoint อื่นนอกจากที่ระบุในเอกสารนี้
 

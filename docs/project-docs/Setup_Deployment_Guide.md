@@ -3,12 +3,14 @@
 ## สถาปัตยกรรมการ deploy จริง
 
 ```
-พนักงาน → wong-workpath.vercel.app (Vercel, frontend)
+พนักงาน → workpath.wonghiran.com (Vercel, frontend, โดเมนบริษัทเอง)
               ↓ เรียก API
-          wongworkpath.onrender.com (Render, backend, แพลนฟรี)
+          wongworkpath-jxiy.onrender.com (Render, backend, แพลนฟรี)
               ↓ ต่อฐานข้อมูล
           MySQL (ตัวเดียวกับที่เครื่องพัฒนาทุกเครื่องต่ออยู่)
 ```
+
+⚠️ `wongworkpath-jxiy.onrender.com` (2569-09-30) เป็น service Render **ตัวใหม่** แยกจากตัวเดิม (`wongworkpath.onrender.com` ถูกระงับเพราะใช้โควต้าฟรีของ Render หมด "Free usage limit reached") service ใหม่ไม่มี environment variable ติดมาด้วยเลย ต้องตั้งใหม่ทั้งหมดตามหัวข้อด้านล่าง ก่อนจะใช้งานได้จริง
 
 - **Frontend (Vercel):** build ด้วย `npm run build` (Vite) แล้ว serve ไฟล์ static
 - **Backend (Render):** รันด้วย `npm run server:start` (`tsx server/index.ts` แบบไม่มี watch)
@@ -23,23 +25,25 @@ Vercel และ Render ตั้ง auto-deploy จาก push ขึ้น bra
 **แนวทางที่ปลอดภัย:**
 1. เลือก push ตอนที่คนใช้งานน้อย (เช่น นอกเวลาทำงาน)
 2. ถ้ามีการเปลี่ยนฐานข้อมูล (เพิ่มตาราง/คอลัมน์) ให้ apply การเปลี่ยนแปลงกับฐานข้อมูลจริงด้วยสคริปต์ `tsx` แบบใช้ครั้งเดียวก่อน แล้วค่อย push โค้ดที่ใช้มัน — อย่าพึ่ง `server:migrate` กับข้อมูลที่มีอยู่แล้ว
-3. หลัง push ให้รอจน Render deploy เสร็จ (เช็คผ่าน `https://wongworkpath.onrender.com/api/health`) แล้วค่อยแจ้งผู้ใช้ให้รีเฟรชหน้าเว็บ 1 ครั้ง — ถ้า frontend เวอร์ชันใหม่ขึ้นก่อน backend เวอร์ชันเก่ายังไม่ทัน จะเรียก API ที่ไม่มีจริงชั่วคราว จนกว่า Render จะ deploy เสร็จ
+3. หลัง push ให้รอจน Render deploy เสร็จ (เช็คผ่าน `https://wongworkpath-jxiy.onrender.com/api/health`) แล้วค่อยแจ้งผู้ใช้ให้รีเฟรชหน้าเว็บ 1 ครั้ง — ถ้า frontend เวอร์ชันใหม่ขึ้นก่อน backend เวอร์ชันเก่ายังไม่ทัน จะเรียก API ที่ไม่มีจริงชั่วคราว จนกว่า Render จะ deploy เสร็จ
 
 ## ตัวแปรแวดล้อมที่ต้องตั้งบน Render (production)
 
 ต้องตั้งค่าเดียวกับหัวข้อ [Development_Environment.md](./Development_Environment.md) แต่ชี้ไปฐานข้อมูลและโดเมนจริง โดยเฉพาะ:
 
-- **`JWT_SECRET`** — ควรตั้งเป็นค่าสุ่มยาวเองบน Render โดยเฉพาะ (ไม่ใช้ค่า fallback ที่ระบบสร้างเองจาก DB credentials) การเปลี่ยนค่านี้ทีหลังจะทำให้ทุกคนถูกล็อกเอาต์ทันที ควรเปลี่ยนตอนคนใช้น้อยและแยกจากการ push โค้ดฟีเจอร์อื่น
-- **`CORS_ORIGIN`** — ต้องเป็นโดเมน Vercel จริง (`https://wong-workpath.vercel.app`) ไม่ใช่ `localhost`
+- **`DB_HOST` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` / `DB_PORT`** — ต้องชี้ไป MySQL ตัวเดียวกับที่เครื่องพัฒนาทุกเครื่องใช้อยู่ (ห้ามสร้างฐานข้อมูลใหม่แยกต่างหาก ไม่งั้นข้อมูลพนักงาน/โครงการจะไม่ตรงกับของจริง)
+- **`JWT_SECRET`** — ควรตั้งเป็นค่าสุ่มยาวเองบน Render โดยเฉพาะ (ไม่ใช้ค่า fallback ที่ระบบสร้างเองจาก DB credentials) การเปลี่ยนค่านี้ทีหลังจะทำให้ทุกคนถูกล็อกเอาต์ทันที ควรเปลี่ยนตอนคนใช้น้อยและแยกจากการ push โค้ดฟีเจอร์อื่น — **ถ้าย้ายไป service ใหม่ ต้องตั้งค่าเดียวกับตัวเก่าไว้เป๊ะ** ไม่งั้นทุก token เดิมจะใช้ไม่ได้ทันที
+- **`CORS_ORIGIN`** — ต้องเป็นโดเมน frontend จริงที่ใช้งานอยู่ (`https://workpath.wonghiran.com`) ไม่ใช่ `localhost` — ถ้ามีหลายโดเมน (เช่น ยังเก็บ `wong-workpath.vercel.app` ไว้ด้วย) คั่นด้วยคอมม่าไม่มีเว้นวรรค
 - **`RESEND_API_KEY` / `RESEND_FROM_EMAIL`** — ต้องตั้งเพื่อให้ฟีเจอร์ลืมรหัสผ่านส่งอีเมลจริงได้ ต้อง verify domain กับ Resend ก่อน ไม่งั้นระบบจะ fallback เป็น sandbox sender ที่ส่งได้แค่หาอีเมลเจ้าของบัญชี Resend เอง
 
 ## ตัวแปรแวดล้อมที่ต้องตั้งบน Vercel (production)
 
-- **`VITE_API_BASE_URL`** — ต้องชี้ไป `https://wongworkpath.onrender.com`
+- **`VITE_API_BASE_URL`** — ต้องชี้ไป `https://wongworkpath-jxiy.onrender.com`
 
 ## ข้อจำกัดของแพลนฟรี Render
 
-Render แพลนฟรีจะ "หลับ" เองถ้าไม่มีคนใช้งานนาน แล้วต้องใช้เวลาประมาณ 30-60 วินาทีตอนตื่นครั้งแรกหลังจากนั้น (หน้าเว็บจะโหลดช้า/error รอบแรก) เป็นข้อจำกัดของแพลนฟรี ไม่เกี่ยวกับโค้ดหรือเครื่องพัฒนา — ถ้าต้องการแก้ ต้องอัปเกรดแพลน Render
+- **"หลับ" เองถ้าไม่มีคนใช้งานนาน** — ตื่นครั้งแรกใช้เวลาประมาณ 30-60 วินาที (หน้าเว็บจะโหลดช้า/error รอบแรก) ไม่เกี่ยวกับโค้ดหรือเครื่องพัฒนา
+- **⚠️ โควต้าใช้งานรายเดือนมีจำกัด (2569-09-30 เจอจริง)** — ถ้าใช้เกินโควต้าฟรีรายเดือน Render จะขึ้น "Free usage limit reached" แล้ว**ระงับ service ทันทีจนกว่าจะถึงรอบบิลลิ่งใหม่ หรืออัปเกรดแพลน** — ต่างจากอาการ "หลับ" ตรงที่**ตื่นเองไม่ได้** ต้องมีคนเข้าไปอัปเกรดแพลนหรือรอรอบบิลลิ่งใหม่เท่านั้น ถ้าเจออาการล็อกอินไม่ได้พร้อม error CORS ที่ดูปกติดี ให้เช็คหน้า Render dashboard ก่อนว่ามีแถบ "suspended" ขึ้นอยู่ไหม
 
 ## ขั้นตอน deploy ที่มีการเปลี่ยนฐานข้อมูล
 

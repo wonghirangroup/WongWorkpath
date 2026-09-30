@@ -131,10 +131,7 @@ export default function Dashboard({
 
   return (
     <div className="space-y-6" id="dashboard-tab">
-      {/* Sticky under Header (same -top offset trick as EmployeeManagement's tab/toolbar bar) so
-          the filter/action row stays put while the stat cards and widgets below scroll under it,
-          instead of disappearing upward with the rest of the page. */}
-      <div className="sticky -top-4 sm:-top-6 lg:-top-3.75 z-30 bg-[#F6F6F6] pt-1 print:hidden">
+      <div className="bg-[#F6F6F6] pt-1 print:hidden">
         <DashboardToolbar
           onCreateProject={() => setIsCreateProjectOpen(true)}
           onExportCsv={handleExportCsv}

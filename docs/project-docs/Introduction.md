@@ -33,8 +33,8 @@
 
 ระบบใช้งานจริง (production) แยกจากเครื่องพัฒนาแล้ว:
 
-- **Frontend:** `wong-workpath.vercel.app` (Vercel, auto-deploy จาก branch `main`)
-- **Backend:** `wongworkpath.onrender.com` (Render, แพลนฟรี, auto-deploy จาก branch `main`)
+- **Frontend:** `workpath.wonghiran.com` (Vercel, โดเมนบริษัทเอง, auto-deploy จาก branch `main`)
+- **Backend:** `wongworkpath-jxiy.onrender.com` (Render, แพลนฟรี, auto-deploy จาก branch `main`)
 - **ฐานข้อมูล:** MySQL หนึ่งตัว ใช้ร่วมกันระหว่าง Render และเครื่องพัฒนาทุกเครื่อง
 
 การ push โค้ดขึ้น branch `main` คือการขึ้นระบบจริงทันที รายละเอียดวิธี deploy อย่างปลอดภัยอยู่ใน [Setup_Deployment_Guide.md](./Setup_Deployment_Guide.md)

@@ -574,15 +574,20 @@ export default function CalendarView() {
             needs, see calendarGrid's totalRows) that share the flex-1 space evenly, so the grid
             fills its container without padding a 5-row month with 100% next-month filler.
             minmax(64px, 1fr): a 64px floor keeps a chip's 11px text + padding legible even on a
-            6-row month in a short viewport — minmax(0, 1fr) let rows shrink low enough to squash
-            chips down to blank slivers with no visible text at all. overflow-y-auto is the
-            fallback for whenever that floor pushes the grid taller than its flex-1 allowance: a
-            small internal scrollbar on a cramped 6-row month reads far better than illegible
-            chips, and every other month is unaffected since its rows are already taller than
-            64px. */}
+            cramped month in a short viewport — minmax(0, 1fr) let rows shrink low enough to squash
+            chips down to blank slivers with no visible text at all.
+            No min-h-0/overflow-y-auto here on purpose — that combination let the grid shrink
+            below 5-6 rows × 64px and clip whatever didn't fit inside its own tiny scroll region, so
+            a short viewport hid a day's chips entirely with no visible scrollbar hinting there was
+            more (day 30 rendering only its date number, chip and all, gone). Leaving both off means
+            the grid can't be squeezed smaller than its rows' real minimum height — flex-1 still
+            lets it stretch to fill extra space on a normal-height screen, but on a short one it
+            overflows its own flex parent instead, and AppLayout's <main overflow-y-auto> (the page
+            itself) catches that with an ordinary, visible scrollbar instead of a hidden nested
+            one. */}
         <div
           ref={gridRef}
-          className="flex-1 min-h-0 max-lg:flex-none max-lg:h-[23rem] mt-1.5 grid grid-cols-7 gap-1.5 overflow-y-auto"
+          className="flex-1 max-lg:flex-none max-lg:h-[23rem] mt-1.5 grid grid-cols-7 gap-1.5"
           style={{ gridTemplateRows: `repeat(${calendarGrid.totalRows}, minmax(64px, 1fr))` }}
         >
           {calendarGrid.cells.map((cell, index) => {
@@ -601,7 +606,12 @@ export default function CalendarView() {
               ...hasMeetings.map((meeting): DayChipItem => ({ kind: 'meeting', key: `m-${meeting.id}`, meeting })),
               ...hasProjectDeadlines.map((project): DayChipItem => ({ kind: 'project', key: `p-${project.id}`, project })),
             ];
-            const visibleDayChips = dayChipItems.slice(0, 2);
+            // 2 full chips when that's everything there is, but only 1 the moment a 3rd exists —
+            // reserving that room guarantees the "+N" badge below always has a place to render
+            // instead of competing with a 2nd chip for whatever space is left (which used to lose
+            // and get silently clipped away on a short row, hiding that more existed that day).
+            const maxVisibleDayChips = dayChipItems.length > 2 ? 1 : 2;
+            const visibleDayChips = dayChipItems.slice(0, maxVisibleDayChips);
             const hiddenDayChipCount = dayChipItems.length - visibleDayChips.length;
             const isToday = cell.date.toDateString() === new Date().toDateString();
             const isOpen = openDayKey === cell.key;
@@ -645,7 +655,15 @@ export default function CalendarView() {
                 {/* Grid Events container */}
                 {/* overflow-hidden, not overflow-y-auto — a scrollbar inside a cell this small
                     just looks broken; clipping cleanly and letting the "+N more"/click-to-expand
-                    popover carry any overflow reads far more balanced. */}
+                    popover carry any overflow reads far more balanced. Every child below (each
+                    chip, plus the "+N" badge) carries shrink-0 — without it, a flex child's default
+                    flex-shrink:1 squishes ALL of them down to fit a too-short cell instead of
+                    cleanly clipping the ones that don't fit, which used to render every chip as an
+                    illegible sliver with no visible text on a cramped row (a 6-row month, or any
+                    day with a "+N" badge needing a 3rd line) even with the 64px row-height floor
+                    below. shrink-0 makes each child keep its full natural height; whatever doesn't
+                    fit is what overflow-hidden actually clips, so a tight cell shows fewer chips
+                    cleanly instead of all of them mangled. */}
                 <div className="mt-1.5 flex flex-col gap-1 overflow-hidden flex-1 min-h-0">
 
                   {/* Up to 2 chips total across every kind (see dayChipItems above), plus one
@@ -657,7 +675,7 @@ export default function CalendarView() {
                       return (
                         <Tooltip key={item.key} content={`[${task.projectLabel}] ${task.title}`}>
                           <div
-                            className={`text-[11px] px-1.5 py-0.5 rounded-lg border truncate font-medium ${task.colorClasses}`}
+                            className={`shrink-0 text-[11px] px-1.5 py-0.5 rounded-lg border truncate font-medium ${task.colorClasses}`}
                             style={task.colorHex ? { backgroundColor: `${task.colorHex}1A`, color: task.colorHex, borderColor: `${task.colorHex}33` } : undefined}
                           >
                             {task.title}
@@ -675,7 +693,7 @@ export default function CalendarView() {
                           content={isCancelled ? `ยกเลิกแล้ว: ${meeting.title}` : isPast ? `ผ่านไปแล้ว: ${meeting.title}` : `${meeting.startTime} ${meeting.title}`}
                         >
                           <div
-                            className={`text-[11px] px-1.5 py-0.5 rounded-lg border truncate font-medium flex items-center gap-0.5 ${
+                            className={`shrink-0 text-[11px] px-1.5 py-0.5 rounded-lg border truncate font-medium flex items-center gap-0.5 ${
                               isCancelled || isPast ? 'bg-slate-50 text-slate-500 border-slate-200' : 'bg-purple-50 text-purple-700 border-purple-200'
                             }`}
                           >
@@ -689,7 +707,7 @@ export default function CalendarView() {
                     return (
                       <Tooltip key={item.key} content={`ครบกำหนดโครงการ: ${project.title}`}>
                         <div
-                          className="text-[11px] px-1.5 py-0.5 rounded-lg border truncate font-medium flex items-center gap-0.5"
+                          className="shrink-0 text-[11px] px-1.5 py-0.5 rounded-lg border truncate font-medium flex items-center gap-0.5"
                           style={{ backgroundColor: `${STATUS_DOT[project.status]}1A`, color: STATUS_DOT[project.status], borderColor: `${STATUS_DOT[project.status]}33` }}
                         >
                           <Briefcase size={9} className="shrink-0" />
@@ -704,7 +722,7 @@ export default function CalendarView() {
                       visible chip, so a light day's leftover space reads as "more below" rather
                       than an unexplained gap under a cramped little stack of chips. */}
                   {hiddenDayChipCount > 0 && (
-                    <div className="mt-auto text-[11px] text-center text-[#6F6F6F] font-bold bg-slate-50 py-0.5 rounded-lg">
+                    <div className="shrink-0 mt-auto text-[11px] text-center text-[#6F6F6F] font-bold bg-slate-50 py-0.5 rounded-lg">
                       +{hiddenDayChipCount}
                     </div>
                   )}

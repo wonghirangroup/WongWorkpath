@@ -12,7 +12,9 @@
 
 ## ⚠️ มี production deployment จริงแยกต่างหากแล้ว (Vercel + Render) — แต่เครื่องนี้ก็ยังชี้ไปฐานข้อมูลจริงเหมือนกัน
 
-**พนักงานใช้งานจริงทุกวันผ่าน `wong-workpath.vercel.app` (frontend, Vercel) ซึ่งเรียก backend ที่ `wongworkpath.onrender.com` (Render, รันด้วย `npm run server:start`)** สอง service นี้แยกอิสระจากเครื่องพัฒนาเครื่องนี้โดยสิ้นเชิง (ยืนยันแล้วว่าเป็นคนละ process/คนละโฮสต์ ตั้งค่าไว้ตั้งแต่ 2569-08-25 โดยทีม ไม่ใช่ของ session นี้) **การปิด/เปิด session ของ Claude Code หรือการเปิด-ปิด `npm run dev` / `npm run server:dev` บนเครื่องนี้ ไม่กระทบบริการจริงที่พนักงานใช้อยู่เลย**
+**พนักงานใช้งานจริงทุกวันผ่าน frontend (Vercel) ซึ่งเรียก backend ที่ `wongworkpath-jxiy.onrender.com` (Render, รันด้วย `npm run server:start`)** สอง service นี้แยกอิสระจากเครื่องพัฒนาเครื่องนี้โดยสิ้นเชิง (ยืนยันแล้วว่าเป็นคนละ process/คนละโฮสต์ ตั้งค่าไว้ตั้งแต่ 2569-08-25 โดยทีม ไม่ใช่ของ session นี้) **การปิด/เปิด session ของ Claude Code หรือการเปิด-ปิด `npm run dev` / `npm run server:dev` บนเครื่องนี้ ไม่กระทบบริการจริงที่พนักงานใช้อยู่เลย**
+
+⚠️ **`wongworkpath-jxiy.onrender.com` (2569-09-30) เป็น service ใหม่ที่แยกออกมาต่างหาก ไม่ใช่แค่เปลี่ยนชื่อ URL เดิม** (`wongworkpath.onrender.com` ตัวเก่าถูกระงับเพราะใช้โควต้าฟรีของ Render หมด) — service ใหม่ที่สร้างขึ้นมาแยกจะ**ไม่มี environment variable ติดมาด้วยเลย** ต้องตั้งค่าใหม่ทั้งหมดให้ตรงกับตัวเก่าก่อนถึงจะใช้งานได้จริง อย่างน้อยต้องมี: `DB_HOST`/`DB_USER`/`DB_PASSWORD`/`DB_NAME`/`DB_PORT` (ชี้ไป MySQL ตัวเดียวกับที่เครื่องนี้ใช้), `JWT_SECRET` (ต้องตั้งค่าเดียวกับตัวเก่าไว้ ถ้าเปลี่ยนจะทำให้ทุกคนที่ล็อกอินค้างอยู่หลุดหมด), `CORS_ORIGIN` (ต้องใส่โดเมน frontend จริงที่ใช้งานอยู่ เช่น `https://workpath.wonghiran.com`), `RESEND_API_KEY`/`RESEND_FROM_EMAIL` (ถ้าต้องการให้ฟีเจอร์ลืมรหัสผ่านทำงาน) และต้องอัปเดต `VITE_API_BASE_URL` บน Vercel ให้ชี้มาที่โดเมนใหม่นี้ด้วย ไม่งั้น frontend จะยังคงยิงไปหา backend ตัวเก่าที่ถูกระงับอยู่
 
 - **แต่ Render กับเครื่องนี้ต่อ MySQL ตัวเดียวกัน (ฐานข้อมูลจริงเดียวกัน, ยืนยันแล้วว่าข้อมูลพนักงานตรงกันเป๊ะ)** — ดังนั้นการทดสอบ/รัน migration/สร้างลบข้อมูลบนเครื่องนี้ยังกระทบข้อมูลจริงเหมือนเดิมทุกประการ ต้องระวังเรื่องข้อมูลทดสอบเหมือนเดิม
 - **Render เป็นแพลนฟรี (ยืนยันแล้ว)** จะ "หลับ" เองถ้าไม่มีคนใช้นานๆ แล้วต้องใช้เวลาสัก 30-60 วินาทีตอนตื่นครั้งแรกหลังจากนั้น (หน้าเว็บจะโหลดช้า/error รอบแรก) ไม่เกี่ยวกับเครื่องนี้หรือ session ของ Claude Code — เป็นข้อจำกัดของแพลนฟรี ถ้าอยากแก้ต้องอัปเกรดแพลน Render
@@ -25,8 +27,8 @@
 npm run dev                        # เปิด Vite dev server ที่พอร์ต 3000 (host 0.0.0.0) — สำหรับพัฒนา/ทดสอบบนเครื่องนี้เท่านั้น ไม่ใช่สิ่งที่พนักงานใช้จริง
 npm run server:dev                 # เปิด Express API server ที่พอร์ต 4000 พร้อม hot-reload (tsx watch) — สำหรับพัฒนา/ทดสอบบนเครื่องนี้เท่านั้น
 npm run dev:all                    # รันทั้ง dev + server:dev พร้อมกันด้วย concurrently
-npm run server:start               # รัน API server แบบ production (ไม่มี watch) — คำสั่งที่ Render ใช้รัน backend จริงบน wongworkpath.onrender.com
-npm run build                      # บิลด์เวอร์ชันโปรดักชันด้วย Vite (ฝั่ง frontend เท่านั้น) — สิ่งที่ Vercel ใช้ build wong-workpath.vercel.app
+npm run server:start               # รัน API server แบบ production (ไม่มี watch) — คำสั่งที่ Render ใช้รัน backend จริงบน wongworkpath-jxiy.onrender.com
+npm run build                      # บิลด์เวอร์ชันโปรดักชันด้วย Vite (ฝั่ง frontend เท่านั้น) — สิ่งที่ Vercel ใช้ build workpath.wonghiran.com
 npm run preview                    # พรีวิวเวอร์ชันโปรดักชันที่บิลด์แล้ว
 npm run lint                       # tsc --noEmit (เช็คชนิดข้อมูลอย่างเดียว ไม่มี linter แยกต่างหาก)
 npm run clean                      # rm -rf dist server.js

@@ -21,7 +21,7 @@ npm run build        # บิลด์หน้าเว็บ
 
 ## ระบบจริง
 
-- หน้าเว็บ: Vercel (`wong-workpath.vercel.app`) — build ด้วย `npm run build`
-- API: Render (`wongworkpath.onrender.com`) — รันด้วย `npm run server:start`
+- หน้าเว็บ: Vercel (`workpath.wonghiran.com`) — build ด้วย `npm run build`
+- API: Render (`wongworkpath-jxiy.onrender.com`) — รันด้วย `npm run server:start`
 - push ขึ้น branch `main` = deploy จริงอัตโนมัติทั้งสองฝั่ง
 - ตั้งค่า `JWT_SECRET` (สตริงสุ่มยาว 32 ตัวอักษรขึ้นไป) ใน Environment ของ Render — ใช้เซ็น token ล็อกอิน
