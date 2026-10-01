@@ -197,7 +197,13 @@ export default function ProjectGantt({ tasks, employees, projects }: ProjectGant
     if (!el) return;
     const updateMaxHeight = () => {
       const top = el.getBoundingClientRect().top;
-      const available = window.innerHeight - top - 16; // 16px = <main>'s own lg:pb-4 bottom padding
+      // 16px = <main>'s own lg:pb-4 bottom padding, +4px safety margin: landing exactly flush
+      // measured 1px too tall in practice (fractional pixel rounding across several nested
+      // elements' own heights), and even 1px of overflow is enough to trigger <main>'s own
+      // overflow-y-auto scrollbar for the WHOLE page — a second, redundant scrollbar alongside
+      // this component's own rows-box one, for a card that doesn't actually need page scroll at
+      // all. A few px of unused gray space below the card is a better trade than that.
+      const available = window.innerHeight - top - 20;
       setMaxHeight(Math.max(available, 240)); // never collapse below a usable minimum
     };
     updateMaxHeight();

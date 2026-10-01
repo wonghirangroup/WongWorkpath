@@ -52,7 +52,16 @@ export function canEditOrDeleteTarget(actor: Pick<Employee, 'id' | 'accountType'
 // override is applied on top (see `canAccessNavItem` below). "employees" is reachable by every
 // role now — canManageEmployees only decides which of EmployeeManagement (full CRUD) vs
 // EmployeeDirectory (read-only) a plain employee's visit renders (see EmployeesPage.tsx).
-export function isNavAllowedByRole(_actor: Pick<Employee, 'accountType'>, _navId: string): boolean {
+//
+// admin/superadmin are pure back-office roles (2569-10-01 requirement) — they manage the employee
+// roster and read the activity log (a tab inside "จัดการพนักงาน", not a separate nav item) and
+// nothing else; every work module (dashboard included) is off-limits. "settings" stays reachable
+// for everyone regardless of role so an account can always manage its own profile/password.
+// executive is unaffected — still reaches every module, same as a plain employee.
+export function isNavAllowedByRole(actor: Pick<Employee, 'accountType'>, navId: string): boolean {
+  if (actor.accountType === 'admin' || actor.accountType === 'superadmin') {
+    return navId === 'employees' || navId === 'settings';
+  }
   return true;
 }
 
