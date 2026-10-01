@@ -5,12 +5,12 @@ import { Employee } from '../types';
 import { loginRequest, requestPasswordResetOtp, verifyPasswordResetOtp, resetPasswordWithOtp, ApiError } from '../lib/api';
 import logo from '../assets/logo.png';
 
-const REMEMBER_USERNAME_KEY = 'unityspace_remembered_username';
+const REMEMBER_USERNAME_KEY = 'wongworkpath_remembered_username';
 
 // Plays once per browser tab: the first mount of any session gets the full logo -> brand ->
 // form choreography; every subsequent visit (a re-render after logout, a refresh) skips
 // straight to the form so routine sign-ins never wait through the splash a second time.
-const INTRO_SEEN_KEY = 'unityspace_intro_seen';
+const INTRO_SEEN_KEY = 'wongworkpath_intro_seen';
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 // iOS-style spring for anything that should feel physical rather than timed (scale changes,
 // the card's arrival) — a duration-based ease reads mechanical for those, a spring reads alive.
@@ -102,7 +102,7 @@ interface LoginProps {
 
 // AppDataContext sets this when the server rejects a stored session (expired, or the account was
 // removed) so the login page can say why the user was sent back here.
-const SESSION_EXPIRED_KEY = 'unityspace_session_expired';
+const SESSION_EXPIRED_KEY = 'wongworkpath_session_expired';
 
 function consumeSessionExpiredNotice(): string {
   try {

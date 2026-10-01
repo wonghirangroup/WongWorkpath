@@ -8,6 +8,7 @@ import {
   Send,
   Calendar as CalendarIcon,
   ShieldCheck,
+  MessageSquare,
 } from 'lucide-react';
 import { Employee, LinkedDoc } from '../types';
 import { ProjectRow, ProjectTaskItem, ProjectTaskStatus } from './projectBoard/types';
@@ -23,6 +24,7 @@ import ReviewTaskModal from './projectBoard/ReviewTaskModal';
 import PendingRequestCard from './projectBoard/PendingRequestCard';
 import Tooltip from './Tooltip';
 import StatCard from './dashboard/StatCard';
+import CommentCountBadge from './CommentCountBadge';
 
 type WorkTab = 'my_tasks' | 'to_review' | 'my_approvals' | 'my_projects' | 'gantt';
 
@@ -265,6 +267,15 @@ export default function MyWorkspace({ projectTasks, projects, employees, documen
                               className="inline-flex items-center gap-1.5 text-[#6F6F6F] hover:text-[#FF6537] text-xs font-medium cursor-pointer transition-colors"
                             >
                               <Eye size={13} /> ดู
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setViewingTask(task)}
+                              aria-label="ความคิดเห็น"
+                              className="relative text-[#6F6F6F] hover:text-[#FF6537] cursor-pointer transition-colors"
+                            >
+                              <MessageSquare size={13} />
+                              {!!task.commentCount && <CommentCountBadge count={task.commentCount} />}
                             </button>
                             {canSubmit && (
                               <button

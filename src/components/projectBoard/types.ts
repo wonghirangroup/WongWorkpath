@@ -114,4 +114,10 @@ export interface ProjectTaskItem {
   // project-tasks.ts) — anyone can edit/delete a subtask directly, no change_request involved.
   // Deleting the parent cascades to delete its subtasks (ON DELETE CASCADE at the DB level).
   parentTaskId?: string | null;
+  // Kept in sync locally by handleTaskCommentCountChange whenever TaskDetailModal's own comment
+  // thread changes, rather than re-fetched — every other field here already comes from the server's
+  // task row (comment_count is a correlated subquery there), so a normal task update response also
+  // carries the true count; this field just needs a local bump for the one case that bypasses that
+  // (posting/deleting a comment doesn't go through handleUpdateProjectTask at all).
+  commentCount?: number;
 }

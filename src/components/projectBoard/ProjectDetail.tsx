@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { Clock, ListChecks, CheckSquare, Users2, Plus, Eye, CalendarClock, Pencil, Trash2, Maximize2, Minimize2, Ban, Send, ClipboardCheck, ChevronDown, ChevronRight, CornerDownRight } from 'lucide-react';
+import { Clock, ListChecks, CheckSquare, Users2, Plus, Eye, CalendarClock, Pencil, Trash2, Maximize2, Minimize2, Ban, Send, ClipboardCheck, ChevronDown, ChevronRight, CornerDownRight, MessageSquare } from 'lucide-react';
 import { Employee, Meeting, LinkedDoc } from '../../types';
 import { ProjectRow, ProjectTaskItem, ProjectTaskStatus, CustomProjectStatus, CustomProjectType } from './types';
 import { STATUS_DOT, TASK_STATUS_LABEL, TASK_STATUS_COLOR, PROJECT_PRIORITY_META, resolveTaskDisplayStatus } from './statusMeta';
@@ -12,6 +12,7 @@ import { isUrl } from '../../lib/url';
 import EmployeeAvatar from '../EmployeeAvatar';
 import Dropdown from '../Dropdown';
 import Tooltip from '../Tooltip';
+import CommentCountBadge from '../CommentCountBadge';
 import AddTaskModal from './AddTaskModal';
 import EditProjectModal from './EditProjectModal';
 import AddResponsibleModal from './AddResponsibleModal';
@@ -407,7 +408,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
       <Fragment key={t.id}>
       <tr
         onDoubleClick={() => setSelectedTask(t)}
-        className={`border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50 cursor-pointer ${isSubtask ? 'bg-slate-50/40' : ''}`}
+        className={`group border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50 cursor-pointer ${isSubtask ? 'bg-slate-50/40' : ''}`}
       >
         {/* ลำดับ นับเฉพาะงานหลัก (depth 0) ตามลำดับที่แสดงในตาราง — งานย่อยไม่มีลำดับของตัวเอง เว้นว่างไว้ */}
         <td className="px-5 py-3 text-[#6F6F6F] whitespace-nowrap">{order ?? ''}</td>
@@ -477,7 +478,12 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
             </span>
           </Tooltip>
         </td>
-        <td className="px-5 py-3 whitespace-nowrap">
+        <td className={`px-5 py-3 whitespace-nowrap sticky right-0 z-10 group-hover:bg-slate-50 ${isSubtask ? 'bg-slate-50/40' : 'bg-white'}`}>
+          {/* box-shadow painted directly on a <td> is silently dropped by Chromium when the table
+              has border-collapse (confirmed via computed style — shadow value is there, just never
+              drawn), so the drop-shadow at the sticky column's cut edge lives on this plain <span>
+              instead, which isn't subject to that table-cell quirk. */}
+          <span className="pointer-events-none absolute inset-y-0 left-0 w-px shadow-[-2px_0_2px_rgba(0,0,0,0.4)]" />
           <div className="flex items-center gap-2.5">
             <Tooltip content="ดูรายละเอียด">
               <button
@@ -487,6 +493,17 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                 className="text-[#6F6F6F] hover:text-[#FF6537] cursor-pointer transition-colors"
               >
                 <Eye size={14} />
+              </button>
+            </Tooltip>
+            <Tooltip content="ความคิดเห็น">
+              <button
+                type="button"
+                onClick={() => setSelectedTask(t)}
+                aria-label="ความคิดเห็น"
+                className="relative text-[#6F6F6F] hover:text-[#FF6537] cursor-pointer transition-colors"
+              >
+                <MessageSquare size={14} />
+                {!!t.commentCount && <CommentCountBadge count={t.commentCount} />}
               </button>
             </Tooltip>
             {/* "หัวข้อ" (any task with 1+ subtasks) is just a container — its own status is fully
@@ -837,7 +854,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                   natural width (so ผู้รับผิดชอบ/ผู้ตรวจ/dates never get squeezed) except
                   รายละเอียด, which is the one column capped with a max-width + ellipsis, since
                   it's the only field with genuinely unbounded free-text length. */}
-              <table className="w-full text-sm border-collapse">
+              <table className="w-full text-sm border-separate border-spacing-0">
                 <thead>
                   <tr className="bg-[#F9F9F9] text-[12px] font-semibold text-[#000000] border-b border-[#EDEEEF]">
                     <th className="px-5 py-2 text-left whitespace-nowrap">ลำดับ</th>
@@ -850,7 +867,12 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                     <th className="px-5 py-2 text-left whitespace-nowrap">กำหนดส่ง</th>
                     <th className="px-5 py-2 text-left whitespace-nowrap">ความสำคัญ</th>
                     <th className="px-5 py-2 text-left whitespace-nowrap">สถานะ</th>
-                    <th className="px-5 py-2 text-left whitespace-nowrap">การกระทำ</th>
+                    {/* sticky: ตารางนี้มีคอลัมน์เยอะจนต้องเลื่อนแนวนอนดู — คอลัมน์การกระทำล็อคชิดขวาไว้
+                        ไม่ให้ไหลหายไปตอนเลื่อน (ผู้ใช้ขอหลังวาดสเก็ตช์ sticky column มาให้) */}
+                    <th className="px-5 py-2 text-left whitespace-nowrap sticky right-0 z-10 bg-[#F9F9F9]">
+                      <span className="pointer-events-none absolute inset-y-0 left-0 w-px shadow-[-2px_0_2px_rgba(0,0,0,0.4)]" />
+                      การกระทำ
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -928,7 +950,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-190 text-sm border-collapse">
+              <table className="w-full min-w-190 text-sm border-separate border-spacing-0">
                 <thead>
                   <tr className="bg-[#F9F9F9] text-[12px] font-semibold text-[#000000] border-b border-[#EDEEEF]">
                     <th className="px-5 py-3">สถานะ</th>
@@ -936,7 +958,10 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                     <th className="px-5 py-3">ระยะเวลา</th>
                     <th className="px-5 py-3">ความคืบหน้า</th>
                     <th className="px-5 py-3">ความสำคัญ</th>
-                    <th className="px-5 py-3">การกระทำ</th>
+                    <th className="px-5 py-3 sticky right-0 z-10 bg-[#F9F9F9]">
+                      <span className="pointer-events-none absolute inset-y-0 left-0 w-px shadow-[-2px_0_2px_rgba(0,0,0,0.4)]" />
+                      การกระทำ
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -946,7 +971,7 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                     const priorityMeta = t.priority ? PRIORITY_OPTIONS.find((p) => p.value === t.priority) : undefined;
                     const displayStatus = resolveTaskDisplayStatus(t.status, t.startDateISO);
                     return (
-                      <tr key={t.id} className="border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50 align-top">
+                      <tr key={t.id} className="group border-b border-[#EDEEEF] last:border-b-0 hover:bg-slate-50 align-top">
                         <td className="px-5 py-3 whitespace-nowrap">
                           <div className="flex flex-col gap-1 items-start">
                             <Tooltip content={displayStatus === 'blocked' ? t.blockedReason : undefined}>
@@ -990,7 +1015,8 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                             <span className="text-[#6F6F6F]">ยังไม่มี</span>
                           )}
                         </td>
-                        <td className="px-5 py-3 whitespace-nowrap">
+                        <td className="px-5 py-3 whitespace-nowrap sticky right-0 z-10 bg-white group-hover:bg-slate-50">
+                          <span className="pointer-events-none absolute inset-y-0 left-0 w-px shadow-[-2px_0_2px_rgba(0,0,0,0.4)]" />
                           <div className="flex items-center gap-3">
                             <button
                               type="button"
@@ -1000,6 +1026,17 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
                               <Eye size={14} />
                               ดูรายละเอียด
                             </button>
+                            <Tooltip content="ความคิดเห็น">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedTask(t)}
+                                aria-label="ความคิดเห็น"
+                                className="relative text-[#6F6F6F] hover:text-[#FF6537] cursor-pointer transition-colors"
+                              >
+                                <MessageSquare size={14} />
+                                {!!t.commentCount && <CommentCountBadge count={t.commentCount} />}
+                              </button>
+                            </Tooltip>
                             {/* "หัวข้อ" (any task with 1+ subtasks) is a container, not real work —
                                 its status is fully derived from its subtasks, so there's nothing
                                 to "ส่งงาน" on it directly. */}

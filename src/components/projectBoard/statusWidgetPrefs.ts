@@ -1,6 +1,6 @@
 // Same localStorage-persisted-prefs pattern as dashboard/widgetPrefs.ts, applied to
 // StatusSummaryCards.tsx's "which up-to-5 statuses show as cards" customization.
-const STORAGE_KEY = 'unityspace_project_status_widget_prefs';
+const STORAGE_KEY = 'wongworkpath_project_status_widget_prefs';
 
 // The original 5 built-ins, excluding the 2 newer additions (รอตรวจสอบ/ไอเดีย) — per explicit
 // instruction, a fresh install should keep showing exactly what it always has, not silently grow

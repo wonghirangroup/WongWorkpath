@@ -103,6 +103,18 @@ export interface AuditLog {
   details: string;
 }
 
+// A plain discussion comment on a project_task row (top-level task or งานย่อย — both are the same
+// underlying row, so both are commentable the same way). Fetched per-task on demand (not preloaded
+// into AppDataContext like most domains) since a comment thread is naturally scoped to whichever
+// one task is currently open, not something every screen needs all of at once.
+export interface TaskComment {
+  id: string;
+  taskId: string;
+  authorEmployeeId?: string; // undefined when the original author's employee record was later deleted
+  content: string;
+  createdAt: string; // Bangkok wall-clock "YYYY-MM-DD HH:mm:ss", same shape as AuditLog.timestamp
+}
+
 // A scheduled meeting — optionally tied to a project (from the "จัดการงานและโครงการ" module's
 // "เพิ่มงาน" modal's new "การประชุม" tab), but not required to be, so it can also work as a
 // standalone/company-wide meeting shown only on the calendar. Kept as a real AppDataContext/

@@ -503,7 +503,12 @@ export default function ProjectGantt({ tasks, employees, projects }: ProjectGant
               const firstAssignee = assignees[0];
               const hasDates = start !== null && end !== null;
               const leftPx = hasDates ? dayOffset(start) * pxPerDay : 0;
-              const widthPx = hasDates ? Math.max(dayOffset(end) * pxPerDay - leftPx, pxPerDay * 0.6) : 0;
+              // +1 day: `end` is midnight of the due date (parseThaiDate has no time-of-day), so
+              // using it bare would put the bar's right edge at the *start* of the due date's own
+              // column — visually excluding the due date itself, making a task due "2" look like
+              // it ended on "1". The due date is inclusive, so the bar must reach the due date's
+              // column's right edge, i.e. the start of the following day.
+              const widthPx = hasDates ? Math.max((dayOffset(end) + 1) * pxPerDay - leftPx, pxPerDay * 0.6) : 0;
               const color = TASK_STATUS_COLOR[t.status];
 
               return (

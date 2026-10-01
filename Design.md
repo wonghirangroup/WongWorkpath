@@ -199,7 +199,7 @@ Centered PNG illustration (`w-62.5 h-62.5`) + muted text (`text-sm text-[#6F6F6F
 
 Full-bleed `bg-black` screen — the only page in the app that isn't inside the Sidebar/Header shell.
 
-**First-visit splash choreography** (skipped on every subsequent visit within the same browser tab, gated by `sessionStorage.unityspace_intro_seen`, and skipped entirely under `prefers-reduced-motion`):
+**First-visit splash choreography** (skipped on every subsequent visit within the same browser tab, gated by `sessionStorage.wongworkpath_intro_seen`, and skipped entirely under `prefers-reduced-motion`):
 1. **Logo** (`logo` phase, ~1.3s) — the mark fades/scales in centered, with a soft breathing `blur-2xl` orange glow behind it (`opacity`/`scale` looping).
 2. **Brand** (`brand` phase, ~1.3s more) — "**Wong** Workpath" (orange/white split) plus the Thai subtitle stagger in underneath the logo; the logo+brand group is always mounted (never unmounted) so its height is reserved from frame one and the two never visibly jump when the text arrives.
 3. **Form** (`form` phase) — the logo+brand group scales down slightly (`scale: 0.9`, spring) and the white card (previously height-collapsed to `0` so it reserved no layout space) grows to its real height, pushing the group up into its final position via ordinary browser reflow — not a hand-tuned position/transform, so it can't drift out of sync with the card's real size on any viewport.

@@ -3,7 +3,7 @@ import type { RowDataPacket } from 'mysql2';
 import { pool, withTransaction } from '../db.ts';
 import { nowBangkokDateTime, formatThaiDateShort, daysUntilBangkokDate } from '../lib/datetime.ts';
 import { newId } from '../lib/ids.ts';
-import { isOwner, isExecutiveActor, resolveValidOwnerIds } from '../lib/ownership.ts';
+import { isOwner, isExecutiveActor, resolveValidOwnerIds, isEmployeeManagerActor } from '../lib/ownership.ts';
 
 export const projectTasksRouter = Router();
 
@@ -29,6 +29,7 @@ interface ProjectTaskRowDb extends RowDataPacket {
   review_note: string | null;
   blocked_reason: string | null;
   parent_task_id: string | null;
+  comment_count: number;
 }
 
 // Same JSON-array-as-TEXT convention as project.member_employee_ids.
@@ -71,10 +72,14 @@ function toProjectTask(r: ProjectTaskRowDb) {
     reviewNote: r.review_note ?? undefined,
     blockedReason: r.blocked_reason ?? undefined,
     parentTaskId: r.parent_task_id ?? undefined,
+    commentCount: Number(r.comment_count ?? 0),
   };
 }
 
-const SELECT_FIELDS = `id, project_id, title, description, status, priority, assignee_employee_ids, reviewer_employee_ids, creator_employee_id, start_date, due_date, progress, checklist, submission_note, submission_file_ids, review_note, blocked_reason, parent_task_id`;
+// comment_count is a correlated subquery, not a join — every query below does a plain
+// `FROM project_task` with no alias, so `project_task.id` here always resolves unambiguously
+// regardless of how many rows (one or the whole table) that particular query selects.
+const SELECT_FIELDS = `id, project_id, title, description, status, priority, assignee_employee_ids, reviewer_employee_ids, creator_employee_id, start_date, due_date, progress, checklist, submission_note, submission_file_ids, review_note, blocked_reason, parent_task_id, (SELECT COUNT(*) FROM task_comment WHERE task_comment.task_id = project_task.id) AS comment_count`;
 
 // A task ("หัวข้อ" is just this same task type, created through a differently-labeled tab — see
 // AddTaskModal.tsx) with 1+ subtasks has its own status fully derived from them, never manually
@@ -302,6 +307,91 @@ export async function deleteTaskCascade(taskId: string): Promise<void> {
   // — see recomputeAncestorStatuses' own early-out for zero remaining children).
   if (row.parent_task_id) await recomputeAncestorStatuses(row.parent_task_id);
 }
+
+interface TaskCommentRowDb extends RowDataPacket {
+  id: string;
+  task_id: string;
+  author_employee_id: string | null;
+  content: string;
+  created_at: string;
+}
+
+function toTaskComment(r: TaskCommentRowDb) {
+  return {
+    id: r.id,
+    taskId: r.task_id,
+    authorEmployeeId: r.author_employee_id ?? undefined,
+    content: r.content,
+    createdAt: r.created_at,
+  };
+}
+
+// ความคิดเห็น (comments) — a plain discussion thread per task/งานย่อย ("เพิ่ม comment งาน หรืองาน
+// ย่อย" requirement, 2569-10-01). Open to anyone who can already see the task — reading tasks is
+// company-wide by design everywhere else in this app (see server/lib/access.ts's own notes), so a
+// comment thread isn't gated behind the assignee/reviewer ownership check that editing a task's own
+// fields goes through. A งานย่อย row (parent_task_id set) is commentable the exact same way as a
+// top-level task — both are just project_task rows here, no special-casing needed.
+projectTasksRouter.get('/:id/comments', async (req, res) => {
+  try {
+    const [[task]] = await pool.query<RowDataPacket[]>('SELECT id FROM project_task WHERE id = ?', [req.params.id]);
+    if (!task) return res.status(404).json({ message: 'ไม่พบงานนี้' });
+    const [rows] = await pool.query<TaskCommentRowDb[]>(
+      'SELECT id, task_id, author_employee_id, content, created_at FROM task_comment WHERE task_id = ? ORDER BY created_at ASC',
+      [req.params.id]
+    );
+    res.json(rows.map(toTaskComment));
+  } catch (err) {
+    console.error('GET /api/project-tasks/:id/comments failed:', err);
+    res.status(500).json({ message: 'เกิดข้อผิดพลาดในระบบ กรุณาลองใหม่อีกครั้ง' });
+  }
+});
+
+projectTasksRouter.post('/:id/comments', async (req, res) => {
+  const content = typeof req.body?.content === 'string' ? req.body.content.trim() : '';
+  if (!content) return res.status(400).json({ message: 'กรุณากรอกข้อความ' });
+
+  try {
+    const [[task]] = await pool.query<RowDataPacket[]>('SELECT id FROM project_task WHERE id = ?', [req.params.id]);
+    if (!task) return res.status(404).json({ message: 'ไม่พบงานนี้' });
+
+    const id = newId('TCMT');
+    const now = nowBangkokDateTime();
+    // author_employee_id comes from the authenticated session (req.actorId), never the request
+    // body — same "who did it is never taken from the client" rule audit-logs.ts follows.
+    await pool.query(
+      'INSERT INTO task_comment (id, task_id, author_employee_id, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [id, req.params.id, req.actorId, content, now, now]
+    );
+    const [[row]] = await pool.query<TaskCommentRowDb[]>(
+      'SELECT id, task_id, author_employee_id, content, created_at FROM task_comment WHERE id = ?', [id]
+    );
+    res.status(201).json(toTaskComment(row));
+  } catch (err) {
+    console.error('POST /api/project-tasks/:id/comments failed:', err);
+    res.status(500).json({ message: 'เกิดข้อผิดพลาดในระบบ กรุณาลองใหม่อีกครั้ง' });
+  }
+});
+
+// Only the comment's own author, or an admin-like account (mirrors isEmployeeManagerActor
+// elsewhere), may remove it — same "clean up your own mess, or an admin can" rule as other
+// lightly-moderated lists in this app.
+projectTasksRouter.delete('/:id/comments/:commentId', async (req, res) => {
+  try {
+    const [[comment]] = await pool.query<RowDataPacket[]>(
+      'SELECT author_employee_id FROM task_comment WHERE id = ? AND task_id = ?', [req.params.commentId, req.params.id]
+    );
+    if (!comment) return res.status(404).json({ message: 'ไม่พบความคิดเห็นนี้' });
+    if (comment.author_employee_id !== req.actorId && !(await isEmployeeManagerActor(req.actorId))) {
+      return res.status(403).json({ message: 'ไม่มีสิทธิ์ลบความคิดเห็นนี้' });
+    }
+    await pool.query('DELETE FROM task_comment WHERE id = ?', [req.params.commentId]);
+    res.status(204).end();
+  } catch (err) {
+    console.error('DELETE /api/project-tasks/:id/comments/:commentId failed:', err);
+    res.status(500).json({ message: 'เกิดข้อผิดพลาดในระบบ กรุณาลองใหม่อีกครั้ง' });
+  }
+});
 
 projectTasksRouter.delete('/:id', async (req, res) => {
   try {

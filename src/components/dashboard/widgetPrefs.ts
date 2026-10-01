@@ -8,7 +8,7 @@ export interface DashboardWidgetPrefs {
   visible: DashboardWidgetVisibility;
 }
 
-const STORAGE_KEY = 'unityspace_dashboard_widget_prefs';
+const STORAGE_KEY = 'wongworkpath_dashboard_widget_prefs';
 
 export const DEFAULT_WIDGET_PREFS: DashboardWidgetPrefs = {
   visible: { summaryTable: true, statusChart: true, myTasks: true },

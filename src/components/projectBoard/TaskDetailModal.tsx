@@ -1,7 +1,8 @@
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
-import { X, Clock, Download, ExternalLink, ArrowUpRight } from 'lucide-react';
-import { Employee, LinkedDoc } from '../../types';
+import { X, Clock, Download, ExternalLink, ArrowUpRight, Send, Trash2 } from 'lucide-react';
+import { Employee, LinkedDoc, TaskComment } from '../../types';
 import { ProjectTaskItem } from './types';
 import { TASK_STATUS_LABEL, TASK_STATUS_COLOR } from './statusMeta';
 import { displayName, PRIORITY_OPTIONS } from './CreateProjectModal';
@@ -11,6 +12,9 @@ import { useEscapeToClose } from '../../lib/useEscapeToClose';
 import { useAppData } from '../../context/AppDataContext';
 import DeadlineReminderField, { useSavedReminder } from '../DeadlineReminderField';
 import { reminderLimit } from '../../lib/deadlineReminders';
+import { formatRelativeTimeTh } from '../../lib/datetime';
+import { canManageEmployees } from '../../lib/permissions';
+import { fetchTaskComments, createTaskComment, deleteTaskCommentRemote, ApiError } from '../../lib/api';
 
 function PersonRow({ label, employee }: { label: string; employee: Employee | undefined }) {
   return (
@@ -106,12 +110,74 @@ interface TaskDetailModalProps {
   onGoToProject?: () => void;
 }
 
-// Read-only — opened from the "การกระทำ" column's "ดูรายละเอียด" button so a truncated row
-// (long description, etc.) can still be read in full without leaving the table.
+// Read-only for the task's own fields — opened from the "การกระทำ" column's "ดูรายละเอียด" button
+// so a truncated row (long description, etc.) can still be read in full without leaving the table.
+// The "ความคิดเห็น" thread below is the one exception: open to anyone who can see the task at all
+// (same "reading is company-wide" rule the rest of จัดการงานและโครงการ already follows), not gated
+// behind the assignee/reviewer ownership check that editing a task's own fields goes through.
 export default function TaskDetailModal({ task, employees, documents, onClose, projectTitle, onGoToProject }: TaskDetailModalProps) {
   useEscapeToClose(Boolean(task), onClose);
-  const { currentUser } = useAppData();
+  const { currentUser, reportAppError, handleTaskCommentCountChange } = useAppData();
   const savedReminder = useSavedReminder('task', task?.id);
+
+  // Comments are fetched per-task the moment this modal opens for one (see TaskComment's own note
+  // in types.ts for why this isn't just preloaded into AppDataContext like most other domains).
+  const [comments, setComments] = useState<TaskComment[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [draftComment, setDraftComment] = useState('');
+  const [isPosting, setIsPosting] = useState(false);
+  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!task) { setComments([]); return; }
+    let cancelled = false;
+    setCommentsLoading(true);
+    fetchTaskComments(task.id)
+      .then((rows) => {
+        if (cancelled) return;
+        setComments(rows);
+        // Reconciles the row badge against the real count — it's normally already correct (comment_count
+        // comes from the server on every task fetch), this just covers it drifting out of sync, e.g. two
+        // people commenting on the same task around the same time.
+        handleTaskCommentCountChange(task.id, rows.length);
+      })
+      .catch(() => { if (!cancelled) reportAppError('โหลดความคิดเห็นไม่สำเร็จ'); })
+      .finally(() => { if (!cancelled) setCommentsLoading(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task?.id]);
+
+  const handlePostComment = async () => {
+    const content = draftComment.trim();
+    if (!task || !content || isPosting) return;
+    setIsPosting(true);
+    try {
+      const created = await createTaskComment(task.id, content);
+      const next = [...comments, created];
+      setComments(next);
+      handleTaskCommentCountChange(task.id, next.length);
+      setDraftComment('');
+    } catch (err) {
+      reportAppError(err instanceof ApiError ? err.message : 'แสดงความคิดเห็นไม่สำเร็จ');
+    } finally {
+      setIsPosting(false);
+    }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    if (!task || deletingCommentId) return;
+    setDeletingCommentId(commentId);
+    try {
+      await deleteTaskCommentRemote(task.id, commentId);
+      const next = comments.filter((c) => c.id !== commentId);
+      setComments(next);
+      handleTaskCommentCountChange(task.id, next.length);
+    } catch (err) {
+      reportAppError(err instanceof ApiError ? err.message : 'ลบความคิดเห็นไม่สำเร็จ');
+    } finally {
+      setDeletingCommentId(null);
+    }
+  };
   const assignees = task ? employees.filter((e) => task.assigneeEmployeeIds.includes(e.id)) : [];
   const creator = task?.creatorEmployeeId ? employees.find((e) => e.id === task.creatorEmployeeId) : undefined;
   const reviewers = task ? employees.filter((e) => (task.reviewerEmployeeIds ?? []).includes(e.id)) : [];
@@ -314,6 +380,85 @@ export default function TaskDetailModal({ task, employees, documents, onClose, p
                   </div>
                 </div>
               )}
+
+              <div>
+                <p className="text-[#6F6F6F] text-[11px] mb-1.5">ความคิดเห็น{comments.length > 0 ? ` (${comments.length})` : ''}</p>
+
+                {commentsLoading ? (
+                  <p className="text-sm text-[#6F6F6F]">กำลังโหลด...</p>
+                ) : (
+                  <div className="space-y-3">
+                    {comments.length === 0 && <p className="text-sm text-[#6F6F6F]">ยังไม่มีความคิดเห็น</p>}
+                    {comments.map((comment) => {
+                      const author = comment.authorEmployeeId ? employees.find((e) => e.id === comment.authorEmployeeId) : undefined;
+                      const canDelete = Boolean(
+                        currentUser && (comment.authorEmployeeId === currentUser.id || canManageEmployees(currentUser))
+                      );
+                      return (
+                        <div key={comment.id} className="flex items-start gap-2.5">
+                          {author?.avatar ? (
+                            <img src={author.avatar} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
+                          ) : (
+                            <span
+                              className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-bold shrink-0"
+                              style={{ backgroundColor: getAvatarColor(author ? displayName(author) : '?') }}
+                            >
+                              {author ? displayName(author).trim().charAt(0).toUpperCase() : '?'}
+                            </span>
+                          )}
+                          <div className="min-w-0 flex-1 bg-[#F6F6F6] rounded-xl px-3 py-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="flex items-baseline gap-1.5 min-w-0">
+                                <span className="text-xs font-bold text-[#272220] truncate">
+                                  {author ? displayName(author) : 'ผู้ใช้ที่ถูกลบ'}
+                                </span>
+                                <span className="text-[11px] text-[#6F6F6F] shrink-0">{formatRelativeTimeTh(comment.createdAt)}</span>
+                              </span>
+                              {canDelete && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteComment(comment.id)}
+                                  disabled={deletingCommentId === comment.id}
+                                  aria-label="ลบความคิดเห็น"
+                                  className="text-slate-400 hover:text-red-600 cursor-pointer shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              )}
+                            </div>
+                            <p className="text-sm text-[#272220] whitespace-pre-wrap break-words mt-0.5">{comment.content}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div className="flex items-end gap-2 mt-3">
+                  <textarea
+                    value={draftComment}
+                    onChange={(e) => setDraftComment(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handlePostComment();
+                      }
+                    }}
+                    placeholder="แสดงความคิดเห็น..."
+                    rows={1}
+                    className="flex-1 resize-none text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-[#FF6537] placeholder:text-[#767676]"
+                  />
+                  <button
+                    type="button"
+                    onClick={handlePostComment}
+                    disabled={!draftComment.trim() || isPosting}
+                    aria-label="ส่งความคิดเห็น"
+                    className="h-9 w-9 shrink-0 flex items-center justify-center rounded-lg bg-[#FF6537] text-white hover:bg-[#e6572c] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                  >
+                    <Send size={15} />
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div className="px-5 pb-5 flex items-center gap-2">

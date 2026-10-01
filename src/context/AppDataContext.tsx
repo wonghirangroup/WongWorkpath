@@ -121,6 +121,7 @@ interface AppDataContextValue {
   handleDeleteCustomProjectType: (id: string) => Promise<void>;
   handleAddProjectTask: (task: Omit<ProjectTaskItem, 'id'>) => Promise<ProjectTaskItem>;
   handleUpdateProjectTask: (id: string, updates: Partial<ProjectTaskItem>) => Promise<void>;
+  handleTaskCommentCountChange: (taskId: string, commentCount: number) => void;
   handleDeleteProjectTask: (id: string) => Promise<void>;
   changeRequests: ChangeRequest[];
   handleRequestChange: (
@@ -539,6 +540,15 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     // on every device in use; drop what it left behind.
     localStorage.removeItem('unityspace_docs');
     localStorage.removeItem('unityspace_docs_migrated_v1');
+    // 2569-10-01: dropped the last "unityspace_*" leftovers from the pre-rebrand name — these keys
+    // still live on, just under a "wongworkpath_*" name now (see lib/api.ts, Login.tsx, Sidebar.tsx,
+    // dashboard/widgetPrefs.ts, projectBoard/statusWidgetPrefs.ts), so this only clears the orphaned
+    // old-named copy; it doesn't log anyone out or reset any domain that didn't already reset once.
+    localStorage.removeItem('unityspace_auth_token');
+    localStorage.removeItem('unityspace_sidebar_collapsed');
+    localStorage.removeItem('unityspace_dashboard_widget_prefs');
+    localStorage.removeItem('unityspace_project_status_widget_prefs');
+    localStorage.removeItem('unityspace_remembered_username');
   }, []);
 
   // บันทึกกิจกรรม (audit log) — a real, shared table (server/routes/audit-logs.ts), so two employees
@@ -616,7 +626,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setSessionExpiredHandler(() => {
       try {
-        sessionStorage.setItem('unityspace_session_expired', '1');
+        sessionStorage.setItem('wongworkpath_session_expired', '1');
       } catch {
         /* storage blocked — the login page just won't explain why */
       }
@@ -943,6 +953,14 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         linkId: updated.projectId,
       });
     }
+  };
+
+  // Posting/deleting a comment never touches project_task itself, so it never flows through
+  // handleUpdateProjectTask above — this is purely a local patch, called by TaskDetailModal right
+  // after its own comment-thread state changes, so every row showing this task's comment badge
+  // (table rows, not just the open modal) updates immediately without a full task re-fetch.
+  const handleTaskCommentCountChange = (taskId: string, commentCount: number) => {
+    setProjectTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, commentCount } : t)));
   };
 
   const handleDeleteProjectTask = async (id: string) => {
@@ -1426,6 +1444,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     handleDeleteCustomProjectType,
     handleAddProjectTask,
     handleUpdateProjectTask,
+    handleTaskCommentCountChange,
     handleDeleteProjectTask,
     changeRequests,
     handleRequestChange,

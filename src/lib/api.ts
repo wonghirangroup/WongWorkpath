@@ -1,4 +1,4 @@
-import { Employee, CredentialItem, Meeting, Notification, NotificationCategory, LinkedDoc, AuditLog } from '../types';
+import { Employee, CredentialItem, Meeting, Notification, NotificationCategory, LinkedDoc, AuditLog, TaskComment } from '../types';
 import type { ProjectRow, ProjectTaskItem, CustomProjectStatus, CustomProjectType } from '../components/projectBoard/types';
 import type { OrgDivisionData } from '../data/orgStructure';
 import type { ReminderEntityType } from './deadlineReminders';
@@ -20,7 +20,7 @@ export class ApiError extends Error {
 // /api/auth/login hands back a signed token; every other endpoint requires it as a Bearer header.
 // It lives in localStorage (the API is on a different site from the page, so a cookie wouldn't be
 // sent reliably) and is dropped the moment the server says it's no longer valid.
-const AUTH_TOKEN_KEY = 'unityspace_auth_token';
+const AUTH_TOKEN_KEY = 'wongworkpath_auth_token';
 
 export function getAuthToken(): string | null {
   try {
@@ -509,6 +509,44 @@ export async function deleteProjectTaskRemote(id: string, actorEmployeeId: strin
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new ApiError(data.message ?? 'ลบงานไม่สำเร็จ', res.status);
+  }
+}
+
+// Fetched per-task on demand (TaskDetailModal, when it opens) rather than preloaded into
+// AppDataContext — a comment thread is naturally scoped to whichever one task is open, not
+// something every screen needs all of at once (see TaskComment's own note in types.ts).
+export async function fetchTaskComments(taskId: string): Promise<TaskComment[]> {
+  const res = await authFetch(`${API_BASE_URL}/api/project-tasks/${encodeURIComponent(taskId)}/comments`);
+  if (!res.ok) throw new Error(`Failed to fetch task comments: ${res.status}`);
+  return res.json();
+}
+
+export async function createTaskComment(taskId: string, content: string): Promise<TaskComment> {
+  let res: Response;
+  try {
+    res = await authFetch(`${API_BASE_URL}/api/project-tasks/${encodeURIComponent(taskId)}/comments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    });
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(data.message ?? 'แสดงความคิดเห็นไม่สำเร็จ', res.status);
+  return data as TaskComment;
+}
+
+export async function deleteTaskCommentRemote(taskId: string, commentId: string): Promise<void> {
+  let res: Response;
+  try {
+    res = await authFetch(`${API_BASE_URL}/api/project-tasks/${encodeURIComponent(taskId)}/comments/${encodeURIComponent(commentId)}`, { method: 'DELETE' });
+  } catch {
+    throw new ApiError('ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่อีกครั้ง', 0);
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(data.message ?? 'ลบความคิดเห็นไม่สำเร็จ', res.status);
   }
 }
 

@@ -49,7 +49,7 @@ interface SidebarProps {
   onCloseMobileMenu: () => void;
 }
 
-const SIDEBAR_COLLAPSED_KEY = 'unityspace_sidebar_collapsed';
+const SIDEBAR_COLLAPSED_KEY = 'wongworkpath_sidebar_collapsed';
 
 export default function Sidebar({ isMobileMenuOpen, onCloseMobileMenu }: SidebarProps) {
   const { handleLogout, currentUser } = useAppData();
