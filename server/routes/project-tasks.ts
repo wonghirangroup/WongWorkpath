@@ -30,7 +30,7 @@ interface ProjectTaskRowDb extends RowDataPacket {
   review_note: string | null;
   blocked_reason: string | null;
   parent_task_id: string | null;
-  comment_count: number;
+  unread_comment_count: number;
 }
 
 // Same JSON-array-as-TEXT convention as project.member_employee_ids.
@@ -74,14 +74,22 @@ function toProjectTask(r: ProjectTaskRowDb) {
     reviewNote: r.review_note ?? undefined,
     blockedReason: r.blocked_reason ?? undefined,
     parentTaskId: r.parent_task_id ?? undefined,
-    commentCount: Number(r.comment_count ?? 0),
+    // How many of this task's comments the CURRENT viewer hasn't seen yet (not the thread's total
+    // size) — see the unread_comment_count subquery below and task_comment_read's own comment.
+    commentCount: Number(r.unread_comment_count ?? 0),
   };
 }
 
-// comment_count is a correlated subquery, not a join — every query below does a plain
-// `FROM project_task` with no alias, so `project_task.id` here always resolves unambiguously
-// regardless of how many rows (one or the whole table) that particular query selects.
-const SELECT_FIELDS = `id, project_id, title, description, status, priority, assignee_employee_ids, reviewer_employee_ids, creator_employee_id, start_date, due_date, due_time, progress, checklist, submission_note, submission_file_ids, review_note, blocked_reason, parent_task_id, (SELECT COUNT(*) FROM task_comment WHERE task_comment.task_id = project_task.id) AS comment_count`;
+// unread_comment_count is a correlated subquery bound to the viewing employee (the leading `?` —
+// every caller must pass req.actorId as the FIRST bind param, before any of the query's own), not a
+// join — every query below does a plain `FROM project_task` with no alias, so `project_task.id` here
+// always resolves unambiguously regardless of how many rows (one or the whole table) it selects.
+// No task_comment_read row for this employee+task = they've never opened it, so every comment in it
+// still counts (the '1970-01-01' fallback is older than anything real).
+const SELECT_FIELDS = `id, project_id, title, description, status, priority, assignee_employee_ids, reviewer_employee_ids, creator_employee_id, start_date, due_date, due_time, progress, checklist, submission_note, submission_file_ids, review_note, blocked_reason, parent_task_id,
+  (SELECT COUNT(*) FROM task_comment tc WHERE tc.task_id = project_task.id
+     AND tc.created_at > COALESCE((SELECT tcr.last_read_at FROM task_comment_read tcr WHERE tcr.employee_id = ? AND tcr.task_id = project_task.id), '1970-01-01 00:00:00')
+  ) AS unread_comment_count`;
 
 // A task ("หัวข้อ" is just this same task type, created through a differently-labeled tab — see
 // AddTaskModal.tsx) with 1+ subtasks has its own status fully derived from them, never manually
@@ -105,10 +113,11 @@ async function recomputeAncestorStatuses(startParentId: string): Promise<void> {
   }
 }
 
-projectTasksRouter.get('/', async (_req, res) => {
+projectTasksRouter.get('/', async (req, res) => {
   try {
     const [rows] = await pool.query<ProjectTaskRowDb[]>(
-      `SELECT ${SELECT_FIELDS} FROM project_task ORDER BY created_at DESC`
+      `SELECT ${SELECT_FIELDS} FROM project_task ORDER BY created_at DESC`,
+      [req.actorId]
     );
     res.json(rows.map(toProjectTask));
   } catch (err) {
@@ -167,7 +176,7 @@ projectTasksRouter.post('/', async (req, res) => {
     // more) — recompute right away rather than waiting for some later edit to notice.
     if (parentTaskId) await recomputeAncestorStatuses(parentTaskId);
 
-    const [[row]] = await pool.query<ProjectTaskRowDb[]>(`SELECT ${SELECT_FIELDS} FROM project_task WHERE id = ?`, [id]);
+    const [[row]] = await pool.query<ProjectTaskRowDb[]>(`SELECT ${SELECT_FIELDS} FROM project_task WHERE id = ?`, [req.actorId, id]);
     res.status(201).json(toProjectTask(row));
   } catch (err) {
     console.error('POST /api/project-tasks failed:', err);
@@ -176,8 +185,11 @@ projectTasksRouter.post('/', async (req, res) => {
 });
 
 // Shared by the public PUT route and change-requests.ts's approve-an-edit-request path — see the
-// identical rationale on projects.ts's applyProjectFields.
-export async function applyTaskFields(id: string, t: any) {
+// identical rationale on projects.ts's applyProjectFields. actorId is whoever is making this
+// request (the editor, or the approver deciding someone else's change-request) — it's only used to
+// pick whose unread-comment-count perspective the returned row reflects, since that's also whoever
+// receives this response and updates their own local task list with it.
+export async function applyTaskFields(id: string, t: any, actorId: string) {
   const fields: string[] = [];
   const values: unknown[] = [];
 
@@ -238,7 +250,7 @@ export async function applyTaskFields(id: string, t: any) {
   values.push(nowBangkokDateTime());
   await pool.query(`UPDATE project_task SET ${fields.join(', ')} WHERE id = ?`, [...values, id]);
 
-  const [[row]] = await pool.query<ProjectTaskRowDb[]>(`SELECT ${SELECT_FIELDS} FROM project_task WHERE id = ?`, [id]);
+  const [[row]] = await pool.query<ProjectTaskRowDb[]>(`SELECT ${SELECT_FIELDS} FROM project_task WHERE id = ?`, [actorId, id]);
 
   // This task's own status may have just changed — recompute every ancestor up the chain now
   // that one of a parent's children may look different. A no-op (single lookup) when this task
@@ -268,7 +280,7 @@ projectTasksRouter.put('/:id', async (req, res) => {
       return res.status(409).json({ message: 'ต้องขออนุมัติจากผู้รับผิดชอบก่อนจึงจะแก้ไขได้', requiresApproval: true });
     }
 
-    const row = await applyTaskFields(req.params.id, t);
+    const row = await applyTaskFields(req.params.id, t, req.actorId);
     if (!row) return res.status(400).json({ message: 'ไม่มีข้อมูลที่จะอัปเดต' });
     res.json(row);
   } catch (err) {
@@ -338,6 +350,24 @@ function toTaskComment(r: TaskCommentRowDb) {
 // comment thread isn't gated behind the assignee/reviewer ownership check that editing a task's own
 // fields goes through. A งานย่อย row (parent_task_id set) is commentable the exact same way as a
 // top-level task — both are just project_task rows here, no special-casing needed.
+// Upserts "this employee has seen this task's comments as of now" — called whenever they actually
+// look at the thread (opening it, or posting into it), so the unread-count subquery in SELECT_FIELDS
+// above stops counting what they've already seen. Never fails the caller's own request if this
+// write has a problem — the badge just staying stale is a much smaller issue than the comment
+// fetch/post itself failing because of it.
+async function markCommentsRead(actorId: string, taskId: string): Promise<void> {
+  try {
+    await pool.query(
+      `INSERT INTO task_comment_read (employee_id, task_id, last_read_at)
+       VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE last_read_at = VALUES(last_read_at)`,
+      [actorId, taskId, nowBangkokDateTime()]
+    );
+  } catch (err) {
+    console.error('markCommentsRead failed:', err);
+  }
+}
+
 projectTasksRouter.get('/:id/comments', async (req, res) => {
   try {
     const [[task]] = await pool.query<RowDataPacket[]>('SELECT id FROM project_task WHERE id = ?', [req.params.id]);
@@ -346,6 +376,7 @@ projectTasksRouter.get('/:id/comments', async (req, res) => {
       'SELECT id, task_id, author_employee_id, content, created_at FROM task_comment WHERE task_id = ? ORDER BY created_at ASC',
       [req.params.id]
     );
+    await markCommentsRead(req.actorId, req.params.id);
     res.json(rows.map(toTaskComment));
   } catch (err) {
     console.error('GET /api/project-tasks/:id/comments failed:', err);
@@ -372,6 +403,9 @@ projectTasksRouter.post('/:id/comments', async (req, res) => {
     const [[row]] = await pool.query<TaskCommentRowDb[]>(
       'SELECT id, task_id, author_employee_id, content, created_at FROM task_comment WHERE id = ?', [id]
     );
+    // Posting into a thread implies having just seen it — without this, the poster's own comment
+    // would show as "1 unread" to themselves the next time they load the task list.
+    await markCommentsRead(req.actorId, req.params.id);
     res.status(201).json(toTaskComment(row));
   } catch (err) {
     console.error('POST /api/project-tasks/:id/comments failed:', err);

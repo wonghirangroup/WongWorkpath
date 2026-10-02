@@ -176,7 +176,7 @@ changeRequestsRouter.put('/:id/decide', async (req, res) => {
         } else if (existing.entity_type === 'employee') {
           await applyEmployeeFields(existing.entity_id, proposedChanges);
         } else {
-          await applyTaskFields(existing.entity_id, proposedChanges);
+          await applyTaskFields(existing.entity_id, proposedChanges, req.actorId);
         }
       } else {
         // request_type === 'delete'

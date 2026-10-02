@@ -137,10 +137,10 @@ export default function TaskDetailModal({ task, employees, documents, onClose, p
       .then((rows) => {
         if (cancelled) return;
         setComments(rows);
-        // Reconciles the row badge against the real count — it's normally already correct (comment_count
-        // comes from the server on every task fetch), this just covers it drifting out of sync, e.g. two
-        // people commenting on the same task around the same time.
-        handleTaskCommentCountChange(task.id, rows.length);
+        // The GET itself marks this task's thread "read" server-side (see markCommentsRead in
+        // project-tasks.ts), so the badge's unread count for THIS viewer is 0 the moment this
+        // resolves — not rows.length, which is the thread's total size, not what's unseen.
+        handleTaskCommentCountChange(task.id, 0);
       })
       .catch(() => { if (!cancelled) reportAppError('โหลดความคิดเห็นไม่สำเร็จ'); })
       .finally(() => { if (!cancelled) setCommentsLoading(false); });
@@ -154,9 +154,10 @@ export default function TaskDetailModal({ task, employees, documents, onClose, p
     setIsPosting(true);
     try {
       const created = await createTaskComment(task.id, content);
-      const next = [...comments, created];
-      setComments(next);
-      handleTaskCommentCountChange(task.id, next.length);
+      setComments((prev) => [...prev, created]);
+      // Posting also marks the thread "read" server-side (see markCommentsRead) — otherwise the
+      // poster's own comment would show as "1 unread" to themselves later.
+      handleTaskCommentCountChange(task.id, 0);
       setDraftComment('');
     } catch (err) {
       reportAppError(err instanceof ApiError ? err.message : 'แสดงความคิดเห็นไม่สำเร็จ');
@@ -170,9 +171,10 @@ export default function TaskDetailModal({ task, employees, documents, onClose, p
     setDeletingCommentId(commentId);
     try {
       await deleteTaskCommentRemote(task.id, commentId);
-      const next = comments.filter((c) => c.id !== commentId);
-      setComments(next);
-      handleTaskCommentCountChange(task.id, next.length);
+      setComments((prev) => prev.filter((c) => c.id !== commentId));
+      // Deleting doesn't introduce anything new to miss — this viewer was already caught up (0
+      // unread) before deleting, and removing one of the existing comments doesn't change that.
+      handleTaskCommentCountChange(task.id, 0);
     } catch (err) {
       reportAppError(err instanceof ApiError ? err.message : 'ลบความคิดเห็นไม่สำเร็จ');
     } finally {

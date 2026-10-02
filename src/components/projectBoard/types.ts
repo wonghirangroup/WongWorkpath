@@ -118,10 +118,10 @@ export interface ProjectTaskItem {
   // project-tasks.ts) — anyone can edit/delete a subtask directly, no change_request involved.
   // Deleting the parent cascades to delete its subtasks (ON DELETE CASCADE at the DB level).
   parentTaskId?: string | null;
-  // Kept in sync locally by handleTaskCommentCountChange whenever TaskDetailModal's own comment
-  // thread changes, rather than re-fetched — every other field here already comes from the server's
-  // task row (comment_count is a correlated subquery there), so a normal task update response also
-  // carries the true count; this field just needs a local bump for the one case that bypasses that
-  // (posting/deleting a comment doesn't go through handleUpdateProjectTask at all).
+  // How many of this task's comments the CURRENT viewer hasn't opened yet — not the thread's total
+  // size (see server's unread_comment_count subquery, scoped to whoever's token made the request).
+  // Opening the thread (or posting into it) marks it read server-side, and TaskDetailModal then
+  // calls handleTaskCommentCountChange(taskId, 0) locally so the row badge updates immediately
+  // without waiting for this task to be re-fetched from a normal update elsewhere.
   commentCount?: number;
 }
