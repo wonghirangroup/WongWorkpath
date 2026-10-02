@@ -94,6 +94,10 @@ export interface ProjectTaskItem {
   dueDate: string | null; // pre-formatted Thai date string
   startDateISO?: string | null; // raw yyyy-mm-dd alongside startDate, for editing via <input type="date">
   dueDateISO?: string | null;
+  // Time of day the task is due, "HH:MM:SS" — only meaningful (and only editable in AddTaskModal)
+  // when startDateISO === dueDateISO, since a same-day task is the one case a day-based reminder
+  // can't express; see lib/deadlineReminders.ts's isSameDayDeadline/minuteReminderLimit.
+  dueTime?: string | null;
   daysUntilDue?: number;
   progress: number; // 0-100
   checklist: ProjectTaskChecklistItem[];

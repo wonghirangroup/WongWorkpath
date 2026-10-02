@@ -11,7 +11,7 @@ import { getItemVisual } from '../DocVault';
 import { useEscapeToClose } from '../../lib/useEscapeToClose';
 import { useAppData } from '../../context/AppDataContext';
 import DeadlineReminderField, { useSavedReminder } from '../DeadlineReminderField';
-import { reminderLimit } from '../../lib/deadlineReminders';
+import { isSameDayDeadline, minuteReminderLimit, reminderLimit } from '../../lib/deadlineReminders';
 import { formatRelativeTimeTh } from '../../lib/datetime';
 import { canManageEmployees } from '../../lib/permissions';
 import { fetchTaskComments, createTaskComment, deleteTaskCommentRemote, ApiError } from '../../lib/api';
@@ -118,7 +118,8 @@ interface TaskDetailModalProps {
 export default function TaskDetailModal({ task, employees, documents, onClose, projectTitle, onGoToProject }: TaskDetailModalProps) {
   useEscapeToClose(Boolean(task), onClose);
   const { currentUser, reportAppError, handleTaskCommentCountChange } = useAppData();
-  const savedReminder = useSavedReminder('task', task?.id);
+  const isSameDayTask = isSameDayDeadline(task?.startDateISO, task?.dueDateISO);
+  const savedReminder = useSavedReminder('task', task?.id, isSameDayTask);
 
   // Comments are fetched per-task the moment this modal opens for one (see TaskComment's own note
   // in types.ts for why this isn't just preloaded into AppDataContext like most other domains).
@@ -231,7 +232,7 @@ export default function TaskDetailModal({ task, employees, documents, onClose, p
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ type: 'spring', stiffness: 300, damping: 24, mass: 0.9 }}
-            role="dialog" aria-modal="true" aria-label="รายละเอียดงาน" className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-md mx-4 max-h-[85vh] overflow-y-auto"
+            role="dialog" aria-modal="true" aria-label="รายละเอียดงาน" className="relative bg-white rounded-2xl shadow-[0px_12px_36px_-8px_rgba(0,0,0,0.12)] w-full max-w-xl mx-4 max-h-[85vh] overflow-y-auto"
           >
             <div className="flex justify-between items-start px-5 pt-5 pb-3 border-b border-slate-100">
               <div className="min-w-0">
@@ -286,16 +287,14 @@ export default function TaskDetailModal({ task, employees, documents, onClose, p
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              {/* flex, not grid — these are short (an avatar + a name), so equal-width grid columns on
+                  the now-wider modal left huge dead gaps after each one; flex lets them sit at their
+                  natural width with a consistent gap instead. */}
+              <div className="flex flex-wrap gap-x-10 gap-y-4">
                 <PeopleRow label="ผู้รับผิดชอบ" employees={assignees} />
                 <PersonRow label="ผู้สร้าง" employee={creator} />
+                {reviewers.length > 0 && <PeopleRow label="ผู้ตรวจงาน" employees={reviewers} />}
               </div>
-
-              {reviewers.length > 0 && (
-                <div className="grid grid-cols-2 gap-4">
-                  <PeopleRow label="ผู้ตรวจงาน" employees={reviewers} />
-                </div>
-              )}
 
               {task.status === 'in_progress' && task.reviewNote && (
                 <div>
@@ -311,11 +310,12 @@ export default function TaskDetailModal({ task, employees, documents, onClose, p
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-wrap gap-x-10 gap-y-4">
                 <div>
                   <p className="text-[#6F6F6F] text-[11px] mb-1">ระยะเวลา</p>
                   <p className="text-sm text-[#272220]">
                     {task.startDate ? `${task.startDate} — ${task.dueDate ?? 'ยังไม่มี'}` : task.dueDate ?? 'ยังไม่มี'}
+                    {isSameDayTask && task.dueTime && ` เวลา ${task.dueTime.slice(0, 5)} น.`}
                   </p>
                 </div>
                 <div>
@@ -338,6 +338,8 @@ export default function TaskDetailModal({ task, employees, documents, onClose, p
                   <DeadlineReminderField
                     {...savedReminder}
                     limit={reminderLimit(task.startDateISO, task.dueDateISO)}
+                    minuteMode={isSameDayTask}
+                    minuteLimit={isSameDayTask && task.dueTime ? minuteReminderLimit(task.dueDateISO, task.dueTime) : null}
                     deadlineWord="กำหนดส่ง"
                     note="บันทึกทันที"
                     warning={currentUser && task.assigneeEmployeeIds.includes(currentUser.id) ? undefined : 'คุณไม่ได้เป็นผู้รับผิดชอบงานนี้ จึงจะไม่ได้รับการเตือน'}
@@ -384,10 +386,15 @@ export default function TaskDetailModal({ task, employees, documents, onClose, p
               <div>
                 <p className="text-[#6F6F6F] text-[11px] mb-1.5">ความคิดเห็น{comments.length > 0 ? ` (${comments.length})` : ''}</p>
 
+                {/* Capped + scrolls on its own (instead of the whole modal) once a thread grows past a
+                    few comments — keeps the compose box right below it always in view, and keeps the
+                    rest of the task's own fields above from ever needing to scroll just because someone
+                    left a lot of comments. */}
+                <div className="max-h-64 overflow-y-auto pr-1 space-y-3">
                 {commentsLoading ? (
                   <p className="text-sm text-[#6F6F6F]">กำลังโหลด...</p>
                 ) : (
-                  <div className="space-y-3">
+                  <>
                     {comments.length === 0 && <p className="text-sm text-[#6F6F6F]">ยังไม่มีความคิดเห็น</p>}
                     {comments.map((comment) => {
                       const author = comment.authorEmployeeId ? employees.find((e) => e.id === comment.authorEmployeeId) : undefined;
@@ -431,8 +438,9 @@ export default function TaskDetailModal({ task, employees, documents, onClose, p
                         </div>
                       );
                     })}
-                  </div>
+                  </>
                 )}
+                </div>
 
                 <div className="flex items-end gap-2 mt-3">
                   <textarea

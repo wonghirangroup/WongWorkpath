@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AnimatePresence, motion } from 'motion/react';
+import { motion } from 'motion/react';
 
 type Placement = 'top' | 'bottom' | 'left' | 'right';
 
@@ -13,6 +13,13 @@ interface TooltipProps {
 }
 
 const GAP = 8;
+
+// Module-level: at most one tooltip bubble is shown across the whole app at a time. Without this,
+// rapid hovering across several tightly-packed triggers (e.g. the icons in a table's "การกระทำ"
+// column) could leave more than one bubble mid-exit-animation at once — each one's own 150ms fade-out
+// racing the next one's fade-in, overlapping visibly. Showing a new tooltip now forces whichever one
+// was open to disappear immediately, instead of racing it.
+let hideActiveTooltip: (() => void) | null = null;
 
 // The arrow is a rotated square pinned to the bubble's edge, half of it tucked behind the bubble
 // so only the pointing corner shows. Same slate-900 fill, so the two read as one shape.
@@ -43,13 +50,46 @@ const ENTER_OFFSET: Record<Placement, { x: number; y: number }> = {
 // The bubble renders through a portal into document.body, positioned from that measurement —
 // exactly what Dropdown.tsx already does, and for the same reason: a plain in-flow absolute bubble
 // gets silently clipped the moment its trigger sits inside a scrollable container.
+//
+// The bubble stays permanently mounted (opacity/offset animated via `animate`, not AnimatePresence
+// mount/unmount) rather than being added/removed from the tree on every show/hide. That's the one
+// thing that makes the "someone else just took over, disappear instantly" case above actually work:
+// AnimatePresence hands an unmounting element off to its own internal exit tracking, detached from
+// further prop updates from this component — so forcing `transition={{ duration: 0 }}` onto it once
+// its own hide() already started had no effect. A still-mounted element has no such handoff; a prop
+// update reaches it immediately, so an instant transition genuinely snaps it away mid-fade.
 export default function Tooltip({ children, content, placement = 'top' }: TooltipProps) {
   const [isVisible, setIsVisible] = useState(false);
+  // True only while this instance is being hidden because a DIFFERENT tooltip is taking over (see
+  // hideActiveTooltip above) — skips the animation for just that case. A normal hide (mouse actually
+  // leaving, blur, press) still fades out at the usual pace.
+  const [instantHide, setInstantHide] = useState(false);
   const [bubbleStyle, setBubbleStyle] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const triggerRef = useRef<HTMLSpanElement>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
   const offset = ENTER_OFFSET[placement];
   const hasContent = content !== undefined && content !== null && content !== false && content !== '';
+
+  // Stable identity across renders (setInstantHide/setIsVisible themselves are too), so a later ===
+  // check can tell "I'm still the one hideActiveTooltip points at" apart from "someone newer already
+  // took over". hideActiveTooltip is deliberately NOT cleared the moment hide() is called — a normal
+  // hide still takes 150ms to actually fade out, and for that whole stretch this is still the bubble
+  // on screen, so it must stay "active" (and stealable) until that fade genuinely finishes (see
+  // onAnimationComplete below), not just until hide() was requested.
+  const myHide = useRef(() => { setInstantHide(true); setIsVisible(false); }).current;
+  const show = () => {
+    if (hideActiveTooltip && hideActiveTooltip !== myHide) hideActiveTooltip();
+    hideActiveTooltip = myHide;
+    setInstantHide(false);
+    setIsVisible(true);
+  };
+  const hide = () => {
+    setInstantHide(false);
+    setIsVisible(false);
+  };
+  const onFadeOutComplete = () => {
+    if (hideActiveTooltip === myHide) hideActiveTooltip = null;
+  };
 
   // Positioned as plain top/left coordinates that already account for the bubble's own measured
   // size — deliberately no CSS translate, because motion/react owns the transform property here
@@ -80,9 +120,9 @@ export default function Tooltip({ children, content, placement = 'top' }: Toolti
   // leave it floating over the wrong spot — hide instead, the same as the native title box does.
   useEffect(() => {
     if (!isVisible) return;
-    const hide = () => setIsVisible(false);
     window.addEventListener('scroll', hide, true);
     return () => window.removeEventListener('scroll', hide, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isVisible]);
 
   // An icon-only button wrapped in a text tooltip has no name a screen reader can announce — the
@@ -102,35 +142,38 @@ export default function Tooltip({ children, content, placement = 'top' }: Toolti
     <span
       ref={triggerRef}
       className="contents"
-      onMouseEnter={() => setIsVisible(true)}
-      onMouseLeave={() => setIsVisible(false)}
+      onMouseEnter={show}
+      onMouseLeave={hide}
       // Pressing the trigger usually opens something (a modal, a menu) right under the pointer —
       // without this the bubble (z-70) would stay hovering above it until the mouse next moves.
-      onMouseDown={() => setIsVisible(false)}
-      onFocus={() => setIsVisible(true)}
-      onBlur={() => setIsVisible(false)}
+      onMouseDown={hide}
+      onFocus={show}
+      onBlur={hide}
     >
       {children}
 
       {createPortal(
-        <AnimatePresence>
-          {isVisible && (
-            <motion.div
-              role="tooltip"
-              initial={{ opacity: 0, x: offset.x, y: offset.y }}
-              animate={{ opacity: 1, x: 0, y: 0 }}
-              exit={{ opacity: 0, x: offset.x, y: offset.y }}
-              transition={{ duration: 0.15, ease: 'easeOut' }}
-              style={{ position: 'fixed', top: bubbleStyle.top, left: bubbleStyle.left }}
-              className="z-70 pointer-events-none"
-            >
-              <div ref={bubbleRef} className="relative w-max max-w-xs bg-black text-white text-xs font-normal px-3 py-2 rounded-md shadow-md wrap-break-word">
-                {content}
-                <span className={`absolute w-2 h-2 bg-black rotate-45 ${ARROW_POSITION[placement]}`} />
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>,
+        <motion.div
+          role="tooltip"
+          aria-hidden={!isVisible}
+          initial={false}
+          animate={{
+            opacity: isVisible ? 1 : 0,
+            x: isVisible ? 0 : offset.x,
+            y: isVisible ? 0 : offset.y,
+          }}
+          transition={{ duration: instantHide ? 0 : 0.15, ease: 'easeOut' }}
+          // Only a fade-OUT finishing should release "active" status — this also fires right after a
+          // fade-IN finishes (isVisible true there), which must leave hideActiveTooltip alone.
+          onAnimationComplete={() => { if (!isVisible) onFadeOutComplete(); }}
+          style={{ position: 'fixed', top: bubbleStyle.top, left: bubbleStyle.left }}
+          className="z-70 pointer-events-none"
+        >
+          <div ref={bubbleRef} className="relative w-max max-w-xs bg-black text-white text-xs font-normal px-3 py-2 rounded-md shadow-md wrap-break-word">
+            {content}
+            <span className={`absolute w-2 h-2 bg-black rotate-45 ${ARROW_POSITION[placement]}`} />
+          </div>
+        </motion.div>,
         document.body
       )}
     </span>

@@ -47,6 +47,82 @@ export function normalizeReminderDays(days: number[]): number[] {
   return [...new Set(days.filter((d) => Number.isInteger(d) && d >= 1 && d <= MAX_REMINDER_DAYS))].sort((a, b) => a - b).slice(0, MAX_REMINDER_COUNT);
 }
 
+// --- Same-day tasks: minute/hour-based reminders ------------------------------------------------
+// A task whose start date equals its due date can't sensibly be reminded "N days before" — there's
+// no day gap to count. For exactly this one case, a person's lead times are MINUTES instead, stored
+// as NEGATIVE integers in the very same array/column as the day-based leads above (e.g. -30 means
+// "30 minutes before"). This is safe because the two modes are mutually exclusive by construction:
+// a same-day task's day-based limit (reminderLimit) is always 0 (meaningless), and a multi-day task
+// has no due TIME to count minutes against — so one item's chosen list is never a mix of both, and
+// reusing one column avoids a second table/column/handler that could drift out of sync with this
+// one. Server-side validation (sanitizeReminderDays in notificationCategories.ts) accepts the same
+// negative range.
+
+export const MAX_REMINDER_MINUTES = 24 * 60; // can't reach back further than a day in minute-mode
+
+export const MINUTE_REMINDER_PRESETS: { minutes: number; label: string }[] = [
+  { minutes: 15, label: '15 นาที' },
+  { minutes: 30, label: '30 นาที' },
+  { minutes: 60, label: '1 ชั่วโมง' },
+  { minutes: 120, label: '2 ชั่วโมง' },
+  { minutes: 240, label: '4 ชั่วโมง' },
+];
+
+// What applies to a same-day task until someone customises it: remind once 30 minutes before.
+export const DEFAULT_DEADLINE_REMINDER_MINUTES: number[] = [30];
+
+export function formatReminderLeadMinutes(minutes: number): string {
+  const preset = MINUTE_REMINDER_PRESETS.find((p) => p.minutes === minutes);
+  if (preset) return preset.label;
+  if (minutes % 60 === 0) return `${minutes / 60} ชั่วโมง`;
+  return `${minutes} นาที`;
+}
+
+// Same "smallest lead that still covers the time left" rule as pickReminderLead, in minutes.
+export function pickReminderLeadMinutes(minutesUntilDue: number, leadMinutesList: number[]): number | null {
+  if (minutesUntilDue < 0) return null;
+  const candidates = leadMinutesList.filter((n) => n >= minutesUntilDue).sort((a, b) => a - b);
+  return candidates.length > 0 ? candidates[0] : null;
+}
+
+export function normalizeReminderMinutes(minutes: number[]): number[] {
+  return [...new Set(minutes.filter((n) => Number.isInteger(n) && n >= 1 && n <= MAX_REMINDER_MINUTES))]
+    .sort((a, b) => a - b)
+    .slice(0, MAX_REMINDER_COUNT);
+}
+
+// Plain (positive) minute values <-> the shared storage array's negative encoding.
+export function encodeMinuteLeads(minutes: number[]): number[] {
+  return minutes.map((m) => -m);
+}
+export function decodeMinuteLeads(stored: number[]): number[] {
+  return stored.filter((n) => n < 0).map((n) => -n);
+}
+
+// A task is in minute-mode exactly when its start date equals its due date — the one case where a
+// day-based reminder is meaningless (see the block comment above).
+export function isSameDayDeadline(startISO: string | null | undefined, dueISO: string | null | undefined): boolean {
+  return Boolean(startISO && dueISO && startISO === dueISO);
+}
+
+// Minutes from right now (a real elapsed-time count, not a calendar-day diff) until a Bangkok
+// wall-clock date+time — negative once it's past. dueTime is "HH:MM" or "HH:MM:SS". Appending the
+// Bangkok UTC+7 offset lets Date parse it to the correct real instant regardless of the viewer's own
+// timezone, same trick as lib/datetime.ts's formatRelativeTimeTh.
+export function minutesUntilDeadline(dueISO: string, dueTime: string): number {
+  const target = new Date(`${dueISO}T${dueTime}+07:00`);
+  return Math.round((target.getTime() - Date.now()) / 60_000);
+}
+
+// The minute-mode counterpart of reminderLimit — how far back "N minutes before" can reach, right
+// now. Unlike reminderLimit (stable all day, since it's purely calendar-date math), this changes
+// every minute, so it's only meaningful measured fresh at the moment the picker is actually open.
+// null = no due time set yet, so minute-mode can't be offered.
+export function minuteReminderLimit(dueISO: string | null | undefined, dueTime: string | null | undefined): number | null {
+  if (!dueISO || !dueTime) return null;
+  return Math.max(0, minutesUntilDeadline(dueISO, dueTime));
+}
+
 // Validates one custom entry from the Settings form. Returns the value in days or an error message.
 export function parseCustomReminder(amount: string, unit: ReminderUnit): { days: number } | { error: string } {
   const n = Number(amount);
@@ -133,6 +209,25 @@ export const overdueNotificationId = (me: string, taskId: string) => `no_${me}_$
 // never). Used so that widening or changing the lead times never re-announces something already
 // announced closer to the deadline. Tasks announced before per-item settings existed used the id
 // `notif_duesoon_<taskId>` (always the 2-day lead, no deadline in the id) — recognised here too.
+// Minute-mode counterpart of dueSoonNotificationId/closestRemindedLead above — tasks only (projects
+// have no minute-mode), kept in a separate id namespace (own prefix, own trailing deadlineISO+dueTime)
+// so it can never collide with or be misread as a day-based reminder id for the same task.
+export const dueSoonMinutesNotificationId = (me: string, taskId: string, leadMinutes: number, deadlineISO: string, deadlineTime: string) =>
+  `ndm_${me}_${taskId}_${leadMinutes}_${deadlineISO}_${deadlineTime}`;
+
+export function closestRemindedLeadMinutes(existingIds: string[], me: string, taskId: string, deadlineISO: string, deadlineTime: string): number | null {
+  const head = `ndm_${me}_${taskId}_`;
+  const tail = `_${deadlineISO}_${deadlineTime}`;
+  let best: number | null = null;
+  for (const id of existingIds) {
+    if (id.startsWith(head) && id.endsWith(tail) && id.length > head.length + tail.length) {
+      const n = Number(id.slice(head.length, id.length - tail.length));
+      if (Number.isInteger(n) && (best === null || n < best)) best = n;
+    }
+  }
+  return best;
+}
+
 export function closestRemindedLead(existingIds: string[], kind: ReminderItemKind, me: string, itemId: string, deadlineISO: string): number | null {
   const head = `${KIND_PREFIX[kind]}_${me}_${itemId}_`;
   const tail = `_${deadlineISO}`;

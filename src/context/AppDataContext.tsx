@@ -14,11 +14,18 @@ import {
   ReminderMap,
   ReminderEntityType,
   pickReminderLead,
+  pickReminderLeadMinutes,
   reminderKey,
   effectiveReminderLeads,
+  decodeMinuteLeads,
+  isSameDayDeadline,
+  minutesUntilDeadline,
+  formatReminderLeadMinutes,
   dueSoonNotificationId,
+  dueSoonMinutesNotificationId,
   overdueNotificationId,
   closestRemindedLead,
+  closestRemindedLeadMinutes,
 } from '../lib/deadlineReminders';
 import { isResponsibleForProject } from '../lib/ownership';
 import type { ProjectRow, ProjectTaskItem, CustomProjectStatus, CustomProjectType } from '../components/projectBoard/types';
@@ -426,6 +433,16 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   // brings new ones in.
   const notificationsRef = useRef(notifications);
   notificationsRef.current = notifications;
+  // Every other item here is only re-checked when data loads/changes (there's no server-side
+  // scheduler) — fine at day granularity, since a day doesn't pass without a reload happening first.
+  // A same-day task's minute-based reminder needs finer timing than that, so this ticks the scan once
+  // a minute purely to re-run it; it changes nothing else and the scan is cheap (one pass over this
+  // person's own tasks).
+  const [minuteTick, setMinuteTick] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => setMinuteTick((n) => n + 1), 60_000);
+    return () => clearInterval(interval);
+  }, []);
   useEffect(() => {
     if (!currentUser || !notificationsLoaded || !deadlineRemindersReady) return;
     const me = currentUser.id;
@@ -462,6 +479,30 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           });
           return;
         }
+        // Same-day task (start = due) with a due TIME set: "N days before" is always 0 and
+        // meaningless here, so this is reminded in minutes/hours instead — see
+        // isSameDayDeadline/minuteReminderLimit. Needs the 1-minute tick below to actually fire
+        // close to on time, since otherwise it would only get re-checked whenever the app's data
+        // happens to reload.
+        if (isSameDayDeadline(t.startDateISO, t.dueDateISO) && t.dueTime) {
+          const dueISO = t.dueDateISO ?? '';
+          const minutesLeft = minutesUntilDeadline(dueISO, t.dueTime);
+          const minuteLeads = decodeMinuteLeads(effectiveReminderLeads(deadlineReminders, 'task', t.id, t.startDateISO, t.dueDateISO));
+          const minuteLead = pickReminderLeadMinutes(minutesLeft, minuteLeads);
+          if (minuteLead === null) return;
+          const alreadyAtMinutes = closestRemindedLeadMinutes(existingIds, me, t.id, dueISO, t.dueTime);
+          if (alreadyAtMinutes !== null && alreadyAtMinutes <= minuteLead) return;
+          attempt(dueSoonMinutesNotificationId(me, t.id, minuteLead, dueISO, t.dueTime), {
+            title: 'งานใกล้ครบกำหนด',
+            category: 'deadline',
+            message: `งาน "${t.title}" ในโครงการ ${projectTitle} ใกล้ครบกำหนดแล้ว (เหลือ${formatReminderLeadMinutes(minuteLead)})`,
+            type: 'warning',
+            linkType: 'project',
+            linkId: t.projectId,
+          });
+          return;
+        }
+
         const lead = pickReminderLead(daysLeft, effectiveReminderLeads(deadlineReminders, 'task', t.id, t.startDateISO, t.dueDateISO));
         if (lead === null) return;
         const dueISO = t.dueDateISO ?? '';
@@ -519,7 +560,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         });
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser, projectTasks, meetings, projects, deadlineReminders, notificationsLoaded, deadlineRemindersReady]);
+  }, [currentUser, projectTasks, meetings, projects, deadlineReminders, notificationsLoaded, deadlineRemindersReady, minuteTick]);
 
   // One-time cleanup of domains that used to live in localStorage and are now real, shared
   // backend tables (or, for unityspace_tasks/unityspace_leaves/unityspace_notifications, are gone

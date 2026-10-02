@@ -6,20 +6,27 @@ import { computePanelPlacement, PanelPlacement } from '../lib/floatingPanel';
 import { useAppData } from '../context/AppDataContext';
 import {
   DEFAULT_DEADLINE_REMINDER_DAYS,
+  DEFAULT_DEADLINE_REMINDER_MINUTES,
   MAX_REMINDER_COUNT,
+  MINUTE_REMINDER_PRESETS,
   REMINDER_PRESETS,
   REMINDER_UNIT_LABEL,
   ReminderLimit,
   ReminderUnit,
+  decodeMinuteLeads,
+  encodeMinuteLeads,
   formatReminderLead,
+  formatReminderLeadMinutes,
   normalizeReminderDays,
+  normalizeReminderMinutes,
   parseCustomReminder,
   reminderKey,
-  summarizeReminderLeads,
 } from '../lib/deadlineReminders';
 
 interface DeadlineReminderFieldProps {
   // The lead times in force for this item right now (the person's own choice, else the default).
+  // In minuteMode this is still the SAME shared array, just negative-encoded minutes — see
+  // lib/deadlineReminders.ts's block comment on why same-day tasks reuse this one column/prop.
   days: number[];
   // True while the person hasn't chosen anything for this item, so the default applies.
   isDefault: boolean;
@@ -36,6 +43,15 @@ interface DeadlineReminderFieldProps {
   // be added. null = no deadline set yet, so there's nothing to remind about; undefined = no limit.
   limit?: ReminderLimit | null;
   disabled?: boolean;
+  // Same-day task (start date = due date): "N days before" is meaningless with no day gap, so the
+  // whole picker switches to hour/minute presets instead. No custom-amount form in this mode — a
+  // handful of fixed presets covers it, and it keeps this already-large component from growing a
+  // second parallel unit-picker UI for a narrow case.
+  minuteMode?: boolean;
+  // Minutes actually left until the real due date+time, measured fresh (see minuteReminderLimit) —
+  // null/undefined = no due time chosen yet, so minute-mode can't be offered (trigger disabled, same
+  // as limit === null does for day-mode).
+  minuteLimit?: number | null;
 }
 
 const UNITS: ReminderUnit[] = ['day', 'week', 'month'];
@@ -53,8 +69,11 @@ const chipOver = 'bg-amber-50 border-amber-300 text-amber-800';
 // button (so it slots into the modals' no-scroll layouts without adding a tall block) that opens a small
 // floating panel: quick choices (1 วัน … 3 เดือน, several at once), or a custom length. The choice is
 // personal — it only changes when *this person* is reminded, never anyone else's, so it needs nobody's
-// approval. Nothing chosen = the app default (a reminder when 2 days are left).
-export default function DeadlineReminderField({ days, isDefault, onChange, deadlineWord, note, warning, limit, disabled = false }: DeadlineReminderFieldProps) {
+// approval. Nothing chosen = the app default (a reminder when 2 days are left) — or, in minuteMode, a
+// reminder 30 minutes before.
+export default function DeadlineReminderField({
+  days, isDefault, onChange, deadlineWord, note, warning, limit, disabled = false, minuteMode = false, minuteLimit,
+}: DeadlineReminderFieldProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [placement, setPlacement] = useState<PanelPlacement>({ left: 0, width: 0, openUpward: false, maxHeight: 320 });
   const [amount, setAmount] = useState('');
@@ -117,30 +136,43 @@ export default function DeadlineReminderField({ days, isDefault, onChange, deadl
     e.stopPropagation();
   };
 
-  const noDeadline = limit === null;
-  const maxDays = limit ? limit.maxDays : undefined; // undefined = no limit
-  const isOver = (d: number) => maxDays !== undefined && d > maxDays;
-  const overMessage = maxDays !== undefined && maxDays < 1
-    ? 'ช่วงเวลาสั้นเกินไปที่จะตั้งเตือนล่วงหน้า'
-    : `ตั้งได้ไม่เกิน ${maxDays} วัน ตามช่วงวันที่ที่กำหนดไว้`;
+  const noDeadline = minuteMode ? minuteLimit === null || minuteLimit === undefined : limit === null;
+  const maxValue = minuteMode ? (minuteLimit ?? undefined) : (limit ? limit.maxDays : undefined);
+  const isOver = (d: number) => maxValue !== undefined && d > maxValue;
+  const overMessage = minuteMode
+    ? maxValue !== undefined && maxValue < 1
+      ? 'เหลือเวลาน้อยเกินไปที่จะตั้งเตือนล่วงหน้า'
+      : `ตั้งได้ไม่เกิน ${maxValue !== undefined ? formatReminderLeadMinutes(maxValue) : ''} ตามเวลาที่เหลือถึง${deadlineWord}จริงตอนนี้`
+    : maxValue !== undefined && maxValue < 1
+      ? 'ช่วงเวลาสั้นเกินไปที่จะตั้งเตือนล่วงหน้า'
+      : `ตั้งได้ไม่เกิน ${maxValue} วัน ตามช่วงวันที่ที่กำหนดไว้`;
+
+  // Everything below works in plain (positive) values — decoded once here at the boundary, re-encoded
+  // only when calling onChange, so toggle/addCustom/rendering never have to think about the sign.
+  const rawListed = minuteMode ? decodeMinuteLeads(days) : days;
+  const formatLead = minuteMode ? formatReminderLeadMinutes : formatReminderLead;
+  const normalizeLeads = minuteMode ? normalizeReminderMinutes : normalizeReminderDays;
+  const encodeForStorage = (plain: number[]) => (minuteMode ? encodeMinuteLeads(plain) : plain);
+  const presetValues = minuteMode ? MINUTE_REMINDER_PRESETS.map((p) => p.minutes) : REMINDER_PRESETS.map((p) => p.days);
 
   // What's actually in force. The app default is the system's own and is never trimmed — but it isn't
   // offered as a "choice" either when it doesn't fit, so the first pick starts from what fits.
-  const listed = isDefault ? days.filter((d) => !isOver(d)) : days;
-  const presetDays = REMINDER_PRESETS.map((p) => p.days);
-  const customDays = listed.filter((d) => !presetDays.includes(d));
+  const listed = isDefault ? rawListed.filter((d) => !isOver(d)) : rawListed;
+  const customValues = listed.filter((d) => !presetValues.includes(d));
   const atLimit = listed.length >= MAX_REMINDER_COUNT;
   const hasOver = listed.some(isOver);
-  const shownSummary = summarizeReminderLeads(isDefault ? days : listed.filter((d) => !isOver(d)));
+  const shownValues = isDefault ? rawListed : listed.filter((d) => !isOver(d));
+  const shownSummary = shownValues.length === 0 ? 'ไม่เตือนล่วงหน้า' : shownValues.map(formatLead).join(', ');
 
   const toggle = (value: number) => {
     setError('');
-    if (listed.includes(value)) onChange(listed.filter((d) => d !== value));
+    if (listed.includes(value)) onChange(encodeForStorage(listed.filter((d) => d !== value)));
     else if (isOver(value)) setError(overMessage);
     else if (atLimit) setError(`เลือกได้สูงสุด ${MAX_REMINDER_COUNT} ช่วง`);
-    else onChange(normalizeReminderDays([...listed, value]));
+    else onChange(encodeForStorage(normalizeLeads([...listed, value])));
   };
 
+  // Day-mode only — minuteMode skips rendering the form this belongs to (see below).
   const addCustom = (e: FormEvent) => {
     e.preventDefault();
     e.stopPropagation(); // this form lives in a portal, but React still bubbles its submit to the modal's own <form>
@@ -169,7 +201,9 @@ export default function DeadlineReminderField({ days, isDefault, onChange, deadl
       >
         <Bell size={15} className="text-[#FF6537] shrink-0" aria-hidden />
         {noDeadline ? (
-          <span className="flex-1 min-w-0 truncate text-[#6F6F6F]">ใส่{deadlineWord}ก่อน จึงตั้งเตือนได้</span>
+          <span className="flex-1 min-w-0 truncate text-[#6F6F6F]">
+            {minuteMode ? `ใส่เวลา${deadlineWord}ก่อน จึงตั้งเตือนได้` : `ใส่${deadlineWord}ก่อน จึงตั้งเตือนได้`}
+          </span>
         ) : (
           <span className="flex-1 min-w-0 truncate text-slate-800">{shownSummary}</span>
         )}
@@ -203,90 +237,111 @@ export default function DeadlineReminderField({ days, isDefault, onChange, deadl
               <p className="text-[13px] font-bold text-[#272220]">เตือนฉันก่อนถึง{deadlineWord}</p>
               <p className="text-[11px] text-[#6F6F6F] mt-0.5">เลือกได้หลายช่วง — เป็นค่าของคุณเอง ไม่กระทบคนอื่น{note ? ` · ${note}` : ''}</p>
 
-              {limit && (
-                <p className="text-[11px] font-semibold text-[#272220] mt-1">
-                  {limit.maxDays < 1
-                    ? 'ช่วงเวลาสั้นเกินไป จึงตั้งเตือนล่วงหน้าเองไม่ได้'
-                    : `ตั้งได้ไม่เกิน ${limit.maxDays} วัน — ตามช่วงตั้งแต่${limit.fromToday ? 'วันนี้' : 'วันที่เริ่ม'}ถึง${deadlineWord}`}
-                </p>
+              {minuteMode ? (
+                maxValue !== undefined && (
+                  <p className="text-[11px] font-semibold text-[#272220] mt-1">
+                    {maxValue < 1
+                      ? 'เหลือเวลาน้อยเกินไป จึงตั้งเตือนล่วงหน้าเองไม่ได้'
+                      : `ตั้งได้ไม่เกิน ${formatReminderLeadMinutes(maxValue)} — ตามเวลาที่เหลือถึง${deadlineWord}จริงตอนนี้`}
+                  </p>
+                )
+              ) : (
+                limit && (
+                  <p className="text-[11px] font-semibold text-[#272220] mt-1">
+                    {limit.maxDays < 1
+                      ? 'ช่วงเวลาสั้นเกินไป จึงตั้งเตือนล่วงหน้าเองไม่ได้'
+                      : `ตั้งได้ไม่เกิน ${limit.maxDays} วัน — ตามช่วงตั้งแต่${limit.fromToday ? 'วันนี้' : 'วันที่เริ่ม'}ถึง${deadlineWord}`}
+                  </p>
+                )
               )}
 
               <div role="group" aria-label="ช่วงเวลาที่เตือน" className="flex flex-wrap gap-1.5 mt-3">
-                {REMINDER_PRESETS.map((p) => {
-                  const on = listed.includes(p.days);
-                  const over = isOver(p.days);
+                {(minuteMode
+                  ? MINUTE_REMINDER_PRESETS.map((p) => ({ value: p.minutes, label: p.label }))
+                  : REMINDER_PRESETS.map((p) => ({ value: p.days, label: p.label }))
+                ).map((p) => {
+                  const on = listed.includes(p.value);
+                  const over = isOver(p.value);
                   return (
                     <button
-                      key={p.days}
+                      key={p.value}
                       type="button"
                       aria-pressed={on}
                       disabled={over && !on}
-                      title={over ? (on ? 'เกินช่วงวันที่ — จะไม่ถูกใช้ กดเพื่อเอาออก' : overMessage) : undefined}
-                      onClick={() => toggle(p.days)}
+                      title={over ? (on ? 'เกินเวลาที่เหลือ — จะไม่ถูกใช้ กดเพื่อเอาออก' : overMessage) : undefined}
+                      onClick={() => toggle(p.value)}
                       className={`${chipBase} ${over ? (on ? chipOver : chipBlocked) : on ? chipOn : chipOff}`}
                     >
                       {p.label}
                     </button>
                   );
                 })}
-                {customDays.map((d) => (
+                {customValues.map((d) => (
                   <button
                     key={d}
                     type="button"
-                    aria-label={`เอา "${formatReminderLead(d)}" ออก`}
-                    title={isOver(d) ? 'เกินช่วงวันที่ — จะไม่ถูกใช้ กดเพื่อเอาออก' : undefined}
+                    aria-label={`เอา "${formatLead(d)}" ออก`}
+                    title={isOver(d) ? 'เกินช่วงที่เหลือ — จะไม่ถูกใช้ กดเพื่อเอาออก' : undefined}
                     onClick={() => toggle(d)}
                     className={`${chipBase} ${isOver(d) ? chipOver : chipOn}`}
                   >
-                    {formatReminderLead(d)}
+                    {formatLead(d)}
                     <X size={13} aria-hidden />
                   </button>
                 ))}
               </div>
 
-              <form onSubmit={addCustom} className="flex flex-wrap items-center gap-1.5 mt-3">
-                <span className="text-[12px] font-semibold text-[#272220]">กำหนดเอง</span>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min={1}
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder="เช่น 14"
-                  aria-label="จำนวนที่ต้องการให้เตือนล่วงหน้า"
-                  className="w-20 h-8 px-2.5 border border-[#E5E5E5] rounded-lg text-sm placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
-                />
-                <div role="group" aria-label="หน่วย" className="inline-flex rounded-lg border border-[#E5E5E5] overflow-hidden">
-                  {UNITS.map((u) => (
-                    <button
-                      key={u}
-                      type="button"
-                      aria-pressed={unit === u}
-                      onClick={() => setUnit(u)}
-                      className={`h-8 px-2.5 text-[13px] font-semibold cursor-pointer transition-colors ${unit === u ? 'bg-[#272220] text-white' : 'bg-white text-[#6F6F6F] hover:bg-slate-50'}`}
-                    >
-                      {REMINDER_UNIT_LABEL[u]}
-                    </button>
-                  ))}
-                </div>
-                <button
-                  type="submit"
-                  disabled={!amount.trim()}
-                  className={`h-8 px-3 rounded-lg text-[13px] font-bold inline-flex items-center gap-1 text-white transition-colors ${
-                    amount.trim() ? 'bg-[#FF6537] hover:bg-[#e6572c] cursor-pointer' : 'bg-[#F68C6C] cursor-not-allowed'
-                  }`}
-                >
-                  <Plus size={14} aria-hidden /> เพิ่ม
-                </button>
-              </form>
+              {!minuteMode && (
+                <form onSubmit={addCustom} className="flex flex-wrap items-center gap-1.5 mt-3">
+                  <span className="text-[12px] font-semibold text-[#272220]">กำหนดเอง</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    placeholder="เช่น 14"
+                    aria-label="จำนวนที่ต้องการให้เตือนล่วงหน้า"
+                    className="w-20 h-8 px-2.5 border border-[#E5E5E5] rounded-lg text-sm placeholder:text-[#767676] focus:outline-none focus:border-[#FF6537]"
+                  />
+                  <div role="group" aria-label="หน่วย" className="inline-flex rounded-lg border border-[#E5E5E5] overflow-hidden">
+                    {UNITS.map((u) => (
+                      <button
+                        key={u}
+                        type="button"
+                        aria-pressed={unit === u}
+                        onClick={() => setUnit(u)}
+                        className={`h-8 px-2.5 text-[13px] font-semibold cursor-pointer transition-colors ${unit === u ? 'bg-[#272220] text-white' : 'bg-white text-[#6F6F6F] hover:bg-slate-50'}`}
+                      >
+                        {REMINDER_UNIT_LABEL[u]}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={!amount.trim()}
+                    className={`h-8 px-3 rounded-lg text-[13px] font-bold inline-flex items-center gap-1 text-white transition-colors ${
+                      amount.trim() ? 'bg-[#FF6537] hover:bg-[#e6572c] cursor-pointer' : 'bg-[#F68C6C] cursor-not-allowed'
+                    }`}
+                  >
+                    <Plus size={14} aria-hidden /> เพิ่ม
+                  </button>
+                </form>
+              )}
 
-              {hasOver && <p className="text-[11px] text-amber-700 mt-2">ช่วงสีเหลืองยาวเกินช่วงวันที่ตอนนี้ จึงไม่ถูกใช้เตือน — กดเพื่อเอาออกได้</p>}
+              {hasOver && <p className="text-[11px] text-amber-700 mt-2">ช่วงสีเหลืองเกินเวลาที่เหลือตอนนี้ จึงไม่ถูกใช้เตือน — กดเพื่อเอาออกได้</p>}
               {error && <p role="alert" className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mt-3">{error}</p>}
 
               <div className="mt-3 space-y-1 text-[12px] text-[#6F6F6F]">
                 {listed.length === 0 && !isDefault && <p>ไม่ได้เลือกช่วงใดเลย — จะไม่เตือนล่วงหน้า (ยังเตือนเมื่อเลยกำหนดแล้ว)</p>}
                 {isDefault ? (
-                  <p>ค่าเริ่มต้นของระบบ: เตือนเมื่อเหลือ {DEFAULT_DEADLINE_REMINDER_DAYS.map(formatReminderLead).join(', ')} — เลือกช่วงด้านบนเพื่อเปลี่ยน</p>
+                  <p>
+                    ค่าเริ่มต้นของระบบ: เตือนเมื่อเหลือ{' '}
+                    {minuteMode
+                      ? DEFAULT_DEADLINE_REMINDER_MINUTES.map(formatReminderLeadMinutes).join(', ')
+                      : DEFAULT_DEADLINE_REMINDER_DAYS.map(formatReminderLead).join(', ')}{' '}
+                    — เลือกช่วงด้านบนเพื่อเปลี่ยน
+                  </p>
                 ) : (
                   <button type="button" onClick={() => { setError(''); onChange(null); }} className="font-semibold text-[#FF6537] hover:underline cursor-pointer">
                     กลับเป็นค่าเริ่มต้น
@@ -310,11 +365,15 @@ export default function DeadlineReminderField({ days, isDefault, onChange, deadl
 
 // Wires a DeadlineReminderField to the logged-in person's saved choice for one existing project/task.
 // Changes are saved straight away (and never touch the approval flow — it's a personal preference).
-export function useSavedReminder(kind: 'task' | 'project', itemId: string | undefined) {
+// minuteMode: pass true for a same-day task so "nothing chosen yet" falls back to the minute default
+// (30 minutes) instead of the day default (2 days) — the two are stored in the same column (see
+// lib/deadlineReminders.ts), so the only thing that needs to know which mode applies is this fallback.
+export function useSavedReminder(kind: 'task' | 'project', itemId: string | undefined, minuteMode = false) {
   const { deadlineReminders, handleSetDeadlineReminder } = useAppData();
   const chosen = itemId ? deadlineReminders[reminderKey(kind, itemId)] : undefined;
+  const fallback = minuteMode ? encodeMinuteLeads(DEFAULT_DEADLINE_REMINDER_MINUTES) : DEFAULT_DEADLINE_REMINDER_DAYS;
   return {
-    days: chosen ?? DEFAULT_DEADLINE_REMINDER_DAYS,
+    days: chosen ?? fallback,
     isDefault: chosen === undefined,
     onChange: (next: number[] | null) => {
       if (itemId) handleSetDeadlineReminder(kind, itemId, next);

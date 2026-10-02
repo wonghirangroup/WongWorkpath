@@ -17,7 +17,14 @@ import { useEscapeToClose } from '../../lib/useEscapeToClose';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useAppData } from '../../context/AppDataContext';
 import DeadlineReminderField, { useSavedReminder } from '../DeadlineReminderField';
-import { DEFAULT_DEADLINE_REMINDER_DAYS, reminderLimit } from '../../lib/deadlineReminders';
+import {
+  DEFAULT_DEADLINE_REMINDER_DAYS,
+  DEFAULT_DEADLINE_REMINDER_MINUTES,
+  encodeMinuteLeads,
+  isSameDayDeadline,
+  minuteReminderLimit,
+  reminderLimit,
+} from '../../lib/deadlineReminders';
 
 type ModalMode = 'task' | 'meeting';
 
@@ -112,11 +119,24 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
   const [reviewerIds, setReviewerIds] = useState<string[]>([]);
   const [startDate, setStartDate] = useState('');
   const [dueDate, setDueDate] = useState('');
+  // Time of day the task is due — "HH:MM", only collected (and only shown) when the task starts and
+  // is due the same day, the one case a day-based reminder can't express (see
+  // lib/deadlineReminders.ts's isSameDayDeadline). Cleared automatically the moment the task stops
+  // being same-day, so a stale time can never resurface if the dates are later moved apart.
+  const [dueTime, setDueTime] = useState('');
+  const isSameDayTask = isSameDayDeadline(startDate || null, dueDate || null);
+  useEffect(() => {
+    if (!isSameDayTask) setDueTime('');
+    // A reminder chosen under one mode is meaningless re-interpreted under the other (day-leads are
+    // positive, minute-leads negative — see deadlineReminders.ts) — reset to "use the default" for
+    // whichever mode applies now, rather than leaving a stale choice invisible.
+    setPendingReminder(null);
+  }, [isSameDayTask]);
   // My own "เตือนก่อนกำหนดส่ง" choice for this task. While CREATING it is held here (null = default) and
   // saved once the task exists; while EDITING it is saved straight away (see useSavedReminder) since
   // it's a personal preference that never goes through the approval flow.
   const [pendingReminder, setPendingReminder] = useState<number[] | null>(null);
-  const savedReminder = useSavedReminder('task', editingTask?.id);
+  const savedReminder = useSavedReminder('task', editingTask?.id, isSameDayTask);
   const { handleSetDeadlineReminder, reportAppError } = useAppData();
   const [createFolder, setCreateFolder] = useState(false);
   const [folderName, setFolderName] = useState('');
@@ -176,6 +196,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
       setReviewerIds(editingTask.reviewerEmployeeIds ?? []);
       setStartDate(editingTask.startDateISO ?? '');
       setDueDate(editingTask.dueDateISO ?? '');
+      setDueTime(editingTask.dueTime?.slice(0, 5) ?? '');
     } else {
       setTitle('');
       setDescription('');
@@ -186,6 +207,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
       setReviewerIds([]);
       setStartDate('');
       setDueDate('');
+      setDueTime('');
     }
     setPendingReminder(null);
     setCreateFolder(true);
@@ -328,6 +350,7 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
           reviewerEmployeeIds: reviewerIds,
           startDate: startDate || null,
           dueDate: dueDate || null,
+          dueTime: isSameDayTask ? (dueTime || null) : null,
           // Derived from the process, not freely picked — see computeTaskStatus above.
           status: computeTaskStatus(editingTask?.status, assigneeIds, blocked, startDate),
           blockedReason: blocked ? blockedReason.trim() : undefined,
@@ -781,22 +804,42 @@ export default function AddTaskModal({ isOpen, onClose, onSave, onAddMeeting, on
                           <p className="sm:col-span-2 -mt-1.5 text-xs text-red-600">วันที่ของงาน{projectRangeLabel}</p>
                         )}
 
+                        {/* Only shown for a same-day task (start = due): that's the one case a
+                            day-based reminder can't express, so it needs an actual time of day to
+                            count hours/minutes against instead — see isSameDayDeadline. */}
+                        {isSameDayTask && (
+                          <div className="sm:col-span-2">
+                            <label className="block text-[#272220] font-bold text-[11px] mb-1">เวลาที่ต้องเสร็จ</label>
+                            <input
+                              type="time"
+                              value={dueTime}
+                              onChange={(e) => setDueTime(e.target.value)}
+                              className="w-full h-10.5 px-3 border border-[#E5E5E5] rounded-lg text-sm focus:outline-none focus:border-[#FF6537]"
+                            />
+                            <p className="mt-1 text-[11px] text-[#6F6F6F]">งานเริ่มและกำหนดส่งวันเดียวกัน — ใส่เวลาเพื่อตั้งเตือนล่วงหน้าเป็นชั่วโมง/นาทีได้</p>
+                          </div>
+                        )}
+
                         <div className="sm:col-span-2">
                           <label className="block text-[#272220] font-bold text-[11px] mb-1">เตือนฉันก่อนกำหนดส่ง</label>
                           {isEditing ? (
                             <DeadlineReminderField
                               {...savedReminder}
                               limit={reminderLimit(startDate, dueDate)}
+                              minuteMode={isSameDayTask}
+                              minuteLimit={isSameDayTask ? minuteReminderLimit(dueDate, dueTime) : null}
                               deadlineWord="กำหนดส่ง"
                               note="บันทึกทันที ไม่ต้องรออนุมัติ"
                               warning={assigneeIds.includes(currentUserId) ? undefined : 'คุณไม่ได้เป็นผู้รับผิดชอบงานนี้ จึงจะไม่ได้รับการเตือน'}
                             />
                           ) : (
                             <DeadlineReminderField
-                              days={pendingReminder ?? DEFAULT_DEADLINE_REMINDER_DAYS}
+                              days={pendingReminder ?? (isSameDayTask ? encodeMinuteLeads(DEFAULT_DEADLINE_REMINDER_MINUTES) : DEFAULT_DEADLINE_REMINDER_DAYS)}
                               isDefault={pendingReminder === null}
                               onChange={setPendingReminder}
                               limit={reminderLimit(startDate, dueDate)}
+                              minuteMode={isSameDayTask}
+                              minuteLimit={isSameDayTask ? minuteReminderLimit(dueDate, dueTime) : null}
                               deadlineWord="กำหนดส่ง"
                               note="จะบันทึกพร้อมกับงานนี้"
                               warning={assigneeIds.includes(currentUserId) ? undefined : 'เตือนเฉพาะผู้รับผิดชอบงาน — คุณยังไม่ได้อยู่ในรายชื่อผู้รับผิดชอบ'}

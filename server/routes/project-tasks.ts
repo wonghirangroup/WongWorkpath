@@ -22,6 +22,7 @@ interface ProjectTaskRowDb extends RowDataPacket {
   creator_employee_id: string | null;
   start_date: string | null;
   due_date: string | null;
+  due_time: string | null;
   progress: number;
   checklist: string | null;
   submission_note: string | null;
@@ -64,6 +65,7 @@ function toProjectTask(r: ProjectTaskRowDb) {
     dueDate: formatThaiDateShort(r.due_date),
     startDateISO: r.start_date,
     dueDateISO: r.due_date,
+    dueTime: r.due_time,
     daysUntilDue: daysUntilBangkokDate(r.due_date),
     progress: r.progress,
     checklist: r.checklist ? JSON.parse(r.checklist) : [],
@@ -79,7 +81,7 @@ function toProjectTask(r: ProjectTaskRowDb) {
 // comment_count is a correlated subquery, not a join — every query below does a plain
 // `FROM project_task` with no alias, so `project_task.id` here always resolves unambiguously
 // regardless of how many rows (one or the whole table) that particular query selects.
-const SELECT_FIELDS = `id, project_id, title, description, status, priority, assignee_employee_ids, reviewer_employee_ids, creator_employee_id, start_date, due_date, progress, checklist, submission_note, submission_file_ids, review_note, blocked_reason, parent_task_id, (SELECT COUNT(*) FROM task_comment WHERE task_comment.task_id = project_task.id) AS comment_count`;
+const SELECT_FIELDS = `id, project_id, title, description, status, priority, assignee_employee_ids, reviewer_employee_ids, creator_employee_id, start_date, due_date, due_time, progress, checklist, submission_note, submission_file_ids, review_note, blocked_reason, parent_task_id, (SELECT COUNT(*) FROM task_comment WHERE task_comment.task_id = project_task.id) AS comment_count`;
 
 // A task ("หัวข้อ" is just this same task type, created through a differently-labeled tab — see
 // AddTaskModal.tsx) with 1+ subtasks has its own status fully derived from them, never manually
@@ -144,12 +146,12 @@ projectTasksRouter.post('/', async (req, res) => {
     await pool.query(
       `INSERT INTO project_task
          (id, project_id, title, description, status, priority, assignee_employee_ids, reviewer_employee_ids,
-          creator_employee_id, start_date, due_date, progress, checklist, parent_task_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          creator_employee_id, start_date, due_date, due_time, progress, checklist, parent_task_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id, t.projectId, t.title.trim(), t.description?.trim() || null, status, priority,
         assigneeIds.length ? JSON.stringify(assigneeIds) : null, reviewerIds.length ? JSON.stringify(reviewerIds) : null,
-        req.actorId, t.startDate || null, t.dueDate || null, t.progress ?? 0,
+        req.actorId, t.startDate || null, t.dueDate || null, t.dueTime || null, t.progress ?? 0,
         checklist.length ? JSON.stringify(checklist) : null, parentTaskId, now, now,
       ]
     );
@@ -209,6 +211,10 @@ export async function applyTaskFields(id: string, t: any) {
   }
   if ('startDate' in t) { fields.push('start_date = ?'); values.push(t.startDate || null); }
   if ('dueDate' in t) { fields.push('due_date = ?'); values.push(t.dueDate || null); }
+  // Only meaningful for a same-day task (see ProjectTaskItem.dueTime's own comment) — AddTaskModal
+  // clears it back to null itself the moment the task stops being same-day, so a stale time can
+  // never resurface if the dates are later changed apart.
+  if ('dueTime' in t) { fields.push('due_time = ?'); values.push(t.dueTime || null); }
   if (typeof t.progress === 'number') { fields.push('progress = ?'); values.push(t.progress); }
   if ('checklist' in t) {
     const checklist = sanitizeChecklist(t.checklist);

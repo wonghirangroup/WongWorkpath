@@ -478,7 +478,12 @@ export default function ProjectDetail({ row, tasks, meetings, employees, current
             </span>
           </Tooltip>
         </td>
-        <td className={`px-5 py-3 whitespace-nowrap sticky right-0 z-10 group-hover:bg-slate-50 ${isSubtask ? 'bg-slate-50/40' : 'bg-white'}`}>
+        {/* bg-slate-50 solid, NOT bg-slate-50/40 like the row's own non-sticky cells use — a
+            translucent background here would let the OTHER columns' content show through as they
+            scroll underneath this sticky one, instead of being masked by it (this is what the
+            "ข้อมูลทะลุ" bleed-through on subtask rows actually was: not a hover/animation glitch
+            like the one fixed earlier, but this cell genuinely never being opaque to begin with). */}
+        <td className={`px-5 py-3 whitespace-nowrap sticky right-0 z-10 group-hover:bg-slate-50 ${isSubtask ? 'bg-slate-50' : 'bg-white'}`}>
           {/* box-shadow painted directly on a <td> is silently dropped by Chromium when the table
               has border-collapse (confirmed via computed style — shadow value is there, just never
               drawn), so the drop-shadow at the sticky column's cut edge lives on this plain <span>

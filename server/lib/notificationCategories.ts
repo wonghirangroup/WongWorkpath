@@ -10,12 +10,23 @@ export function isNotificationCategory(value: unknown): value is string {
 // src/lib/deadlineReminders.ts.
 export const MAX_REMINDER_COUNT = 6;
 export const MAX_REMINDER_DAYS = 365;
+// A same-day task (start date = due date) has no day gap to count, so its lead times are minutes
+// instead — stored in this very same column/array, encoded as a NEGATIVE integer (e.g. -30 = "30
+// minutes before"). Safe to share one column: a single task is never in both modes at once (a
+// same-day task's day-based limit is always 0, and a multi-day task has no due TIME to count
+// minutes against), so the array a person saves for one item never mixes positive and negative
+// entries. See src/lib/deadlineReminders.ts for the client-side encode/decode.
+export const MAX_REMINDER_MINUTES = 24 * 60;
 
-// Keeps only valid whole-day values, de-duplicated and sorted ascending. Anything else is dropped so a
-// bad request can't store junk (or an absurd number of reminders).
+// Keeps only valid whole-day values (1–365) or valid encoded-minute values (-1440…-1),
+// de-duplicated and sorted ascending. Anything else is dropped so a bad request can't store junk
+// (or an absurd number of reminders).
 export function sanitizeReminderDays(raw: unknown): number[] {
   if (!Array.isArray(raw)) return [];
-  const days = raw.filter((d): d is number => Number.isInteger(d) && d >= 1 && d <= MAX_REMINDER_DAYS);
+  const days = raw.filter(
+    (d): d is number =>
+      Number.isInteger(d) && ((d >= 1 && d <= MAX_REMINDER_DAYS) || (d <= -1 && d >= -MAX_REMINDER_MINUTES))
+  );
   return [...new Set(days)].sort((a, b) => a - b).slice(0, MAX_REMINDER_COUNT);
 }
 
