@@ -1,0 +1,59 @@
+# Auto-deploy backend ขึ้น VPS (workpath-api.wonghiran.com) ทุกครั้งที่ push ขึ้น main แล้วมีไฟล์ backend เปลี่ยน
+# (frontend deploy ผ่าน Vercel แยกต่างหากอยู่แล้ว) — กด "Run workflow" ในแท็บ Actions เพื่อ deploy เองก็ได้
+#
+# ใช้ secret VPS_DEPLOY_KEY = private key ที่บน VPS ถูกล็อกให้รันได้แค่ /usr/local/bin/workpath-deploy
+# (ดู scripts/vps/workpath-deploy.sh และ docs/project-docs/Setup_Deployment_Guide.md)
+# ⚠️ workflow นี้ไม่รัน migration — ถ้าโค้ดใช้ตาราง/คอลัมน์ใหม่ ต้อง apply กับฐานข้อมูลจริงก่อน push
+name: Deploy backend to VPS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server/**'
+      - 'src/data/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+  workflow_dispatch:
+
+# push ติดกันหลายครั้ง → deploy ทีละรอบ และข้ามรอบเก่าที่ยังไม่เริ่มไป
+concurrency:
+  group: deploy-vps-backend
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # กันโค้ดที่ type ผิดขึ้น production (ตรวจเฉพาะ server/ เพราะ frontend มี Vercel build แยก)
+      - name: Type-check
+        run: |
+          npm ci --omit=optional
+          npm run lint
+
+      - name: Set up SSH
+        env:
+          VPS_DEPLOY_KEY: ${{ secrets.VPS_DEPLOY_KEY }}
+        run: |
+          [ -n "$VPS_DEPLOY_KEY" ] || { echo "::error::ยังไม่ได้ตั้ง secret VPS_DEPLOY_KEY"; exit 1; }
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_DEPLOY_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          # host key จริงของ VPS (public ไม่ใช่ความลับ) — กันโดนปลอมเครื่องระหว่างทาง
+          echo "178.128.119.174 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICwHin3W6jaEUsWOsUjviJD4LxW6UuCZFYgF/1DrNC63" > ~/.ssh/known_hosts
+
+      - name: Deploy
+        run: |
+          git archive --format=tar.gz HEAD server src/data package.json package-lock.json tsconfig.json \
+            | ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o IdentitiesOnly=yes root@178.128.119.174 "deploy $GITHUB_SHA"
+
+      - name: Public health check
+        run: curl -fsS --retry 5 --retry-delay 3 https://workpath-api.wonghiran.com/api/health

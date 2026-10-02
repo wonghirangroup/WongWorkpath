@@ -1,6 +1,34 @@
 # Setup & Deployment Guide
 
-## สถาปัตยกรรมการ deploy จริง
+## ⚠️ Backend บน VPS (`workpath-api.wonghiran.com`) — ตั้งแต่ 2569-09-30
+
+frontend ที่ `workpath.wonghiran.com` เรียก backend ที่ **`https://workpath-api.wonghiran.com`** ซึ่งรันบน VPS ของบริษัท ไม่ใช่ Render (ยืนยันจาก request จริงในเบราว์เซอร์ 2569-10-02)
+
+```
+พนักงาน → workpath.wonghiran.com (Vercel, frontend)
+              ↓ เรียก API
+          workpath-api.wonghiran.com → VPS 178.128.119.174
+              nginx (/etc/nginx/sites-available/workpath-api.conf, SSL Certbot)
+              ↓ proxy_pass 127.0.0.1:3003
+          Docker container `workpath-backend` (/opt/workpath-backend, node:20-alpine, `npx tsx server/index.ts`)
+              ↓ ต่อฐานข้อมูล
+          MySQL (ตัวเดียวกับที่เครื่องพัฒนาต่ออยู่)
+```
+
+- **Auto-deploy ด้วย GitHub Actions (2569-10-02)** — `.github/workflows/deploy-vps-backend.yml` ทำงานเมื่อ push ขึ้น `main` แล้วมีไฟล์ใน `server/**`, `src/data/**`, `package*.json`, `tsconfig.json` เปลี่ยน (แก้แค่ frontend จะไม่ deploy backend) → `npm run lint` ต้องผ่านก่อน → ส่งโค้ดจาก commit นั้นผ่าน SSH ไปให้ `/usr/local/bin/workpath-deploy` บน VPS · กด "Run workflow" ในแท็บ Actions เพื่อ deploy ซ้ำเองได้ · ดูผลได้ที่แท็บ Actions ของ repo
+- **สคริปต์ฝั่ง VPS `/usr/local/bin/workpath-deploy`** (ต้นฉบับใน repo: `scripts/vps/workpath-deploy.sh` — **แก้ไฟล์นี้แล้วต้อง copy ขึ้น VPS เอง** Actions ไม่ได้อัปเดตตัวมันเอง) รับแค่ `status` กับ `deploy <sha>`: ตรวจไฟล์ที่ส่งมาให้ครบก่อนแตะอะไร → backup เป็น `/opt/workpath-backend.bak-<เวลา>` (เก็บ 5 ชุดล่าสุด) → แทนที่ `server/`, `src/data/`, `package*.json`, `tsconfig.json` → `docker compose up -d --build` → เช็ค health → **ถ้า build/health พัง ย้อนกลับเป็น backup เองอัตโนมัติ** → จด commit ไว้ที่ `/opt/workpath-backend/DEPLOYED_COMMIT` · มี lock กัน deploy ซ้อนกัน
+- **SSH key ของ GitHub Actions** อยู่ใน secret `VPS_DEPLOY_KEY` ของ repo ใน `/root/.ssh/authorized_keys` key นี้ถูกล็อกด้วย `command="/usr/local/bin/workpath-deploy",no-pty,...` (comment `github-actions-wongworkpath-deploy`) — **รันได้แค่สคริปต์ deploy ไม่ได้ shell** ถ้า key หลุดให้ลบบรรทัดนั้นออกแล้วสร้างใหม่
+- **Deploy มือ (สำรอง):** `npm run deploy:vps` (`scripts/deploy-vps-backend.sh`) ใช้สคริปต์ฝั่ง VPS ตัวเดียวกัน ต้องมี SSH root เข้า `178.128.119.174` (ตั้ง host ผ่าน env `VPS_HOST`, ค่าเริ่มต้นคือ alias `Smart-Jigsaw` ใน `~/.ssh/config`) · เช็คว่าตอนนี้ deploy commit ไหนอยู่: `ssh <host> /usr/local/bin/workpath-deploy status`
+- ⚠️ SSH เข้า VPS ถี่ๆ ในเวลาสั้น (เช่น ~6 ครั้งใน 30 วิ) จะถูกบล็อก IP ชั่วคราว (เจอจริง 2569-10-02) — เว็บยังใช้ได้ปกติ แค่ SSH เข้าไม่ได้สักพัก อย่าวนลองถี่ๆ เพราะจะยิ่งโดนนาน
+- `.env`, `Dockerfile`, `docker-compose.yml` บน VPS **ไม่ถูกแตะ** ทั้งแบบ auto และมือ — `JWT_SECRET` จึงคงเดิม คนที่ล็อกอินอยู่ไม่หลุด
+- **ไม่รัน migration ทั้งแบบ auto และมือ** — ⚠️ เพราะ push = deploy ทันที ต้อง apply schema ใหม่กับฐานข้อมูลจริง**ก่อน push** โค้ดที่ใช้ schema นั้นเสมอ (ดูหัวข้อ "ขั้นตอน deploy ที่มีการเปลี่ยนฐานข้อมูล")
+- ย้อนกลับเวอร์ชันเอง: `rm -rf /opt/workpath-backend && cp -a /opt/workpath-backend.bak-<เวลา> /opt/workpath-backend && cd /opt/workpath-backend && docker compose up -d --build`
+- ⚠️ VPS เครื่องนี้มี container ของโปรเจกต์อื่นรันอยู่ด้วยอีกหลายตัว — อย่าใช้คำสั่งกว้างๆ อย่าง `docker compose down` นอกโฟลเดอร์ `/opt/workpath-backend` หรือ `docker system prune`
+- 401 ไม่ได้แปลว่ามี route อยู่จริง: `requireAuth` ครอบทุก path ใต้ `/api` (ยกเว้น health/auth) จึงตอบ 401 ก่อนจะถึงขั้นหา route — เช็คว่า route มีจริงด้วยการ grep ในโค้ดของ container (`docker exec workpath-backend grep ...`) หรือเรียกพร้อม token
+
+หัวข้อด้านล่างเรื่อง Render เขียนไว้ก่อนย้ายมา VPS — ยังไม่ได้ยืนยันว่า service บน Render ยังรันอยู่หรือถูกเลิกใช้แล้ว
+
+## สถาปัตยกรรมการ deploy จริง (Render — ก่อนย้ายไป VPS)
 
 ```
 พนักงาน → workpath.wonghiran.com (Vercel, frontend, โดเมนบริษัทเอง)
@@ -51,7 +79,8 @@ Vercel และ Render ตั้ง auto-deploy จาก push ขึ้น bra
 2. เขียนโค้ดฝั่งเซิร์ฟเวอร์/ไคลเอ็นต์ให้ใช้ schema ใหม่
 3. ตรวจ `npm run lint` ผ่าน และทดสอบบนเครื่องพัฒนา (ซึ่งต่อฐานข้อมูลเดียวกับที่แก้ไปแล้วในข้อ 1 อยู่แล้ว) ให้แน่ใจว่าใช้งานได้จริง
 4. commit และ push ขึ้น `main` ตอนคนใช้น้อย
-5. รอ Vercel + Render deploy เสร็จ ตรวจ `/api/health` แล้วรีเฟรชหน้าเว็บทดสอบจริง
+5. รอ GitHub Actions ("Deploy backend to VPS") deploy backend เสร็จ ดูผลที่แท็บ Actions (Vercel deploy frontend เองอัตโนมัติ)
+6. ตรวจ `https://workpath-api.wonghiran.com/api/health` แล้วรีเฟรชหน้าเว็บทดสอบจริง
 
 ## ห้ามทำ
 

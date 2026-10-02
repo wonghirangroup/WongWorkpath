@@ -12,6 +12,7 @@
     "lint": "tsc --noEmit",
     "server:dev": "tsx watch server/index.ts",
     "server:start": "tsx server/index.ts",
+    "deploy:vps": "bash scripts/deploy-vps-backend.sh",
     "server:migrate": "tsx server/migrate.ts",
     "server:seed": "tsx server/seed.ts",
     "server:seed-employees": "tsx server/seed-employees.ts",
